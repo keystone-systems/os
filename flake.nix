@@ -8,7 +8,11 @@
   };
 
   outputs =
-    { self, nixpkgs, disko }:
+    {
+      self,
+      nixpkgs,
+      disko,
+    }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -24,6 +28,7 @@
         ];
         text = builtins.readFile ./bin/ks-fleet;
       };
+      hardware-key-audit = pkgs.callPackage ./packages/hardware-key-audit.nix { };
 
       # Self-demonstrating example fleet: ks-demo-a defaults to a VM;
       # ks-demo-b carries a machine target (the ks-test-delltop pattern) and
@@ -50,13 +55,27 @@
         inherit mkFleet;
       };
 
+      nixosModules = {
+        default = import ./modules;
+        diskoVmToolsCompat = import ./modules/disko-vm-tools-compat.nix;
+      };
+
       inherit (example) nixosConfigurations fleetMeta;
 
       packages.${system} = {
-        inherit ks-fleet;
+        inherit hardware-key-audit ks-fleet;
         default = ks-fleet;
       }
       // example.packages.${system};
+
+      checks.${system} = {
+        hardware-keys = import ./tests/hardware-keys.nix {
+          inherit nixpkgs pkgs;
+        };
+        hardware-key-audit = import ./tests/hardware-key-audit.nix {
+          inherit pkgs;
+        };
+      };
 
       apps.${system} = example.apps.${system};
     };

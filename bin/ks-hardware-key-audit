@@ -1,0 +1,236 @@
+usage() {
+  cat <<'EOF'
+usage: ks-hardware-key-audit --host HOST [flags]
+
+Compare committed ks-config hardware-key state with a live host. The command
+is read-only: it does not enroll, revoke, decrypt, or open storage.
+
+flags:
+  --flake REF    ks-config flake (default: .)
+  --host HOST    nixosConfigurations and fleetMeta host name
+  --local        inspect this machine instead of fleetMeta's machine target
+  --strict       fail when a warning or error is reported
+  --json         emit JSON instead of a human report
+EOF
+}
+
+die() {
+  echo "ks-hardware-key-audit: $*" >&2
+  exit 2
+}
+
+FLAKE=.
+HOST=
+LOCAL=0
+STRICT=0
+JSON=0
+
+while (($#)); do
+  case "$1" in
+  --flake)
+    FLAKE="${2:?}"
+    shift 2
+    ;;
+  --host)
+    HOST="${2:?}"
+    shift 2
+    ;;
+  --local)
+    LOCAL=1
+    shift
+    ;;
+  --strict)
+    STRICT=1
+    shift
+    ;;
+  --json)
+    JSON=1
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *) die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n $HOST ]] || die "--host is required"
+
+NIX="${KS_HARDWARE_KEY_NIX:-nix}"
+YKMAN="${KS_HARDWARE_KEY_YKMAN:-ykman}"
+CRYPTSETUP="${KS_HARDWARE_KEY_CRYPTSETUP:-cryptsetup}"
+SUDO="${KS_HARDWARE_KEY_SUDO:-sudo}"
+
+projection="$(
+  "$NIX" eval --json \
+    "$FLAKE#nixosConfigurations.$HOST.config.keystone.hardwareKeyProjection"
+)" || die "cannot evaluate the hardware-key projection for $HOST"
+desired_system="$(
+  "$NIX" build --no-link --print-out-paths \
+    "$FLAKE#nixosConfigurations.$HOST.config.system.build.toplevel"
+)" || die "cannot build the desired system for $HOST"
+
+jq -e '
+  .contractVersion == 1
+  and .host == $host
+  and (.keys | type == "object")
+  and (.luks | type == "object")
+  and (.findings | type == "array")
+' --arg host "$HOST" <<<"$projection" >/dev/null ||
+  die "host $HOST returned an invalid or unsupported hardware-key projection"
+
+TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEMP_DIR"' EXIT
+
+if ((LOCAL)); then
+  target_run() {
+    "$@"
+  }
+else
+  machine="$("$NIX" eval --json "$FLAKE#fleetMeta.hosts.$HOST.machine")" ||
+    die "cannot evaluate fleetMeta machine identity for $HOST"
+  ssh_target="$(jq -r '.sshTarget // empty' <<<"$machine")"
+  ssh_user="$(jq -r '.user // "root"' <<<"$machine")"
+  host_public_key="$(jq -r '.hostPublicKey // empty' <<<"$machine")"
+  [[ -n $ssh_target ]] || die "fleetMeta has no machine sshTarget for $HOST"
+  [[ -n $host_public_key ]] ||
+    die "fleetMeta has no pinned hostPublicKey for $HOST"
+
+  printf '%s %s\n' "$ssh_target" "$host_public_key" >"$TEMP_DIR/known_hosts"
+  SSH=(
+    ssh
+    -o BatchMode=yes
+    -o ConnectTimeout=5
+    -o StrictHostKeyChecking=yes
+    -o "UserKnownHostsFile=$TEMP_DIR/known_hosts"
+    "$ssh_user@$ssh_target"
+  )
+
+  target_run() {
+    local command
+    printf -v command '%q ' "$@"
+    "${SSH[@]}" "$command"
+  }
+fi
+
+REPORT=()
+FINDINGS=0
+
+emit() {
+  local status="$1" code="$2" detail="$3"
+  REPORT+=("$(
+    jq -cn \
+      --arg status "$status" \
+      --arg code "$code" \
+      --arg detail "$detail" \
+      '{status: $status, code: $code, detail: $detail}'
+  )")
+  [[ $status != warn && $status != error ]] || FINDINGS=$((FINDINGS + 1))
+}
+
+if target_run true >/dev/null 2>&1; then
+  TARGET_AVAILABLE=1
+  emit ok target.identity "reached $HOST through its pinned machine identity"
+else
+  TARGET_AVAILABLE=0
+  emit error target.identity "could not reach $HOST through its pinned machine identity"
+fi
+
+while IFS= read -r encoded; do
+  item="$(base64 --decode <<<"$encoded")"
+  emit warn "$(jq -r '.code' <<<"$item")" "$(jq -r '.message' <<<"$item")"
+done < <(jq -r '.findings[] | @base64' <<<"$projection")
+
+if [[ -n ${KS_HARDWARE_KEY_CURRENT_SYSTEM:-} ]]; then
+  current_system="$KS_HARDWARE_KEY_CURRENT_SYSTEM"
+elif ((TARGET_AVAILABLE)); then
+  current_system="$(target_run readlink -f /run/current-system 2>/dev/null || true)"
+else
+  current_system=
+fi
+if [[ $current_system == "$desired_system" ]]; then
+  emit ok system.generation "active NixOS generation matches the evaluated ks-config"
+else
+  emit warn system.generation "active NixOS generation does not match the evaluated ks-config"
+fi
+
+if connected_serials="$("$YKMAN" list --serials 2>/dev/null)"; then
+  :
+else
+  connected_serials=
+  emit error key.enumeration "ykman could not enumerate connected YubiKeys"
+fi
+
+while IFS= read -r key_name; do
+  serial="$(jq -r --arg key "$key_name" '.keys[$key].serial' <<<"$projection")"
+  if grep -Fqx -- "$serial" <<<"$connected_serials"; then
+    emit ok "key.$key_name.serial" "enabled serial $serial is connected"
+  else
+    emit warn "key.$key_name.serial" "enabled serial $serial is not connected"
+  fi
+done < <(jq -r '.keys | keys[]' <<<"$projection")
+
+while IFS= read -r luks_name; do
+  device="$(jq -r --arg luks "$luks_name" '.luks[$luks].device // empty' <<<"$projection")"
+  expected_uuid="$(jq -r --arg luks "$luks_name" '.luks[$luks].installed.uuid // empty' <<<"$projection")"
+  if [[ -z $device || -z $expected_uuid ]]; then
+    emit warn "luks.$luks_name.identity" "device path or installed UUID is absent from ks-config"
+    continue
+  fi
+  if ((!TARGET_AVAILABLE)); then
+    emit warn "luks.$luks_name.identity" "target is unreachable; live LUKS metadata was not inspected"
+    continue
+  fi
+
+  if actual_uuid="$(target_run "$SUDO" -n "$CRYPTSETUP" luksUUID "$device" 2>/dev/null)" &&
+    [[ $actual_uuid == "$expected_uuid" ]]; then
+    emit ok "luks.$luks_name.uuid" "live UUID matches committed installed state"
+  else
+    emit error "luks.$luks_name.uuid" "live UUID is unavailable or differs from ks-config"
+    continue
+  fi
+
+  if ! metadata="$(target_run "$SUDO" -n "$CRYPTSETUP" luksDump --dump-json-metadata "$device" 2>/dev/null)"; then
+    emit error "luks.$luks_name.metadata" "could not read live LUKS metadata non-interactively"
+    continue
+  fi
+
+  while IFS= read -r key_name; do
+    token="$(jq -r --arg luks "$luks_name" --arg key "$key_name" '.luks[$luks].installed.enrollments[$key].token' <<<"$projection")"
+    credential="$(jq -r --arg luks "$luks_name" --arg key "$key_name" '.luks[$luks].installed.enrollments[$key].credential // empty' <<<"$projection")"
+    if jq -e \
+      --arg token "$token" \
+      --arg credential "$credential" '
+        .tokens[$token].type == "systemd-fido2"
+        and ($credential == "" or .tokens[$token]["fido2-credential"] == $credential)
+      ' <<<"$metadata" >/dev/null; then
+      if jq -e --arg key "$key_name" '.keys | has($key)' <<<"$projection" >/dev/null; then
+        emit ok "luks.$luks_name.$key_name" "recorded FIDO2 token $token matches live metadata"
+      else
+        emit warn "luks.$luks_name.$key_name" "disabled key remains enrolled as FIDO2 token $token"
+      fi
+    else
+      emit error "luks.$luks_name.$key_name" "recorded FIDO2 token $token is absent or mismatched"
+    fi
+  done < <(jq -r --arg luks "$luks_name" '.luks[$luks].installed.enrollments | keys[]' <<<"$projection")
+
+  while IFS= read -r token; do
+    if ! jq -e --arg luks "$luks_name" --argjson token "$token" '
+      [.luks[$luks].installed.enrollments[].token] | index($token) != null
+    ' <<<"$projection" >/dev/null; then
+      emit warn "luks.$luks_name.untracked-token-$token" "live FIDO2 token $token is not recorded in ks-config"
+    fi
+  done < <(jq -r '.tokens | to_entries[] | select(.value.type == "systemd-fido2") | .key' <<<"$metadata")
+done < <(jq -r '.luks | keys[]' <<<"$projection")
+
+if ((JSON)); then
+  printf '%s\n' "${REPORT[@]}" | jq -s .
+else
+  printf '%-6s %-44s %s\n' STATUS CHECK DETAIL
+  for item in "${REPORT[@]}"; do
+    jq -r '[.status, .code, .detail] | @tsv' <<<"$item"
+  done
+fi
+
+((!STRICT || !FINDINGS))

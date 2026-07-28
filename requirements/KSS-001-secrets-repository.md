@@ -92,25 +92,13 @@ sops:
    policy only to `luks-recovery.yaml`.
 6. After a recipient change, affected documents MUST be rekeyed and
    independently decrypted before a working recipient is removed.
-7. A software SSH private key, SSH passphrase, recovery code, or other
-   exportable credential MAY be stored only as SOPS ciphertext under a
-   separately scoped recipient policy with explicit consumers, rotation, and
-   rollback.
-8. A hardware-backed SSH private key, PIV private key, FIDO2/WebAuthn private
-   key, or authenticator secret MUST remain with its authenticator or
-   credential provider and MUST NOT be copied into this repository.
-9. FIDO2 and PIV PINs, PUKs, management keys, biometric templates, and
-   WebAuthn private-key material MUST NOT be committed, including under SOPS
-   encryption.
-10. A security key's PIV decryption authority, FIDO2/PAM authority, WebAuthn
-    registrations, and SSH signing authority MUST be treated as independent
-    credentials even when they share a physical key or serial number.
-11. Procedures for a lost or compromised credential MUST identify every
-    affected consumer and MUST NOT claim that unrelated applets or
-    registrations were revoked without class-specific evidence.
-12. An offline recovery-recipient proof MUST decrypt a synthetic canary and
-    record the recipient identifier, timestamp, outcome, and redacted evidence.
-    The downstream recipient policy MUST define how recent that proof must be.
+7. Exportable credentials MAY be stored only as SOPS ciphertext under an
+   explicit recipient and consumer policy.
+8. Hardware-backed private keys and authenticator secrets MUST remain on their
+   authenticators. PINs, PUKs, management keys, and biometric material MUST
+   NOT be committed, including under SOPS encryption.
+9. Recipient changes MUST be independently verified before removing a working
+   recipient.
 
 ### KSS-001.3: Plaintext boundary
 
@@ -128,13 +116,9 @@ sops:
    credential.
 6. Public-metadata checks MAY inspect production ciphertext as permitted by
    `KSS-001.1.9`; they MUST NOT decrypt it.
-7. A proof involving a hardware-backed private key MUST exercise its signing,
-   assertion, HMAC, or decryption interface and MUST NOT attempt to export the
-   key.
-8. Keystone tooling MUST NOT collect a FIDO2 PIN, PIV PIN, PAM password,
-   biometric, WebAuthn user-verification input, or SSH private-key passphrase
-   when the owning authenticator, PAM stack, SSH agent, or client is
-   responsible for that interaction.
+7. Hardware-backed operations MUST use the authenticator's normal protocol
+   and prompt path; Keystone MUST neither export its key nor collect its
+   authentication secrets.
 
 ### KSS-001.4: Credential proof
 
@@ -158,27 +142,14 @@ sops:
    failures.
 7. Evidence MUST contain only host, target, requirement IDs, timestamp,
    outcome, and redacted diagnostics.
-8. An SSH signing identity MUST prove possession by signing a fresh challenge
-   and verifying it against the declared public key. An SSH authentication
-   check MAY also verify the declared account and principal policy
-   without granting an interactive command.
-9. An SSH host identity MUST be verified against its pinned host key and MUST
-   NOT be inferred from an address, DNS name, or successful connection alone.
-10. A PAM/U2F proof MUST exercise the declared PAM service through a real local
-    authentication transaction with its required user-presence and
-    user-verification policy.
-11. A WebAuthn proof MUST complete an assertion for the declared relying-party
-    ID and permitted origin and verify the expected credential, user presence,
-    and user verification.
-12. A SOPS/PIV proof MUST decrypt a synthetic canary with the declared
-    recipient while leaving production ciphertext unopened.
-13. A successful proof for one applet, SSH principal, PAM service, or WebAuthn
-    relying party MUST NOT count as proof for another.
-14. Checks MUST NOT alter enrollment, authorization policy, key material, or
-    recovery slots. Protocol-required counters and audit events MAY change and
-    MUST be documented.
-15. Enrollment, registration, rotation, revocation, recovery, and destructive
-    reset MUST be separate workflows, each requiring explicit authorization.
+8. Every enabled hardware credential MUST be proven through its actual
+   protocol against its declared consumer.
+9. Proof of one credential, protocol, account, service, or relying party MUST
+   NOT prove another.
+10. Checks MUST be read-only except for protocol-required counters and audit
+    events.
+11. Enrollment, rotation, revocation, recovery, and destructive reset MUST be
+    explicit workflows separate from verification.
 
 ### KSS-001.5: Downstream implementation
 

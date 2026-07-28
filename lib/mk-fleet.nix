@@ -42,6 +42,7 @@
   #     machine = {
   #       sshTarget = "192.168.1.64";   # DNS name or address
   #       user = "root";                # ssh/deploy user
+  #       hostPublicKey = "ssh-ed25519 ..."; # pinned machine identity
   #       buildOnRemote = false;        # nixos-rebuild --build-host target
   #     };
   #     default = "machine";            # preferred realization for fleet
@@ -82,20 +83,21 @@ let
       tpmAndFido = {
         virtualisation.tpm.enable = io.tpm or true;
         virtualisation.qemu = lib.optionalAttrs (io.fido2 or false) {
-          # canokey needs a qemu built with canokeySupport (local build).
-          package = pkgs.qemu.override { canokeySupport = true; };
+          # Canokey needs a QEMU built with canokeySupport. The fleet runs on
+          # x86_64, so avoid compiling emulators for unrelated architectures.
+          package = pkgs.qemu_kvm.override { canokeySupport = true; };
           options = [ "-device canokey,file=/tmp/canokey-state" ];
         };
       };
     in
-    lib.optional (io != null) {
-      # vmVariantWithDisko is the config layer of the interactive install
-      # VM (system.build.vmWithDisko); the emulated TPM (and optional
-      # canokey token) attach there, and the same settings go to the
-      # disko test framework machine.
-      virtualisation.vmVariantWithDisko = tpmAndFido;
-      disko.tests.extraConfig = tpmAndFido;
-    };
+    lib.optionals (io != null) [
+      ../modules/disko-vm-tools-compat.nix
+      {
+        # Disko imports tests.extraConfig into both its interactive install VM
+        # and test machine. Declare the emulated TPM/Canokey module once.
+        disko.tests.extraConfig = tpmAndFido;
+      }
+    ];
 
   mkHost =
     name:
@@ -253,6 +255,7 @@ let
                 {
                   sshTarget = (target name).machine.sshTarget;
                   user = (target name).machine.user or "root";
+                  hostPublicKey = (target name).machine.hostPublicKey or null;
                   buildOnRemote = (target name).machine.buildOnRemote or false;
                 }
               else

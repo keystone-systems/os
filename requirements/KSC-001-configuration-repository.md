@@ -87,36 +87,30 @@ credential assignments.
 7. Hosts, stable root device references, installed LUKS UUIDs, and public
    credential identifiers MUST be unique in the evaluated fleet.
 
-### KSC-001.4: Credential registration
+### KSC-001.4: Hardware keys
 
-1. Every credential that Keystone manages or audits MUST have a stable public
-   registration associated with its host, user, service, or relying party.
-2. A registration MUST declare the credential class, subject, purpose,
-   custody boundary, public reference, and class-specific verification method.
-3. Credentials with distinct protocol, relying-party, principal, or proof
-   boundaries MUST remain distinct even when they share one physical key or
-   applet.
-4. An SSH registration MUST distinguish user, host, and automation identities
-   and declare its public key or fingerprint, authorized account or
-   principals, hardware-backed status, and any logical SOPS reference required
-   by an exportable software-key implementation.
-5. A PAM/U2F registration MUST declare the local user, PAM consumers,
-   authorization mapping, authenticator or credential public reference, and
-   required user-presence and user-verification policy.
-6. A WebAuthn registration MUST declare the relying-party ID, permitted
-   origins, account or subject, credential ID or stable public reference,
-   authenticator role, discoverability expectation, and user-verification
-   policy.
-7. A SOPS/PIV registration MUST declare the public age recipient, key role,
-   PIV slot or stable public reference, and secret classes it may decrypt.
-8. A registration MUST NOT contain an authenticator private key, PIV or FIDO2
-   PIN, PUK, management key, WebAuthn private key, SSH private key, or recovery
-   value.
-9. Multiple credentials of the same class MUST be allowed when their stable
-   identifiers and consumers differ.
-10. Configured metadata MUST remain distinct from verification evidence. A
-    registration MUST NOT be reported as verified until its class-specific
-    proof succeeds.
+1. A fleet enables a hardware key by declaring
+   `keystone.hardwareKeys.<name> = "<serial>"`. Presence means enabled; absence
+   means disabled. No separate enable flag is permitted.
+2. Keystone MUST derive every applicable integration for enabled keys,
+   including root SSH, PAM/U2F, LUKS unlock, and SOPS recipients. Users MUST
+   NOT configure these integrations separately per key.
+3. Applicability MUST be derived from the host, user, and storage
+   configuration. An inapplicable integration MUST require no user setting.
+4. Public registrations MAY be grouped by physical-key serial, but SSH,
+   PAM/U2F, LUKS, PIV/SOPS, and WebAuthn credentials MUST be verified
+   independently.
+5. Evaluation MUST warn when an enabled key lacks a required public
+   registration. Runtime checks MUST warn when configured authorization or
+   enrollment is absent from, or unexpectedly remains on, a host.
+6. Strict installation and deployment checks MUST reject unresolved gaps that
+   could make a host inaccessible. Password and recovery access MUST remain
+   until hardware-key access is verified.
+7. Removing a declaration MUST express desired revocation but MUST NOT
+   destructively remove access or LUKS slots without an explicit authorized
+   workflow.
+8. Public configuration MUST NOT contain private keys, authenticator secrets,
+   PINs, PUKs, management keys, or recovery values.
 
 ### KSC-001.5: Downstream implementation
 
