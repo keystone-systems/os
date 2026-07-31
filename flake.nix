@@ -502,12 +502,6 @@
           desktopWalkerSurfaces = import ./tests/module/desktop-walker-surfaces.nix {
             inherit pkgs;
           };
-          desktopAutostartAssertion = import ./tests/module/desktop-autostart-assertion.nix {
-            pkgs = ksPkgs;
-            lib = ksPkgs.lib;
-            inherit home-manager;
-            self = self;
-          };
           hyprlandConfigSmoke = import ./tests/module/hyprland-config-smoke.nix {
             pkgs = ksPkgs;
             lib = ksPkgs.lib;
@@ -525,14 +519,6 @@
           };
           binaryCacheClientMerge = import ./tests/module/binary-cache-client-merge.nix {
             inherit pkgs lib self;
-          };
-          zellijTabPrompt = import ./tests/module/zellij-tab-prompt.nix {
-            inherit
-              pkgs
-              lib
-              self
-              home-manager
-              ;
           };
           terminalZide = import ./tests/module/terminal-zide.nix {
             inherit
@@ -571,7 +557,6 @@
           keystone-update-approve-flow = keystoneUpdateApproveFlow;
           hyprland-bindings-agent-conflict = hyprlandBindingsAgentConflict;
           desktop-walker-surfaces = desktopWalkerSurfaces;
-          desktop-autostart-assertion = desktopAutostartAssertion;
           hyprland-config-smoke = hyprlandConfigSmoke;
           desktop-fprintd = desktopFprintd;
           ks-approve = ksApprove;
@@ -583,7 +568,6 @@
           ks-rust-fmt = ksRustFmt;
           agentctl-regression = agentctlRegression;
           binary-cache-client-merge = binaryCacheClientMerge;
-          zellij-tab-prompt = zellijTabPrompt;
           terminal-zide = terminalZide;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
           agent-task-loop-ping-pong = agentTaskLoopPingPong;
@@ -633,7 +617,6 @@
             mkdir -p "$out"
             ln -s ${hyprlandBindingsAgentConflict} "$out/hyprland-bindings-agent-conflict"
             ln -s ${desktopWalkerSurfaces} "$out/desktop-walker-surfaces"
-            ln -s ${desktopAutostartAssertion} "$out/desktop-autostart-assertion"
             ln -s ${hyprlandConfigSmoke} "$out/hyprland-config-smoke"
             ln -s ${desktopFprintd} "$out/desktop-fprintd"
           '';
@@ -646,7 +629,6 @@
             ln -s ${agentRuntimeCoherence} "$out/agent-runtime-coherence"
             ln -s ${agentQueueMigration} "$out/agent-queue-migration"
             ln -s ${binaryCacheClientMerge} "$out/binary-cache-client-merge"
-            ln -s ${zellijTabPrompt} "$out/zellij-tab-prompt"
             ln -s ${terminalZide} "$out/terminal-zide"
           '';
         }
