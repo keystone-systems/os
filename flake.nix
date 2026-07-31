@@ -42,7 +42,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     comodoro = {
-      url = "github:pimalaya/comodoro";
+      # Newer revisions export only a development shell, while the terminal
+      # module consumes the packaged CLI.
+      url = "github:pimalaya/comodoro/b70b3605acc358e0d9cb57525adba9c05fc53f3d";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # AI coding agents (claude-code, gemini-cli, codex, opencode).
