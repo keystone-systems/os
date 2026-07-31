@@ -1,0 +1,73 @@
+// Royal Green theme for Zellij
+// Based on kinda_nvim color palette
+// https://github.com/ncrmro/nixos-config
+
+// This theme has been updated to the new Zellij 0.40+ theme format.
+// The previous format with explicit UI element styling (e.g., text_unselected, ribbon_selected)
+// was deprecated and caused issues like the "black bar" due to Zellij falling back to defaults.
+// The new format uses a simplified palette mapping directly to terminal ANSI colors and UI accents.
+
+// Additionally, the theme name within this file was changed from "royal-green" to "current"
+// to match the `programs.zellij.settings.theme = "current";` configuration in `shell.nix`.
+// This ensures Zellij correctly loads this theme when referenced.
+
+themes {
+    current {
+        // Foreground text color
+        fg "#B8A26C"
+        // Background color for terminal panes and default UI elements
+        bg "#00120C"
+        // ANSI Black color (often used for specific UI backgrounds or dark accents)
+        black "#00120C"
+        // ANSI Red color
+        red "#C27280"
+        // ANSI Green color (used for accents like active tabs, highlights)
+        green "#B8A26C"
+        // ANSI Yellow color
+        yellow "#B8A26C"
+        // ANSI Blue color
+        blue "#6797C2"
+        // ANSI Magenta color - dark gold for bottom bar
+        magenta "#7A6A45"
+        // ANSI Cyan color
+        cyan "#32878F"
+        // ANSI White color (used for bottom bar text)
+        white "#B8A26C"
+        // Orange color (used for inactive tabs) - darker gold
+        orange "#7A6A45"
+
+        // Component-based styling for UI elements
+        ribbon_selected {
+            base "#00120C"
+            background "#B8A26C"
+            emphasis_0 "#00120C"
+            emphasis_1 "#6797C2"
+            emphasis_2 "#32878F"
+            emphasis_3 "#C27280"
+        }
+        ribbon_unselected {
+            base "#00120C"
+            background "#7A6A45"
+            emphasis_0 "#00120C"
+            emphasis_1 "#6797C2"
+            emphasis_2 "#32878F"
+            emphasis_3 "#C27280"
+        }
+        text_unselected {
+            base "#7A6A45"
+            background "#00120C"
+            emphasis_0 "#7A6A45"
+            emphasis_1 "#6797C2"
+            emphasis_2 "#32878F"
+            emphasis_3 "#C27280"
+        }
+        text_selected {
+            base "#B8A26C"
+            background "#00120C"
+            emphasis_0 "#B8A26C"
+            emphasis_1 "#6797C2"
+            emphasis_2 "#32878F"
+            emphasis_3 "#C27280"
+        }
+    }
+}

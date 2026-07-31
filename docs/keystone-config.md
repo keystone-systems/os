@@ -1,0 +1,1 @@
+../templates/default/docs/keystone/keystone-config.md

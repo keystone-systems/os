@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""
+Keystone Post-Installation Verifier
+
+CONTEXT:
+This script runs on a remote NixOS host via SSH after deployment completes
+to verify security features are properly configured.
+
+PURPOSE:
+- Verify Secure Boot is enabled (keys auto-provisioned during first boot)
+- Check system security status
+- [Future] TPM enrollment for measured boot
+
+NOTE: Secure Boot key generation and enrollment now happens automatically
+during NixOS activation on first boot. This script only verifies the result.
+
+WORKFLOW INTEGRATION:
+Called by bin/test-deployment after nixos-anywhere finishes:
+  1. nixos-anywhere deploys NixOS to VM
+  2. VM reboots to deployed system (Secure Boot keys auto-generated)
+  3. This script verifies Secure Boot is enabled
+  4. Test verification confirms security features active
+
+PREREQUISITES:
+- Target system deployed with NixOS
+- keystone.secureBoot.enable = true in configuration
+- SSH access to target system
+
+USAGE:
+    # Verify Secure Boot status
+    ./bin/post-install-provisioner root@192.168.100.99
+
+Zero external dependencies - uses only Python standard library.
+"""
+
+import subprocess
+import sys
+import time
+
+# ANSI color codes
+RED = '\033[0;31m'
+GREEN = '\033[0;32m'
+YELLOW = '\033[1;33m'
+CYAN = '\033[0;36m'
+NC = '\033[0m'
+
+def print_section(title):
+    """Print formatted section header"""
+    print(f"\n{CYAN}{'=' * 60}{NC}")
+    print(f"{CYAN}{title}{NC}")
+    print(f"{CYAN}{'=' * 60}{NC}\n")
+
+def print_success(msg):
+    print(f"{GREEN}✓{NC} {msg}")
+
+def print_error(msg):
+    print(f"{RED}✗{NC} {msg}")
+
+def print_warning(msg):
+    print(f"{YELLOW}⚠{NC} {msg}")
+
+def print_info(msg):
+    print(f"{CYAN}ℹ{NC} {msg}")
+
+def ssh_run(target, cmd, capture=False, timeout=30):
+    """Execute command on remote host via SSH"""
+    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null {target} '{cmd}'"
+    try:
+        result = subprocess.run(
+            ssh_cmd,
+            shell=True,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+        return result if capture else (result.returncode == 0)
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout}s")
+        return None
+
+class SecureBootVerifier:
+    """Verify Secure Boot status via SSH (keys auto-provisioned during activation)"""
+
+    def __init__(self, target):
+        self.target = target
+
+    def check_connectivity(self):
+        """Verify SSH connectivity and basic system checks"""
+        print_info("Checking system connectivity...")
+
+        # Check root access
+        result = ssh_run(self.target, "whoami", capture=True)
+        if result is None or result.returncode != 0 or result.stdout.strip() != "root":
+            print_error("Must run as root on target")
+            return False
+
+        # Check EFI variables (confirms UEFI system)
+        if not ssh_run(self.target, "test -d /sys/firmware/efi/efivars"):
+            print_error("EFI variables not accessible - system may not be UEFI")
+            return False
+
+        print_success("System accessible and UEFI confirmed")
+        return True
+
+    def check_keys_exist(self):
+        """Verify that Secure Boot keys were generated during activation"""
+        print_info("Checking for Secure Boot keys...")
+
+        # Check if keys exist at expected location
+        if ssh_run(self.target, "test -f /var/lib/sbctl/db/db.pem"):
+            print_success("Secure Boot keys found at /var/lib/sbctl")
+            return True
+        else:
+            print_error("Secure Boot keys not found!")
+            print_error("Keys should have been generated during system activation")
+            print_info("Check activation logs: journalctl -u nixos-activation")
+            return False
+
+    def verify_status(self):
+        """Verify Secure Boot is enabled"""
+        print_info("Verifying Secure Boot...")
+
+        result = ssh_run(self.target, "bootctl status 2>/dev/null", capture=True)
+
+        if result and result.returncode == 0:
+            output = result.stdout
+            if "Secure Boot: enabled" in output or "enabled (user)" in output:
+                print_success("Secure Boot ENABLED")
+                return True
+            elif "disabled (setup)" in output:
+                print_warning("Still in Setup Mode")
+                return False
+
+        # Fallback to EFI variable
+        result = ssh_run(
+            self.target,
+            "od --address-radix=n --format=u1 /sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c 2>/dev/null | awk '{print $NF}'",
+            capture=True
+        )
+
+        if result and result.returncode == 0 and result.stdout.strip() == "1":
+            print_success("SecureBoot variable = 1")
+            return True
+
+        print_warning("Secure Boot not enabled")
+        return False
+
+    def verify(self):
+        """Verify Secure Boot provisioning (done automatically during activation)"""
+        print_section("Secure Boot Verification")
+
+        if not self.check_connectivity():
+            return False
+
+        if not self.check_keys_exist():
+            return False
+
+        if not self.verify_status():
+            return False
+
+        return True
+
+
+class TPMProvisioner:
+    """Handle TPM enrollment for measured boot (future implementation)"""
+
+    def __init__(self, target):
+        self.target = target
+
+    def verify(self):
+        """TPM enrollment verification - placeholder for future implementation"""
+        print_section("TPM Enrollment (Placeholder)")
+        print_info("TPM enrollment not yet implemented")
+        print_info("Future feature: TPM-backed disk encryption key unsealing")
+        print_info("This will enable measured boot with PCR verification")
+        return True
+
+
+def main():
+    """Main verification workflow"""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Keystone Post-Installation Verifier (SSH-only)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Verify security features
+  %(prog)s root@192.168.100.99
+
+Note: Secure Boot keys are automatically generated during system activation.
+This script only verifies that the provisioning succeeded.
+        """
+    )
+
+    parser.add_argument('target', help='SSH target (user@host)')
+
+    args = parser.parse_args()
+
+    print_section("Keystone Post-Installation Verifier")
+    print_info(f"Target: {args.target}")
+
+    # Verify Secure Boot
+    sb_verifier = SecureBootVerifier(args.target)
+    sb_success = sb_verifier.verify()
+
+    # Verify TPM (placeholder)
+    tpm_verifier = TPMProvisioner(args.target)
+    tpm_success = tpm_verifier.verify()
+
+    # Summary
+    print()
+    if sb_success and tpm_success:
+        print_section("Verification Complete")
+        print_success("Secure Boot is enabled and active")
+        print_info("System security features verified successfully")
+        return 0
+    else:
+        print()
+        print_error("Verification failed - check output above")
+        return 1
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print()
+        print_warning("Interrupted")
+        sys.exit(130)
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

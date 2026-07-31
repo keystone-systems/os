@@ -1,0 +1,49 @@
+## Your Documents, Photos, and Voice Messages Now Organize Themselves — Without Leaving Your Network
+
+People who run their own infrastructure can now search photos by who's in them, extract tax data from PDFs, and turn voice messages into searchable notes — all processed locally by Keystone OS agents.
+
+**Current state.** Self-hosters accumulate unstructured data — tax PDFs, voice messages, photos, screenshots — scattered across disconnected services. Finding anything requires manually remembering where it is, and there is no way to search by face or transcribe a memo without sending data to a cloud service.
+
+**Why this.** The infrastructure already exists — photo storage, contacts, notes sync — but nothing connects them. An OS agent that can automate your tax prep is useless if it cannot read a PDF or transcribe a voice message.
+
+**How.** Keystone gives agents the ability to read documents, hear voice messages, and search photos. PDFs are converted to searchable text with exact page-and-line citations so every extracted number traces back to its source. Photos and screenshots are indexed by face and text, and recognized people link directly into your address book.
+
+**What.** An agent reads your brokerage PDFs and calculates capital gains with cited sources, transcribes voice messages and files key points into your notes, and finds every photo containing a specific person. It reconstructs what you were working on from screenshots, calls, and documents — then syncs a summary into your notes automatically. Everything runs on your hardware.
+
+```
+┌─ Agent Activity Summary ─────────────────────────────────────────┐
+│                                                                  │
+│  Documents Processed                                             │
+│  ├── schwab-1099-2025.pdf ─── 14 transactions extracted          │
+│  │   Capital gains: $3,847.22  (cited: page 3, line 12)         │
+│  └── fidelity-1099-2025.pdf ─ 8 transactions extracted           │
+│      Dividends:     $1,203.44  (cited: page 2, line 8)          │
+│                                                                  │
+│  Voice Transcripts                                               │
+│  ├── 2025-03-18-call.wav ──── "Follow up on contractor invoice"  │
+│  └── 2025-03-20-memo.wav ──── "Schedule dentist, renew passport" │
+│                                                                  │
+│  Photo Matches: "Alice"                                          │
+│  ├── IMG_4021.jpg ── 2025-03-15 ── dinner, 3 people             │
+│  ├── IMG_4087.jpg ── 2025-03-17 ── hiking trail                 │
+│  └── screenshot-2025-03-19.png ── video call                     │
+│      └── Linked: Alice Chen -> contacts                          │
+│                                                                  │
+│  Auto-synced to notes/journal/2025-03-21.md                      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Enable document, photo, and voice processing in your Keystone agent configuration and rebuild. Existing photo, contacts, and notes infrastructure gains these capabilities with a configuration update.
+
+---
+
+### FAQ
+
+- **Q: Does any data leave my network?**
+  A: No. Document parsing, transcription, and photo indexing all run locally.
+
+- **Q: Do I need a GPU?**
+  A: GPU acceleration improves speed but is not required. All processing works on CPU.
+
+- **Q: What document formats are supported?**
+  A: Scanned documents use text recognition, native PDFs are parsed directly. Page-and-line citations work with both.

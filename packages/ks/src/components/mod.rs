@@ -1,0 +1,15 @@
+pub mod build;
+pub mod deploy;
+pub mod doctor;
+pub mod first_boot;
+pub mod host_detail;
+pub mod hosts;
+pub mod install;
+pub mod installer;
+pub mod iso;
+pub mod secrets;
+pub mod security;
+pub mod services;
+pub mod template;
+pub mod update;
+pub mod welcome;

@@ -1,0 +1,287 @@
+{
+  "uid": "keystone-host-overview",
+  "title": "Keystone Host Overview",
+  "tags": ["keystone", "host"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 0,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Host",
+        "type": "query",
+        "refresh": 1,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(up{host!=\"\"}, host)",
+        "current": { "selected": true, "text": "", "value": "" }
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "System index",
+      "url": "/d/keystone-system-index/keystone-system-index"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Host Status",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "max(up{host=\"$host\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "Down", "color": "red" }, "1": { "text": "Up", "color": "green" } } }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "CPU Usage",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 4, "x": 4, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "100 - (avg by (host) (rate(node_cpu_seconds_total{host=\"$host\", mode=\"idle\"}[$__rate_interval])) * 100)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Memory Usage",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(1 - (node_memory_MemAvailable_bytes{host=\"$host\"} / node_memory_MemTotal_bytes{host=\"$host\"})) * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Root FS Usage",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 4, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(1 - (node_filesystem_avail_bytes{host=\"$host\", mountpoint=\"/\"} / node_filesystem_size_bytes{host=\"$host\", mountpoint=\"/\"})) * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 80 },
+              { "color": "red", "value": 95 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Network Traffic",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 4, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_network_receive_bytes_total{host=\"$host\"}[$__rate_interval]))",
+          "legendFormat": "In"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(rate(node_network_transmit_bytes_total{host=\"$host\"}[$__rate_interval]))",
+          "legendFormat": "Out"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Disk Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 4, "x": 20, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(node_disk_read_time_seconds_total{host=\"$host\"}[$__rate_interval]) / rate(node_disk_reads_completed_total{host=\"$host\"}[$__rate_interval])",
+          "legendFormat": "Read Latency"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(node_disk_write_time_seconds_total{host=\"$host\"}[$__rate_interval]) / rate(node_disk_writes_completed_total{host=\"$host\"}[$__rate_interval])",
+          "legendFormat": "Write Latency"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Agents On Host",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum by(agent) (count_over_time({agent!=\"\"} | logfmt | host=\"$host\" | event=\"run_finish\" [$__range]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Open agent dashboard",
+              "url": "/d/keystone-agent-overview/keystone-agent-overview?var-agent=${__value.raw}"
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "ZFS Backup Status",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "zfs_backup_last_success_timestamp{host=\"$host\"}",
+          "format": "table",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "zfs_backup_last_exit_code{host=\"$host\"}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "seriesToColumns",
+          "options": { "byField": "job" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "host": true
+            },
+            "renameByName": {
+              "Value #A": "Last Success",
+              "Value #B": "Exit Code"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [
+            {
+              "title": "Open backups overview",
+              "url": "/d/keystone-backups-overview/keystone-backups-overview"
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Last Success" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsIso" }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "title": "Host Agent Logs",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{agent!=\"\"} | logfmt | host=\"$host\""
+        }
+      ]
+    }
+  ]
+}

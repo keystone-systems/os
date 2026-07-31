@@ -1,0 +1,2918 @@
+name: keystone_system
+summary: "Keystone development lifecycle: worktree, build, review, merge, deploy, validate, update, and convention management"
+
+step_arguments:
+  - name: goal
+    description: "What to implement — a feature description, bug report, or refactor goal"
+    type: string
+
+  - name: feature_description
+    description: "What feature or bug to spec — a sentence or paragraph describing the need"
+    type: string
+
+  - name: convention_topic
+    description: "What to codify — a topic description and optionally a draft with proposed rules"
+    type: string
+
+  - name: plan_md
+    description: "Implementation plan with steps, files to change, and acceptance criteria"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify the plan has concrete, ordered steps, identifies specific files, and includes testable acceptance criteria."
+
+  - name: implementation_summary_md
+    description: "Summary of changes made: files modified, commits created, decisions taken"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read the plan_md file from the plan step to verify all planned steps were addressed. Confirm commits follow conventional format and no unrelated changes were introduced."
+
+  - name: review_report_md
+    description: "Review results — findings addressed, findings skipped with justification"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify every review finding is either fixed or has a documented justification for skipping."
+
+  - name: build_result_md
+    description: "Build output — success confirmation or failure details with loop-back decision"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify both nix flake check and ks build completed without errors."
+
+  - name: merge_result_md
+    description: "Merge confirmation — branch name, commit hash on main, push status"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify the merge completed without conflicts and the branch was pushed to origin/main."
+
+  - name: deploy_result_md
+    description: "Deployment confirmation — ks update --lock output, build success, any warnings"
+    type: file_path
+
+  - name: validation_report_md
+    description: "Validation results — per-host health status, agent health, fleet impact, issues found"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Verify: direct health checks on the current host show no critical issues;
+        all affected hosts were checked; specific plan validation criteria are confirmed;
+        each agent's task queue, recent jobs, and blocking issues are reported;
+        every issue found is cross-referenced against GitHub; a dated fleet health
+        note was written to the configured notes dir via zk.
+
+  - name: fleet_survey_md
+    description: "Fleet state report: current vs latest keystone rev, commit changelog, per-host health, reachability"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Verify the report shows the exact keystone commit locked in flake.lock and
+        the latest on main with the full commit log between them. All hosts in
+        hosts.nix must be listed with reachability status. Direct health checks
+        must have been run on the current host.
+
+  - name: update_plan_md
+    description: "Update plan: triaged changes, verification checklist, issues to file, fixes to apply"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Read the fleet_survey_md from the previous step to verify all commits in
+        the gap are accounted for in the triage. Verify every commit is classified
+        as verify-only, ad-hoc-fix, or needs-issue. Verify items marked needs-issue
+        have clear justification.
+
+  - name: fixes_report_md
+    description: "Report of fixes applied, issues filed, and any remaining blockers before deployment"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Read the update_plan_md to verify all ad-hoc-fix items were addressed and
+        all needs-issue items have issue URLs. Verify no blockers remain undocumented.
+
+  - name: preflight_build_result_md
+    description: "Build results per host — success/failure, errors, warnings"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify every reachable host from the deployment plan was built and all builds succeeded or failures are documented."
+
+  - name: update_result_md
+    description: "Deployment result: ks update --lock output per host, build status, any errors or warnings"
+    type: file_path
+
+  - name: issue_md
+    description: "Final GitHub issue body plus created issue URL or matching existing issue URL"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Confirm the issue body is actionable as the plan of record and suitable to
+        seed the eventual PR description. Verify RFC 2119 keywords are used correctly,
+        requirements are testable, at least one ASCII diagram is present, affected
+        modules are identified, user stories are included, and the GitHub issue was
+        created or an existing issue was linked.
+
+  - name: convention_draft_md
+    description: "The drafted convention file in RFC 2119 format, ready for cross-referencing"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Read conventions/AGENTS.md for format rules (H1 title format, numbered rules,
+        RFC 2119 keywords). Read 2-3 existing conventions to verify format consistency.
+        Verify rules are specific, actionable, and grouped into coherent sections.
+        Verify a golden example is included if the convention covers a non-trivial pattern.
+
+  - name: cross_reference_report_md
+    description: "Analysis of overlaps with existing conventions, redundant rules identified, and proposed changes"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Read the convention_draft_md from the previous step. Spot-check 2-3 referenced
+        existing conventions to verify overlap claims are accurate. Verify every
+        convention in conventions/ was scanned, overlaps cite specific rule numbers,
+        and each overlap has a concrete resolution.
+
+  - name: change_summary_md
+    description: "Summary of all file changes: convention created, conventions updated/removed, archetypes.yaml modifications"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: >
+        Read the cross_reference_report_md to verify all proposed changes were applied.
+        Read conventions/archetypes.yaml to verify the new convention was wired correctly.
+        Verify cross-references are bidirectional and no rules were silently dropped.
+
+  - name: commit_result_md
+    description: "Commit confirmation — hash, files changed, push status"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify commit follows conventional commits format, was pushed to origin/main, and contains only convention-related files."
+
+workflows:
+  develop:
+    summary: "Full keystone development lifecycle from plan through validated multi-host deployment"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Keystone is a NixOS-based infrastructure platform. Development follows a strict
+      worktree-based workflow to keep the main branch always deployable.
+
+      ## Convention: All work happens in worktrees
+
+      Changes are NEVER made directly on main. Every change goes through:
+      1. Create a git worktree branch off main
+      2. Implement changes in the worktree
+      3. Run DeepWork reviews (.deepreview rules) and fix findings
+      4. Build to verify nix evaluation passes
+      5. Merge the worktree branch into main
+      6. Human runs `ks update --lock` in nixos-config to lock the new keystone rev
+      7. Validate ALL hosts in the system with `ks doctor`
+
+      ## Two-repo model
+
+      - **keystone** — the NixOS module library (this repo). Worktree branches are created here.
+      - **nixos-config** — the per-deployment configuration that imports keystone as a flake input.
+        `ks update --lock` pulls the latest keystone main, locks flake.lock, builds, and deploys.
+
+      ## Fast path vs full system
+
+      During development, use `ks build` (home-manager only, no sudo) for fast iteration.
+      This catches most evaluation errors and is sufficient for iterating on terminal/desktop
+      module changes. However, the final deploy MUST always be `ks update --lock` which does
+      a full system build + lock + deploy. Never consider a change complete until it has been
+      through the full system path.
+
+      ## Multi-host fleet
+
+      Keystone manages multiple hosts (workstation, server, etc.) connected via Tailscale.
+      After deploying to the current host, the validate step must check whether other hosts
+      also need updating (e.g., if keystone module changes affect server services). Use
+      `ks doctor` and the hosts table from `hosts.nix` to determine which hosts need attention.
+      All hosts must be nominal before the workflow is complete.
+
+      ## Key commands
+
+      - `nix flake check --no-build` — fast evaluation check (catches type errors, missing imports)
+      - `ks build` — build home-manager profiles only (fast, no sudo)
+      - `ks build --lock` — full system build + lock + push
+      - `ks update` — pull, build, deploy current host (requires sudo)
+      - `ks update --lock` — pull, lock, build, push, deploy (requires sudo, human-only)
+      - `ks doctor` — **AI entrypoint only** — this launches the `/ks.doctor` slash command (spawns a new model session). NEVER call `ks doctor` as a shell command inside a workflow step — use `systemctl --failed` and `journalctl -p err` for direct health checks instead.
+
+      ## Iterative loop rules
+
+      If the build step fails, loop back to implement to fix the issue.
+      If validation finds problems after deploy, create a new worktree and loop back to plan.
+      DeepWork review findings are fixed in-place in the worktree before proceeding.
+
+      ## Convention system
+
+      Conventions live in `conventions/` as RFC 2119 markdown files. Each convention follows
+      a strict format: `{prefix}.{topic}.md` with prefixes `process`, `tool`, `code`, or `os`.
+      Conventions are wired into agent archetypes via `conventions/archetypes.yaml` — either
+      as `inlined_conventions` (always in context) or `referenced_conventions` (on-demand).
+
+      The AGENTS.md in CLAUDE.md is generated from archetypes.yaml by the Nix build
+      (`modules/terminal/conventions.nix`). After modifying archetypes.yaml, a `ks build`
+      or `ks update` regenerates the instruction files.
+
+      Key files:
+      - `conventions/*.md` — convention documents
+      - `conventions/archetypes.yaml` — maps conventions to agent archetypes and roles
+      - `conventions/AGENTS.md` — meta-conventions for editing the conventions repo itself
+      - `modules/terminal/conventions.nix` — Nix module that generates CLI tool instruction files
+    steps:
+      - name: plan
+        instructions: |
+          # Plan
+
+          ## Objective
+
+          Create a git worktree branch off main, analyze the user's goal, and produce a concrete implementation plan with validation criteria defined up front.
+
+          ## Task
+
+          Take the user's goal and translate it into an actionable implementation plan. The plan must be specific enough that another agent (or yourself in the next step) can execute it without ambiguity.
+
+          ### Process
+
+          1. **Understand the goal**
+             - Read the user's goal input carefully
+             - Ask structured questions if the goal is ambiguous or underspecified
+             - Identify which keystone modules/packages are likely affected
+
+          2. **Create the worktree**
+             - Derive a branch name from the goal (e.g., `feat/add-ollama-module`, `fix/tpm-unlock-race`)
+             - Follow conventional branch naming: `feat/`, `fix/`, `refactor/`, `chore/`, `docs/`
+             - Create the worktree: `git worktree add .claude/worktrees/<branch-name> -b <branch-name>`
+
+          3. **Analyze the scope**
+             - Read the relevant source files to understand the current state
+             - Determine if changes are **OS-level** (modules/os/, modules/server/, flake.nix) or **home-manager-only** (modules/terminal/, modules/desktop/home/)
+             - This distinction matters for the build step — OS changes require full nix build, home-manager-only changes can use the fast `ks build` path
+
+          4. **Define validation criteria**
+             - For every change, define how to verify it works BEFORE starting implementation
+             - Include: what commands to run, what output to expect, what "success" looks like
+             - Validation criteria must be concrete and testable — not "it should work"
+
+          5. **Write the plan**
+             - List specific files to create or modify
+             - Order steps logically (dependencies first)
+             - Note any risks or things that could go wrong
+
+          ## Output Format
+
+          ### plan.md
+
+          ```markdown
+          # Implementation Plan
+
+          ## Goal
+
+          [Restate the user's goal in precise terms]
+
+          ## Branch
+
+          - **Name**: `<branch-name>`
+          - **Worktree**: `.claude/worktrees/<branch-name>`
+
+          ## Scope
+
+          - **Change type**: [OS-level | home-manager-only | both]
+          - **Build strategy**: [full nix build | ks build (home-manager only)]
+          - **Affected modules**: [list of module paths]
+
+          ## Validation Criteria
+
+          These criteria MUST be satisfied before the work is considered complete:
+
+          1. [Concrete, testable criterion — e.g., "nix flake check --no-build passes"]
+          2. [Another criterion — e.g., "new option evaluates correctly in agent-evaluation.nix test"]
+          3. [Runtime criterion — e.g., "ks doctor shows no new warnings after deploy"]
+
+          ## Steps
+
+          ### 1. [First change]
+
+          - **File**: `path/to/file.nix`
+          - **Change**: [What to do and why]
+
+          ### 2. [Second change]
+
+          - **File**: `path/to/other-file.nix`
+          - **Change**: [What to do and why]
+
+          [Continue for all changes...]
+
+          ## Risks
+
+          - [Anything that could go wrong or needs extra care]
+          ```
+
+          ## Quality Criteria
+
+          - The plan has concrete, ordered implementation steps — not vague goals
+          - The plan identifies specific files that will be created or modified
+          - The plan includes clear validation criteria that are testable
+          - The change type (OS-level vs home-manager-only) is correctly identified
+          - A worktree branch has been created with a descriptive name
+
+          ## Context
+
+          This is the first step in the keystone development lifecycle. A good plan prevents wasted cycles in later steps. The validation criteria defined here will be checked in the final validate step after deployment, so they must be precise enough to verify on a live system.
+        inputs:
+          goal:
+            required: true
+        outputs:
+          plan_md:
+            required: true
+
+      - name: implement
+        instructions: |
+          # Implement
+
+          ## Objective
+
+          Execute the implementation plan in the worktree — write code, test locally, and commit changes with clean conventional commits.
+
+          ## Task
+
+          Read the plan from the previous step and execute each change in the worktree. Work methodically through the plan, committing logical units of work as you go.
+
+          ### Process
+
+          1. **Switch to the worktree**
+             - The worktree path is specified in the plan's "Branch" section
+             - All file operations must happen in the worktree, NOT on main
+
+          2. **Execute each plan step in order**
+             - Follow the plan's steps sequentially
+             - Read each target file before modifying it — understand the existing code
+             - Make the smallest change that achieves the goal
+             - If you discover something the plan missed, note it but stay focused — don't scope-creep
+
+          3. **Commit as you go**
+             - Use conventional commits: `feat(scope): description`, `fix(scope): description`, etc.
+             - Group related changes into logical commits
+             - Don't batch everything into one giant commit
+             - Ensure each commit builds cleanly on its own when possible
+
+          4. **Quick-check as you go**
+             - For Nix changes: run `nix flake check --no-build` after significant edits to catch syntax errors early
+             - For shell scripts: check with `shellcheck` if available
+             - Don't wait until the build step to discover basic errors
+
+          5. **Document what you did**
+             - Track every file modified and why
+             - Note any deviations from the plan with justification
+             - Record any decisions made during implementation
+
+          ## Output Format
+
+          ### implementation_summary.md
+
+          ```markdown
+          # Implementation Summary
+
+          ## Branch
+
+          - **Name**: `<branch-name>`
+          - **Worktree**: `.claude/worktrees/<branch-name>`
+
+          ## Changes Made
+
+          ### Commit: `<short hash>` — `<commit message>`
+
+          - **Files**: `path/to/file1.nix`, `path/to/file2.nix`
+          - **What**: [Brief description of what this commit does]
+
+          ### Commit: `<short hash>` — `<commit message>`
+
+          - **Files**: `path/to/file3.nix`
+          - **What**: [Brief description]
+
+          [Continue for all commits...]
+
+          ## Plan Coverage
+
+          | Plan Step           | Status | Notes                                  |
+          | ------------------- | ------ | -------------------------------------- |
+          | 1. [step from plan] | Done   |                                        |
+          | 2. [step from plan] | Done   | Slightly different approach — [reason] |
+          | 3. [step from plan] | Done   |                                        |
+
+          ## Deviations from Plan
+
+          - [Any changes not in the original plan, with justification]
+          - [Or "None — implemented as planned"]
+
+          ## Change Type Confirmation
+
+          - **Scope**: [OS-level | home-manager-only | both]
+          - **Build strategy**: [full nix build | ks build]
+          ```
+
+          ## Quality Criteria
+
+          - All steps from the implementation plan are addressed — none are silently skipped
+          - Changes are committed with conventional commit messages and logical grouping
+          - The implementation stays focused on the plan — no scope creep or drive-by fixes
+          - The change type (OS-level vs home-manager-only) is confirmed for the build step
+
+          ## Context
+
+          This step produces the actual code changes. The next step (review) will run DeepWork .deepreview rules against these changes, so clean commits and focused changes make review easier. If the build step later fails, the workflow will loop back here to fix issues.
+        inputs:
+          plan_md:
+            required: true
+        outputs:
+          implementation_summary_md:
+            required: true
+
+      - name: review
+        instructions: |
+          # Review
+
+          ## Objective
+
+          Run DeepWork `.deepreview` rules against the worktree changes and fix all findings before proceeding to build.
+
+          ## Task
+
+          Use the DeepWork review system to validate the changes made in the implement step. Fix all actionable findings, document any skipped findings with justification.
+
+          ### Process
+
+          1. **Run the reviews**
+             - Call `mcp__deepwork__get_review_instructions` (no arguments — it auto-detects the branch diff)
+             - This returns review tasks to run in parallel
+
+          2. **Execute all review tasks**
+             - Launch each review task as a parallel sub-agent
+             - Collect all findings
+
+          3. **Act on findings**
+             - **Obviously correct fixes** (typos, missing imports, formatting): fix immediately
+             - **Substantive findings** (architectural issues, missing tests, spec drift): fix in the worktree and commit
+             - **False positives or not applicable**: document why in the review report
+
+          4. **Re-run until clean**
+             - After fixing findings, re-run the reviews
+             - Repeat until all reviews pass or remaining findings are explicitly skipped with justification
+             - Only reviews that had findings need re-running
+
+          5. **Document results**
+             - Record what was found and how each finding was resolved
+
+          ## Output Format
+
+          ### review_report.md
+
+          ```markdown
+          # Review Report
+
+          ## Reviews Run
+
+          - [review_name_1]: [PASSED | X findings]
+          - [review_name_2]: [PASSED | X findings]
+
+          ## Findings Addressed
+
+          ### Finding: [brief description]
+
+          - **Review**: [which review rule]
+          - **Action**: Fixed — [what was changed]
+          - **Commit**: `<hash>` — `<message>`
+
+          ### Finding: [brief description]
+
+          - **Review**: [which review rule]
+          - **Action**: Skipped — [justification for why this is not applicable]
+
+          ## Final Status
+
+          - **Total findings**: X
+          - **Fixed**: Y
+          - **Skipped**: Z (with justification)
+          - **All reviews passing**: [yes/no]
+          ```
+
+          ## Quality Criteria
+
+          - Every review finding is either fixed or has a documented justification for skipping
+          - Fixes are committed in the worktree with descriptive commit messages
+          - The final review run shows all reviews passing (or only skipped findings remain)
+
+          ## Context
+
+          This is the quality gate before build. Catching issues here (docs drift, spec mismatches, code style) is much cheaper than finding them after merge and deploy. The review rules in `.deepreview` are specifically tuned for keystone conventions.
+        inputs:
+          implementation_summary_md:
+            required: true
+        outputs:
+          review_report_md:
+            required: true
+
+      - name: build
+        instructions: |
+          # Build
+
+          ## Objective
+
+          Verify the changes are correct using the fastest possible feedback loop. Only escalate to full system builds when necessary.
+
+          ## Task
+
+          Run targeted, fast verification first. Escalate to broader builds only when the change scope requires it. The goal is rapid iteration — don't wait minutes for a full rebuild when a 5-second check will catch the issue.
+
+          ### Process
+
+          1. **Targeted verification first (seconds)**
+             - **Shell scripts**: Run `shellcheck` on any modified `.sh` files
+             - **Nix syntax** (`.nix` files only): Run `nix-instantiate --parse` on individual changed `.nix` files to catch syntax errors
+             - **Unit tests**: If `tests/module/` has relevant test files, run them individually:
+               `nix eval --file tests/module/agent-evaluation.nix --json` (fast, no build)
+             - Fix any errors found at this level before proceeding
+
+          2. **Evaluation check (10-30 seconds)**
+             - Run `nix flake check --no-build`
+             - This evaluates all NixOS configurations and checks assertions without building derivations
+             - If this fails, the issue is in the Nix evaluation — fix it and re-check
+             - If this fails, call `go_to_step` with `step_id: "implement"` to fix
+
+          3. **Build check (only if needed)**
+             - **Home-manager-only changes**: Run `ks build` (builds home-manager profiles, no sudo, ~30s)
+             - **OS-level changes**: The full system build happens during `ks update --lock` in deploy. Do NOT attempt a full nixos-rebuild here — it's slow and requires sudo
+             - For OS changes, `nix flake check --no-build` passing is sufficient for this step
+
+          4. **Evaluate results**
+             - If all checks pass: proceed to merge
+             - If targeted checks or eval fails: call `go_to_step` with `step_id: "implement"` to fix
+             - Document all output including warnings
+
+          **Maximum loop iterations**: If this is the 3rd build failure, stop looping and ask the user for guidance.
+
+          ## Output Format
+
+          ### build_result.md
+
+          ```markdown
+          # Build Result
+
+          ## Change Scope
+
+          - **Type**: [OS-level | home-manager-only | both]
+          - **Modified files**: [list of key files changed]
+
+          ## Targeted Checks
+
+          | Check              | Status        | Time |
+          | ------------------ | ------------- | ---- |
+          | shellcheck [file]  | PASS/FAIL/N/A | Xs   |
+          | nix parse [file]   | PASS/FAIL     | Xs   |
+          | module test [test] | PASS/FAIL/N/A | Xs   |
+
+          ## Evaluation Check
+
+          - **Command**: `nix flake check --no-build`
+          - **Status**: [PASS | FAIL]
+          - **Time**: [Xs]
+          - **Errors**: [none | error details]
+
+          ## Build Check
+
+          - **Command**: [ks build | skipped — OS changes build at deploy]
+          - **Status**: [PASS | FAIL | SKIPPED]
+          - **Time**: [Xs]
+          - **Warnings**: [notable warnings, or "none beyond upstream deprecations"]
+
+          ## Decision
+
+          - **Proceed to merge**: [yes | no — loop back to implement]
+          ```
+
+          ## Quality Criteria
+
+          - Targeted checks (shellcheck, nix parse) pass on all modified files
+          - `nix flake check --no-build` passes without errors
+          - For home-manager-only changes, `ks build` also passes
+          - The build strategy matches the change scope
+
+          ## Context
+
+          Speed matters here. The develop workflow is designed for rapid iteration. A 5-second shellcheck or nix parse catches most errors instantly. The 30-second `nix flake check --no-build` catches evaluation issues. Only home-manager changes need `ks build` — OS changes get their full build during deploy. Don't make the developer wait for a full system rebuild when faster feedback is available.
+        inputs:
+          review_report_md:
+            required: true
+        outputs:
+          build_result_md:
+            required: true
+
+      - name: merge
+        instructions: |
+          # Merge
+
+          ## Objective
+
+          Merge the worktree branch into keystone main and push to origin, making the changes available for deployment.
+
+          ## Task
+
+          Merge the completed, reviewed, and built changes from the worktree into the main branch and push.
+
+          ### Process
+
+          1. **Pre-merge checks**
+             - Confirm the build step passed (read build_result.md)
+             - Ensure all commits in the worktree are pushed to the branch
+             - Check if main has advanced since the worktree was created: `git log main..origin/main`
+
+          2. **Merge to main**
+             - Switch to main: `git checkout main`
+             - Pull latest: `git pull`
+             - Merge the branch: `git merge <branch-name>`
+             - If merge conflicts arise: resolve them, then re-run `nix flake check --no-build` to verify
+             - Do NOT use `--squash` — preserve individual commits for history
+
+          3. **Push**
+             - Push main to origin: `git push`
+             - Verify the push succeeded
+
+          4. **Clean up worktree**
+             - Remove the worktree: `git worktree remove .claude/worktrees/<branch-name>`
+             - Delete the branch: `git branch -d <branch-name>`
+             - Note: if validation later fails and requires a fix, a new worktree will be created in the plan step — this is by design (clean worktree per change)
+
+          5. **Document the merge**
+             - Record the final commit hash on main
+             - Note the branch that was merged
+
+          ## Output Format
+
+          ### merge_result.md
+
+          ```markdown
+          # Merge Result
+
+          ## Branch Merged
+
+          - **Branch**: `<branch-name>`
+          - **Commits**: [number of commits merged]
+          - **Final commit on main**: `<hash>`
+
+          ## Merge Details
+
+          - **Conflicts**: [none | resolved — description]
+          - **Push status**: [success | failed — reason]
+
+          ## Cleanup
+
+          - **Worktree removed**: [yes/no]
+          - **Branch deleted**: [yes/no]
+
+          ## Ready for Deploy
+
+          The changes are now on keystone main at commit `<hash>`.
+          The human can now run `ks update --lock` in nixos-config to deploy.
+          ```
+
+          ## Quality Criteria
+
+          - The merge completed without unresolved conflicts and the branch was pushed to origin/main
+          - The worktree and branch were cleaned up
+          - The final commit hash is recorded for traceability
+
+          ## Context
+
+          After this step, the changes are on keystone main but NOT yet deployed. The deploy step requires human intervention (`ks update --lock` needs sudo). The merge result provides the commit hash the human needs to verify they're deploying the right changes.
+        inputs:
+          build_result_md:
+            required: true
+        outputs:
+          merge_result_md:
+            required: true
+
+      - name: deploy
+        instructions: |
+          # Deploy
+
+          ## Objective
+
+          Guide the human through running `ks update --lock` in nixos-config to deploy the merged keystone changes to the system.
+
+          ## Task
+
+          This is a **human-in-the-loop** step. The agent cannot run `ks update --lock` because it requires sudo. Guide the human through the deployment and capture the results.
+
+          ### Process
+
+          1. **Prompt the human**
+             - Tell the user to run `ks update --lock` in their nixos-config directory
+             - Remind them this will: pull latest keystone, lock flake.lock, build the full system, and deploy
+             - Ask them to share the output when it completes
+
+          2. **Wait for results**
+             - The human will run the command and report back
+             - Ask structured questions if the output is unclear:
+               - Did the build succeed?
+               - Were there any errors or warnings?
+               - Did the deployment (switch-to-configuration) succeed?
+
+          3. **Evaluate the deployment**
+             - If `ks update --lock` succeeded: proceed to validate
+             - If it failed with a build error: this is likely a Nix evaluation issue that wasn't caught in the build step. The agent should analyze the error and determine if it can be fixed. If so, call `go_to_step` with `step_id: "implement"` (this will require creating a new worktree since the previous one was cleaned up in merge)
+             - If it failed with a deployment error (switch-to-configuration): document the error and ask the human for guidance
+
+          4. **Document the deployment**
+             - Capture the key output from `ks update --lock`
+             - Note the keystone commit that was locked
+
+          **Maximum loop iterations**: If the deploy fails twice, stop and ask the human to investigate manually rather than looping.
+
+          ## Output Format
+
+          ### deploy_result.md
+
+          ```markdown
+          # Deploy Result
+
+          ## Command
+
+          `ks update --lock` in nixos-config
+
+          ## Keystone Revision
+
+          - **Locked commit**: `<hash from flake.lock>`
+          - **Previous commit**: `<previous hash>`
+
+          ## Build Output
+
+          - **Status**: [success | failed]
+          - **Warnings**: [notable warnings, or "none beyond upstream deprecations"]
+
+          ## Deploy Output
+
+          - **Status**: [success | failed]
+          - **NixOS generation**: [generation number if available]
+
+          ## Notes
+
+          - [Any relevant observations from the deploy output]
+          ```
+
+          ## Quality Criteria
+
+          - The human confirmed `ks update --lock` completed successfully
+          - The locked keystone commit matches the merge result from the previous step
+          - Any warnings or issues are documented
+
+          ## Context
+
+          This is the only step that requires human intervention. `ks update --lock` is the full pipeline: pull repos, lock flake inputs, build the complete NixOS system, push the lock commit, and switch to the new configuration. It requires sudo because NixOS system activation requires root. After this step, the system is running the new configuration and the validate step will verify everything is nominal.
+        inputs:
+          merge_result_md:
+            required: true
+        outputs:
+          deploy_result_md:
+            required: true
+
+      - name: validate
+        instructions: |
+          # Validate
+
+          ## Objective
+
+          Run `ks doctor` on the current host and check all affected hosts in the fleet to verify the system is nominal after deployment.
+
+          ## Task
+
+          Verify that the deployed changes are working correctly across all hosts. This step can also be run standalone via the `doctor` workflow to check fleet health at any time.
+
+          ### Process
+
+          1. **Check current host health directly**
+             - **Do NOT run `ks doctor`** — it is an AI entrypoint (`/ks.doctor` slash command), not a shell diagnostic tool
+             - Run direct health checks instead:
+               ```bash
+               systemctl is-system-running           # overall state
+               systemctl --failed                    # list failed units
+               journalctl -p err --since '1 hour ago' --no-pager | tail -30
+               ```
+             - For service-specific checks related to the deployed changes, run `systemctl status <service>` directly
+             - Pay special attention to services related to the changes that were deployed
+
+          2. **Check the validation criteria from the plan**
+             - If this step is running as part of the `develop` workflow, read the plan.md from the plan step
+             - Verify each validation criterion defined in the plan is satisfied
+             - Run the specific commands listed in the plan's "Validation Criteria" section
+
+          3. **Check agent health**
+             - List all configured agents via nix eval (see AGENTS.md "Nix Eval for System Context"):
+               ```bash
+               nix eval ~/.keystone/repos/nixos-config#nixosConfigurations.<HOST>.config.keystone.os.agents \
+                 --json --apply 'a: builtins.mapAttrs (_: v: { fullName = v.fullName; host = v.host or null; archetype = v.archetype; desktop = v.desktop.enable; mail = v.mail.provision; chrome = v.chrome.enable; }) a'
+               ```
+             - For each agent on the current host, check:
+               - `agentctl <agent> status` — are core services running?
+               - `agentctl <agent> tasks` — are tasks processing or stuck? Note count of pending tasks.
+               - `agentctl <agent> jobs` (or equivalent) — what are the 3-5 most recent jobs? Are any stuck/failed?
+               - `agentctl <agent> email` — is mail flowing?
+             - For agents on remote hosts, SSH in and run equivalent checks
+             - **Tailscale note**: `tailscale status` shows per-agent Tailscale nodes. Agent Tailscale integration is a **TODO feature** — offline agent nodes are expected and informational only. Only flag if a _host-level_ Tailscale node goes offline.
+
+          4. **Cross-reference issues with GitHub**
+             - For each issue found (failed units, stuck agents, unhealthy services), search GitHub before treating it as new:
+               ```bash
+               gh issue list --search "<keyword>" --repo ncrmro/keystone
+               gh issue list --search "<keyword>" --repo ncrmro/nixos-config
+               ```
+             - If an existing issue is found: link it in the report — do not create a duplicate
+             - If no existing issue: document it as a new finding requiring a new issue
+
+          5. **Determine fleet impact**
+             - Read the hosts table: `ks agent` can show the fleet, or evaluate `hosts.nix` directly
+             - Determine which other hosts are affected by the changes:
+               - Server module changes affect the server host
+               - Agent module changes affect hosts running agents
+               - Terminal/desktop changes affect all workstations
+               - Domain/services changes may affect all hosts
+             - If no other hosts are affected, document why and skip multi-host checks
+
+          6. **Check other affected hosts**
+             - For each affected remote host:
+               - SSH in and check service status: `ssh root@<host> systemctl --failed`
+               - Check for any deployment-related issues: `ssh root@<host> journalctl -p err --since '1 hour ago'`
+               - If the remote host needs updating too, inform the human
+             - Ask structured questions to confirm if the human wants to update remote hosts now
+
+          7. **Evaluate results**
+             - If all checks pass: complete the workflow
+             - If issues found on current host: document them. If they are caused by the recent changes, call `go_to_step` with `step_id: "plan"` to create a fix (this requires a new worktree since we already merged)
+             - If remote hosts need attention: document what needs to happen
+
+          8. **Archive report to zk notes** (see `tool.zk-notes` and `process.notes`)
+             - Fleet health reports contain personal deployment data — archive to the configured notes dir (`$NOTES_DIR`, `~/notes` for Keystone human users), NOT leave them in the open-source repo
+             - **Find prior report** (required — used for `previous_report` chain):
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" list reports/ \
+                 --tag "report/keystone-system" \
+                 --tag "repo/ncrmro/nixos-config" \
+                 --tag "source/deepwork/ks-doctor" \
+                 --sort created- --limit 1 --format json
+               ```
+             - **Create the report note**:
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" new reports/ --title "keystone fleet health $(date +%Y-%m-%d)" \
+                 --no-input --print-path \
+                 --extra report_kind="keystone-system" \
+                 --extra source_ref="ks.doctor" \
+                 --extra type="report" \
+                 --extra author="ks.doctor"
+               ```
+             - **Write note content** — required frontmatter (`type: report`, `tags: [report/keystone-system, repo/ncrmro/nixos-config, source/deepwork/ks-doctor]`, `previous_report: <prior note id or omit if none>`) followed by a concise summary:
+               - Keystone revision gap (commits behind, impactful changes)
+               - Host reachability table
+               - Failed units per host with GitHub issue links
+               - Action items
+             - **Link from a relevant hub if one exists**:
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" list index/ --tag "status/active" --format json
+               ```
+               If there is a system or operations hub for this notebook, append a link to the new report in its report ledger section. Do not require a `project/keystone` hub.
+
+          **Maximum loop iterations**: If this is the 2nd validation failure, stop looping and present all findings to the human for manual resolution.
+
+          ## Output Format
+
+          ### validation_report.md
+
+          ```markdown
+          # Validation Report
+
+          ## Current Host
+
+          - **Hostname**: [hostname]
+          - **System state**: [running | degraded | maintenance]
+          - **Failed units**: [from `systemctl --failed`, or "None"]
+          - **Recent errors**: [from `journalctl -p err`, or "None"]
+
+          ## Plan Validation Criteria
+
+          | Criterion             | Status    | Evidence                        |
+          | --------------------- | --------- | ------------------------------- |
+          | [criterion from plan] | PASS/FAIL | [command output or observation] |
+          | [criterion from plan] | PASS/FAIL | [command output or observation] |
+
+          ## Agent Health
+
+          ### [agent-name] (host: [host])
+
+          - **Services**: [running | failed — details]
+          - **Tasks**: [N pending | idle | stuck since HH:MM]
+          - **Recent jobs**: [last 3-5 job names or "none in last 24h"]
+          - **Blocking issues**: [description or "none"]
+          - **Mail**: [ok | down]
+          - **Tailscale**: [online | offline] _(offline is expected — agent Tailscale integration is a TODO)_
+
+          ## Fleet Impact Assessment
+
+          - **Changes affect**: [list of affected hosts, or "current host only"]
+          - **Hosts checked**: [list]
+          - **Hosts needing update**: [list, or "none"]
+
+          ## Remote Host Status
+
+          ### [hostname] (if applicable)
+
+          - **Status**: [nominal | issues found | needs update]
+          - **Details**: [findings]
+
+          ## Issues Found
+
+          | Issue                                         | Existing tracker item   | Status       |
+          | --------------------------------------------- | ----------------------- | ------------ |
+          | [e.g., syncoid-rpool-to-ocean.service failed] | [#42 — link]            | pre-existing |
+          | [e.g., unknown service crash]                 | none — new issue needed | new          |
+
+          ## Overall Status
+
+          - **System nominal**: [yes | no — details]
+          - **All validation criteria met**: [yes | no — which failed]
+          - **Action needed**: [none | list of follow-up actions]
+          ```
+
+          ## Quality Criteria
+
+          - Direct health checks on the current host (`systemctl --failed`, `journalctl -p err`) show no critical issues
+          - All hosts affected by the changes have been checked or confirmed not impacted
+          - The specific validation criteria from the plan are confirmed working on the live system
+          - Each agent's task queue, recent jobs, and any blocking issues are reported
+          - Every issue found is cross-referenced against the issue tracker — existing issues are linked, genuinely new issues are flagged for creation
+          - A dated fleet health note has been written to the configured notes dir via `zk` — the report must not remain only in the keystone repo's `.deepwork/` folder
+
+          ## Context
+
+          This is the final quality gate in the develop workflow. It ensures that changes don't just build — they actually work on a live system. The multi-host check is critical because keystone manages a fleet of interconnected hosts, and a change that works on the workstation might break a server service or agent provisioning. This step can also be invoked standalone via the `doctor` workflow for routine fleet health checks.
+        inputs:
+          deploy_result_md:
+            required: false
+        outputs:
+          validation_report_md:
+            required: true
+
+  issue:
+    summary: "Create or identify a keystone GitHub issue whose body contains RFC 2119 requirements, user story, diagrams, and deliverables"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Keystone is a NixOS-based infrastructure platform. Development follows a strict
+      worktree-based workflow to keep the main branch always deployable.
+
+      ## Two-repo model
+
+      - **keystone** — the NixOS module library (this repo). Worktree branches are created here.
+      - **nixos-config** — the per-deployment configuration that imports keystone as a flake input.
+        `ks update --lock` pulls the latest keystone main, locks flake.lock, builds, and deploys.
+
+      ## Convention system
+
+      Conventions live in `conventions/` as RFC 2119 markdown files. Each convention follows
+      a strict format: `{prefix}.{topic}.md` with prefixes `process`, `tool`, `code`, or `os`.
+      Conventions are wired into agent archetypes via `conventions/archetypes.yaml` — either
+      as `inlined_conventions` (always in context) or `referenced_conventions` (on-demand).
+
+      Key files:
+      - `conventions/*.md` — convention documents
+      - `conventions/archetypes.yaml` — maps conventions to agent archetypes and roles
+      - `conventions/AGENTS.md` — meta-conventions for editing the conventions repo itself
+      - `modules/terminal/conventions.nix` — Nix module that generates CLI tool instruction files
+    steps:
+      - name: write_issue
+        instructions: |
+          # Write Issue
+
+          ## Objective
+
+          Produce a GitHub issue for `ncrmro/keystone` whose body serves as the plan of
+          record: RFC 2119 requirements, user stories, affected modules, architecture
+          diagrams, and an implementation checklist that can later be mirrored in the PR.
+
+          ## Task
+
+          Take the user's feature description and research the keystone codebase to
+          produce a well-structured issue. Ask structured questions if the description is
+          ambiguous.
+
+          ### Process
+
+          1. **Understand the feature**
+             - Parse the user's feature description
+             - Ask structured questions to clarify scope, affected hosts, and integration points
+             - Identify which existing keystone modules are involved
+
+          2. **Research the codebase**
+             - Read the relevant modules in `modules/` to understand current architecture
+             - Check if similar patterns exist (e.g., how other server services are structured)
+             - Review `AGENTS.md` / `CLAUDE.md` for the module file tree and conventions
+             - Look at existing specs in `specs/` for format reference — especially the most recent ones
+
+          3. **Draft the issue**
+             - Follow the established format (see Output Format below)
+             - Use RFC 2119 keywords: MUST, MUST NOT, SHALL, SHALL NOT, SHOULD, SHOULD NOT, MAY, REQUIRED, OPTIONAL
+             - Every requirement MUST be numbered under a temporary issue-local prefix such as `ISSUE-REQ-1`, `ISSUE-REQ-2`, or another unambiguous sequential format
+             - Include at least one ASCII diagram showing module architecture or data flow
+             - Identify all affected files in `modules/`, `packages/`, and `flake.nix`
+             - Include a checklist of deliverables or implementation tasks derived from the requirements
+             - The issue body MUST be sufficient for a future PR description to reuse directly
+
+          4. **Create the GitHub issue**
+             - Choose a Conventional-Commit-style issue title: `type(scope): subject`
+             - Use `gh issue create --repo ncrmro/keystone --title "..." --body-file <file>`
+             - If a closely matching issue already exists, do NOT create a duplicate. Update the output file with the existing issue URL and explain why it matches.
+             - Save the final issue body to a temporary local markdown file under `.deepwork/tmp/` before creating the issue, using a unique slug-based name so multiple issues in a session don't overwrite each other (e.g., `.deepwork/tmp/keystone-issue-agent-assets-fallback.md`). Do NOT place this draft under `.deepwork/jobs/`, because the local file is only a staging artifact for `gh issue create`.
+             - After creation, append the created issue URL to the output file.
+
+          5. **Archive to notes (if notes are enabled)**
+             - Check if `keystone.notes` is enabled: `nix eval ~/.keystone/repos/nixos-config#homeConfigurations.<user>.config.keystone.notes.enable --json 2>/dev/null`
+             - If enabled, use `NOTES_DIR="${NOTES_DIR:-$HOME/notes}"` and create a brief note there via `zk --notebook-dir "$NOTES_DIR" new notes/ --title "keystone issue: <title>" --no-input`. Write the issue URL, one-paragraph summary, and the GitHub link. On Keystone systems, `NOTES_DIR` resolves to the configured notebook root (`~/notes` for human users).
+             - If notes are not enabled or the command fails, skip silently.
+
+          ## Output Format
+
+          ### issue.md
+
+          Use a file path under `.deepwork/tmp/`, for example `.deepwork/tmp/keystone-issue.md`. The GitHub issue is the canonical source of record; the local markdown file is temporary workflow output.
+
+          ```markdown
+          # <Conventional issue title>
+
+          <One paragraph summary of what this feature does and why it matters.>
+
+          ## User stories
+
+          - As a [role], I want [capability] so that [benefit].
+          - As a [role], I want [capability] so that [benefit].
+
+          ## Architecture
+          ```
+
+          [ASCII diagram showing module relationships, data flow, or system topology]
+
+          ```
+
+          ## Affected Modules
+          - `modules/path/to/file.nix` — [what changes]
+          - `modules/path/to/other.nix` — [what changes]
+
+          ## Requirements
+
+          ### <Section Name>
+
+          **ISSUE-REQ-1** <Module/feature> MUST <do something specific>.
+
+          **ISSUE-REQ-2** <Module/feature> SHOULD <do something recommended>.
+
+          **ISSUE-REQ-3** When <condition>, <module> MUST <behavior>.
+
+          [Continue with numbered requirements grouped by logical section...]
+
+          ## Deliverables
+
+          - [ ] Deliverable derived from the requirements
+          - [ ] Deliverable derived from the requirements
+
+          ## Acceptance criteria
+
+          - [ ] Requirement coverage is complete
+          - [ ] Build/test/validation path is identified
+
+          ## Issue metadata
+
+          - Repository: `ncrmro/keystone`
+          - Suggested labels: `<optional labels>`
+          - Created issue: `<issue URL after creation>`
+          ```
+
+          ## Quality Criteria
+
+          - Requirements use RFC 2119 keywords correctly and consistently
+          - Each requirement is numbered and specific enough to verify
+          - At least one ASCII diagram illustrates the architecture
+          - All affected keystone modules and files are identified
+          - A user stories section explains why this feature matters for the relevant actors
+          - The issue body can be reused as the foundation for the eventual PR description
+          - A GitHub issue was created or an existing matching issue was linked with justification
+
+          ## Context
+
+          Keystone issues are the plan of record for implementation. The issue body
+          should contain the requirements and checklist that will later be reflected in
+          the PR description. Avoid creating a standalone `specs/REQ-XXX/...` file unless
+          the user explicitly asked for a committed spec in addition to the issue.
+        inputs:
+          feature_description:
+            required: true
+        outputs:
+          issue_md:
+            required: true
+
+  doctor:
+    summary: "Check all hosts are nominal — survey fleet state, then validate via direct shell health checks"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Keystone is a NixOS-based infrastructure platform. Development follows a strict
+      worktree-based workflow to keep the main branch always deployable.
+
+      ## Multi-host fleet
+
+      Keystone manages multiple hosts (workstation, server, etc.) connected via Tailscale.
+      After deploying to the current host, the validate step must check whether other hosts
+      also need updating (e.g., if keystone module changes affect server services). Use
+      `ks doctor` and the hosts table from `hosts.nix` to determine which hosts need attention.
+      All hosts must be nominal before the workflow is complete.
+
+      ## Key commands
+
+      - `nix flake check --no-build` — fast evaluation check (catches type errors, missing imports)
+      - `ks build` — build home-manager profiles only (fast, no sudo)
+      - `ks doctor` — **AI entrypoint only** — this launches the `/ks.doctor` slash command (spawns a new model session). NEVER call `ks doctor` as a shell command inside a workflow step — use `systemctl --failed` and `journalctl -p err` for direct health checks instead.
+
+      ## Two-repo model
+
+      - **keystone** — the NixOS module library (this repo). Worktree branches are created here.
+      - **nixos-config** — the per-deployment configuration that imports keystone as a flake input.
+        `ks update --lock` pulls the latest keystone main, locks flake.lock, builds, and deploys.
+    steps:
+      - name: survey_fleet
+        instructions: |
+          # Survey Fleet
+
+          ## Objective
+
+          Gather the current state of the keystone fleet: what keystone revision is locked in nixos-config, what's on keystone main, the commit changelog between them, and a preliminary health check of all reachable hosts.
+
+          ## Task
+
+          Build a comprehensive snapshot of the fleet's current state to inform the update plan. This step collects data only — no changes are made.
+
+          ### Process
+
+          1. **Determine the keystone revision gap**
+             - Find the config repo by reading the activation-time pointer at `/run/current-system/keystone-system-flake` (written by `keystone.systemFlake`). On a non-running-NixOS host, fall back to `~/.keystone/repos/nixos-config`.
+             - Read `flake.lock` to extract the currently locked keystone revision:
+               ```bash
+               nix eval --raw <nixos-config-path>#inputs.keystone.rev 2>/dev/null \
+                 || jq -r '.nodes.keystone.locked.rev' <nixos-config-path>/flake.lock
+               ```
+             - Get the latest commit on keystone main:
+               ```bash
+               git -C <keystone-path> rev-parse origin/main
+               ```
+             - If the revs differ, list all commits in the gap:
+               ```bash
+               git -C <keystone-path> log --oneline <locked-rev>..origin/main
+               ```
+             - If the revs match, note "keystone is up to date" and the workflow can be short-circuited
+
+          2. **Check nixos-config recent commits**
+             - Review the last 20 commits on nixos-config's current branch (usually main):
+               ```bash
+               git -C <nixos-config-path> log --oneline -20
+               ```
+             - Note any uncommitted changes in nixos-config: `git -C <nixos-config-path> status`
+
+          3. **Check current host health directly**
+             - **Do NOT run `ks doctor`** — that command is an AI entrypoint (`/ks.doctor` slash command) and would create a recursive loop
+             - Instead, run direct shell health checks:
+               ```bash
+               systemctl is-system-running           # overall state: running / degraded
+               systemctl --failed                    # list any failed units
+               journalctl -p err --since '1 hour ago' --no-pager | tail -20
+               ```
+             - Note any failed units or recent errors — these are pre-existing issues, not caused by pending changes
+
+          4. **Gather fleet data via nix eval**
+             Use the same nix eval patterns as `ks doctor` (see AGENTS.md "Nix Eval for System Context"):
+             - **Hosts table**: `nix eval -f <config-path>/hosts.nix --json`
+             - **Agents** (per host):
+               ```bash
+               nix eval <config-path>#nixosConfigurations.<HOST>.config.keystone.os.agents \
+                 --json --apply 'a: builtins.mapAttrs (_: v: {
+                   fullName = v.fullName; host = v.host or null;
+                   archetype = v.archetype; desktop = v.desktop.enable;
+                   mail = v.mail.provision; chrome = v.chrome.enable;
+                 }) a'
+               ```
+             - **Users** (per host):
+               ```bash
+               nix eval <config-path>#nixosConfigurations.<HOST>.config.keystone.os.users \
+                 --json --apply 'u: builtins.mapAttrs (_: v: { fullName = v.fullName or ""; }) u'
+               ```
+             - **Enabled services** (server hosts):
+               ```bash
+               nix eval <config-path>#nixosConfigurations.<HOST>.config.keystone.server._enabledServices \
+                 --json 2>/dev/null
+               ```
+
+          5. **Check host reachability**
+             - From the hosts table, for each host with an `sshTarget`, check reachability:
+               ```bash
+               ssh -o ConnectTimeout=5 -o BatchMode=yes root@<sshTarget> echo ok 2>/dev/null
+               ```
+             - Record which hosts are reachable and which are not
+             - For reachable hosts, capture their current NixOS generation:
+               ```bash
+               ssh root@<sshTarget> readlink /nix/var/nix/profiles/system
+               ```
+             - Skip VMs and test hosts (those with `sshTarget: null` or `baremetal: false` where not cloud)
+
+          6. **Cross-reference known issues with GitHub**
+             - For any failed units or health problems found in step 3, search GitHub before treating them as new:
+               ```bash
+               gh issue list --search "<keyword>" --repo ncrmro/keystone
+               gh issue list --search "<keyword>" --repo ncrmro/nixos-config
+               ```
+             - Note the issue URL next to each finding in the health section — do not create duplicates
+
+          7. **Check for agenix-secrets changes**
+             - If `agenix-secrets/` exists in nixos-config, check if it's clean and up to date:
+               ```bash
+               git -C <nixos-config-path>/agenix-secrets status --short
+               git -C <nixos-config-path>/agenix-secrets log origin/main..HEAD --oneline
+               ```
+
+          ## Output Format
+
+          ### fleet_survey.md
+
+          ```markdown
+          # Fleet Survey
+
+          **Date**: [current date/time]
+          **nixos-config path**: [path]
+          **keystone path**: [path]
+
+          ## Keystone Revision Gap
+
+          - **Locked in flake.lock**: `[commit hash]` ([date])
+          - **Latest on main**: `[commit hash]` ([date])
+          - **Commits behind**: [N]
+
+          ### Changelog (oldest -> newest)
+
+          | Hash      | Message                           | Modules Touched    |
+          | --------- | --------------------------------- | ------------------ |
+          | `abc1234` | feat(os): add new agent option    | modules/os/agents/ |
+          | `def5678` | fix(terminal): shell prompt color | modules/terminal/  |
+          | ...       | ...                               | ...                |
+
+          ## nixos-config Status
+
+          - **Branch**: [main]
+          - **Clean**: [yes | no — details]
+          - **Recent commits**:
+          ```
+
+          [last 10 commits one-line]
+
+          ```
+
+          ## Preliminary Health (Current Host)
+
+          - **Hostname**: [hostname]
+          - **System state**: [running | degraded | maintenance]
+          - **Failed units**: [list from `systemctl --failed`, or "None"]
+          - **Recent errors**: [summary from `journalctl -p err`, or "None"]
+
+          ## Host Reachability
+
+          | Host | Role | SSH Target | Reachable | Generation | Notes |
+          |------|------|------------|-----------|------------|-------|
+          | ncrmro-workstation | client | ncrmro-workstation.mercury | yes | 142 | current host |
+          | ocean | server | ocean.mercury | yes | 87 | — |
+          | mercury | server | 216.128.136.32 | yes | 45 | VPS |
+          | maia | server | maia.mercury | no | — | offline |
+          | mox | client | mox.mercury | no | — | offline |
+
+          ## Agenix Secrets
+
+          - **Status**: [clean | dirty — details]
+          - **Up to date**: [yes | no — commits behind]
+          ```
+
+          ## Quality Criteria
+
+          - The report shows the exact keystone commit currently locked in flake.lock and the latest commit on keystone main, with the full commit log between them
+          - All hosts in hosts.nix are listed with their reachability status — unreachable hosts are noted, not silently skipped
+          - Direct host health checks (`systemctl --failed`, `journalctl -p err`) were run on the current host and any issues are documented
+
+          ## Context
+
+          This is the first step of the update workflow. The data collected here drives all subsequent decisions: the plan_update step uses the changelog to classify changes, the execute_fixes step uses pre-existing issues to prioritize work, and the run_update step uses host reachability to determine deployment targets. Accuracy here prevents surprises during deployment.
+        inputs: {}
+        outputs:
+          fleet_survey_md:
+            required: true
+
+      - name: validate
+        instructions: |
+          # Validate
+
+          ## Objective
+
+          Run `ks doctor` on the current host and check all affected hosts in the fleet to verify the system is nominal after deployment.
+
+          ## Task
+
+          Verify that the deployed changes are working correctly across all hosts. This step can also be run standalone via the `doctor` workflow to check fleet health at any time.
+
+          ### Process
+
+          1. **Check current host health directly**
+             - **Do NOT run `ks doctor`** — it is an AI entrypoint (`/ks.doctor` slash command), not a shell diagnostic tool
+             - Run direct health checks instead:
+               ```bash
+               systemctl is-system-running           # overall state
+               systemctl --failed                    # list failed units
+               journalctl -p err --since '1 hour ago' --no-pager | tail -30
+               ```
+             - For service-specific checks related to the deployed changes, run `systemctl status <service>` directly
+             - Pay special attention to services related to the changes that were deployed
+
+          2. **Check the validation criteria from the plan**
+             - If this step is running as part of the `develop` workflow, read the plan.md from the plan step
+             - Verify each validation criterion defined in the plan is satisfied
+             - Run the specific commands listed in the plan's "Validation Criteria" section
+
+          3. **Check agent health**
+             - List all configured agents via nix eval (see AGENTS.md "Nix Eval for System Context"):
+               ```bash
+               nix eval ~/.keystone/repos/nixos-config#nixosConfigurations.<HOST>.config.keystone.os.agents \
+                 --json --apply 'a: builtins.mapAttrs (_: v: { fullName = v.fullName; host = v.host or null; archetype = v.archetype; desktop = v.desktop.enable; mail = v.mail.provision; chrome = v.chrome.enable; }) a'
+               ```
+             - For each agent on the current host, check:
+               - `agentctl <agent> status` — are core services running?
+               - `agentctl <agent> tasks` — are tasks processing or stuck? Note count of pending tasks.
+               - `agentctl <agent> jobs` (or equivalent) — what are the 3-5 most recent jobs? Are any stuck/failed?
+               - `agentctl <agent> email` — is mail flowing?
+             - For agents on remote hosts, SSH in and run equivalent checks
+             - **Tailscale note**: `tailscale status` shows per-agent Tailscale nodes. Agent Tailscale integration is a **TODO feature** — offline agent nodes are expected and informational only. Only flag if a _host-level_ Tailscale node goes offline.
+
+          4. **Cross-reference issues with GitHub**
+             - For each issue found (failed units, stuck agents, unhealthy services), search GitHub before treating it as new:
+               ```bash
+               gh issue list --search "<keyword>" --repo ncrmro/keystone
+               gh issue list --search "<keyword>" --repo ncrmro/nixos-config
+               ```
+             - If an existing issue is found: link it in the report — do not create a duplicate
+             - If no existing issue: document it as a new finding requiring a new issue
+
+          5. **Determine fleet impact**
+             - Read the hosts table: `ks agent` can show the fleet, or evaluate `hosts.nix` directly
+             - Determine which other hosts are affected by the changes:
+               - Server module changes affect the server host
+               - Agent module changes affect hosts running agents
+               - Terminal/desktop changes affect all workstations
+               - Domain/services changes may affect all hosts
+             - If no other hosts are affected, document why and skip multi-host checks
+
+          6. **Check other affected hosts**
+             - For each affected remote host:
+               - SSH in and check service status: `ssh root@<host> systemctl --failed`
+               - Check for any deployment-related issues: `ssh root@<host> journalctl -p err --since '1 hour ago'`
+               - If the remote host needs updating too, inform the human
+             - Ask structured questions to confirm if the human wants to update remote hosts now
+
+          7. **Evaluate results**
+             - If all checks pass: complete the workflow
+             - If issues found on current host: document them. If they are caused by the recent changes, call `go_to_step` with `step_id: "plan"` to create a fix (this requires a new worktree since we already merged)
+             - If remote hosts need attention: document what needs to happen
+
+          8. **Archive report to zk notes** (see `tool.zk-notes` and `process.notes`)
+             - Fleet health reports contain personal deployment data — archive to the configured notes dir (`$NOTES_DIR`, `~/notes` for Keystone human users), NOT leave them in the open-source repo
+             - **Find prior report** (required — used for `previous_report` chain):
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" list reports/ \
+                 --tag "report/keystone-system" \
+                 --tag "repo/ncrmro/nixos-config" \
+                 --tag "source/deepwork/ks-doctor" \
+                 --sort created- --limit 1 --format json
+               ```
+             - **Create the report note**:
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" new reports/ --title "keystone fleet health $(date +%Y-%m-%d)" \
+                 --no-input --print-path \
+                 --extra report_kind="keystone-system" \
+                 --extra source_ref="ks.doctor" \
+                 --extra type="report" \
+                 --extra author="ks.doctor"
+               ```
+             - **Write note content** — required frontmatter (`type: report`, `tags: [report/keystone-system, repo/ncrmro/nixos-config, source/deepwork/ks-doctor]`, `previous_report: <prior note id or omit if none>`) followed by a concise summary:
+               - Keystone revision gap (commits behind, impactful changes)
+               - Host reachability table
+               - Failed units per host with GitHub issue links
+               - Action items
+             - **Link from a relevant hub if one exists**:
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" list index/ --tag "status/active" --format json
+               ```
+               If there is a system or operations hub for this notebook, append a link to the new report in its report ledger section. Do not require a `project/keystone` hub.
+
+          **Maximum loop iterations**: If this is the 2nd validation failure, stop looping and present all findings to the human for manual resolution.
+
+          ## Output Format
+
+          ### validation_report.md
+
+          ```markdown
+          # Validation Report
+
+          ## Current Host
+
+          - **Hostname**: [hostname]
+          - **System state**: [running | degraded | maintenance]
+          - **Failed units**: [from `systemctl --failed`, or "None"]
+          - **Recent errors**: [from `journalctl -p err`, or "None"]
+
+          ## Plan Validation Criteria
+
+          | Criterion             | Status    | Evidence                        |
+          | --------------------- | --------- | ------------------------------- |
+          | [criterion from plan] | PASS/FAIL | [command output or observation] |
+          | [criterion from plan] | PASS/FAIL | [command output or observation] |
+
+          ## Agent Health
+
+          ### [agent-name] (host: [host])
+
+          - **Services**: [running | failed — details]
+          - **Tasks**: [N pending | idle | stuck since HH:MM]
+          - **Recent jobs**: [last 3-5 job names or "none in last 24h"]
+          - **Blocking issues**: [description or "none"]
+          - **Mail**: [ok | down]
+          - **Tailscale**: [online | offline] _(offline is expected — agent Tailscale integration is a TODO)_
+
+          ## Fleet Impact Assessment
+
+          - **Changes affect**: [list of affected hosts, or "current host only"]
+          - **Hosts checked**: [list]
+          - **Hosts needing update**: [list, or "none"]
+
+          ## Remote Host Status
+
+          ### [hostname] (if applicable)
+
+          - **Status**: [nominal | issues found | needs update]
+          - **Details**: [findings]
+
+          ## Issues Found
+
+          | Issue                                         | Existing tracker item   | Status       |
+          | --------------------------------------------- | ----------------------- | ------------ |
+          | [e.g., syncoid-rpool-to-ocean.service failed] | [#42 — link]            | pre-existing |
+          | [e.g., unknown service crash]                 | none — new issue needed | new          |
+
+          ## Overall Status
+
+          - **System nominal**: [yes | no — details]
+          - **All validation criteria met**: [yes | no — which failed]
+          - **Action needed**: [none | list of follow-up actions]
+          ```
+
+          ## Quality Criteria
+
+          - Direct health checks on the current host (`systemctl --failed`, `journalctl -p err`) show no critical issues
+          - All hosts affected by the changes have been checked or confirmed not impacted
+          - The specific validation criteria from the plan are confirmed working on the live system
+          - Each agent's task queue, recent jobs, and any blocking issues are reported
+          - Every issue found is cross-referenced against the issue tracker — existing issues are linked, genuinely new issues are flagged for creation
+          - A dated fleet health note has been written to the configured notes dir via `zk` — the report must not remain only in the keystone repo's `.deepwork/` folder
+
+          ## Context
+
+          This is the final quality gate in the develop workflow. It ensures that changes don't just build — they actually work on a live system. The multi-host check is critical because keystone manages a fleet of interconnected hosts, and a change that works on the workstation might break a server service or agent provisioning. This step can also be invoked standalone via the `doctor` workflow for routine fleet health checks.
+        inputs:
+          fleet_survey_md:
+            required: true
+        outputs:
+          validation_report_md:
+            required: true
+
+  convention:
+    summary: "Create or update a convention: draft, cross-reference, deduplicate, wire archetypes, commit to main"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Keystone is a NixOS-based infrastructure platform. Development follows a strict
+      worktree-based workflow to keep the main branch always deployable.
+
+      **Exception**: The `convention` workflow commits directly to main because conventions
+      are documentation files that do not require Nix builds or multi-host deploys.
+
+      ## Convention system
+
+      Conventions live in `conventions/` as RFC 2119 markdown files. Each convention follows
+      a strict format: `{prefix}.{topic}.md` with prefixes `process`, `tool`, `code`, or `os`.
+      Conventions are wired into agent archetypes via `conventions/archetypes.yaml` — either
+      as `inlined_conventions` (always in context) or `referenced_conventions` (on-demand).
+
+      The AGENTS.md in CLAUDE.md is generated from archetypes.yaml by the Nix build
+      (`modules/terminal/conventions.nix`). After modifying archetypes.yaml, a `ks build`
+      or `ks update` regenerates the instruction files.
+
+      Key files:
+      - `conventions/*.md` — convention documents
+      - `conventions/archetypes.yaml` — maps conventions to agent archetypes and roles
+      - `conventions/AGENTS.md` — meta-conventions for editing the conventions repo itself
+      - `modules/terminal/conventions.nix` — Nix module that generates CLI tool instruction files
+    steps:
+      - name: draft_convention
+        instructions: |
+          # Draft Convention
+
+          ## Objective
+
+          Take the user's topic description (and optionally their pre-written draft) and produce a complete convention document in the keystone RFC 2119 format, ready for cross-referencing against existing conventions.
+
+          ## Task
+
+          Gather requirements about the convention topic, study existing conventions for format consistency, and write a well-structured convention draft. Ask structured questions to clarify the scope and rule set.
+
+          ### Process
+
+          1. **Parse the user's input**
+             - The `convention_topic` input may contain just a topic name ("shell scripts") or a full draft with proposed rules
+             - If the user provided a draft, extract the proposed rules and identify gaps
+             - If the user provided only a topic, proceed to structured questioning
+
+          2. **Determine the convention identity**
+
+             Ask structured questions to pin down:
+             - **Domain prefix**: `code` (language/style), `process` (operational procedure), `tool` (CLI/tool manual), or `os` (system requirements)
+             - **Topic slug**: lowercase-hyphenated (e.g., `shell-scripts`, `nix-devshell`)
+             - **Display name**: human-readable (e.g., "Shell Scripts", "Nix Dev Shell")
+             - The resulting filename is `{prefix}.{topic}.md` and dotted name is `{prefix}.{topic}`
+
+          3. **Study existing conventions**
+             - Read `conventions/AGENTS.md` for format rules
+             - Read 2-3 existing conventions in `conventions/` that are similar in domain to understand structure and level of detail
+             - Pay attention to: H1 title format, rule numbering, section organization, golden examples
+
+          4. **Gather the rules**
+
+             Ask structured questions to understand:
+             - What are the MUST rules? (hard requirements, violations are bugs)
+             - What are the SHOULD rules? (strong recommendations, exceptions require justification)
+             - What are the MAY rules? (optional practices, mentioned for awareness)
+             - Group rules into logical sections (e.g., "Execution Environment", "Static Analysis", "Style")
+
+             If the user provided a draft, review it against these categories and ask about gaps.
+
+          5. **Ask about a golden example**
+             - If the convention covers a pattern with non-trivial application, propose including a golden example section
+             - The golden example should show the rules applied to a realistic scenario
+
+          6. **Write the convention draft**
+             - Follow the exact format from `conventions/AGENTS.md`
+             - Write the file to `.deepwork/tmp/convention_draft.md` (NOT to `conventions/` yet — that happens in the apply step)
+
+          ## Output Format
+
+          ### convention_draft.md
+
+          The drafted convention file. Written to `.deepwork/tmp/convention_draft.md`.
+
+          **Structure**:
+
+          ```markdown
+          <!-- RFC 2119: MUST, MUST NOT, SHOULD, SHOULD NOT, MAY -->
+
+          # Convention: {Display Name} ({prefix.topic})
+
+          {One-paragraph description of what this convention covers and why it exists.}
+
+          ## {Section 1 Name}
+
+          1. {Subject} MUST {do something specific}.
+          2. {Subject} SHOULD {do something recommended}.
+          3. {Subject} MUST NOT {do something prohibited}.
+
+          ## {Section 2 Name}
+
+          4. {Subject} MUST {rule continues from previous section numbering}.
+          5. {Subject} MAY {optional practice}.
+
+          ## Golden Example
+
+          {Realistic scenario demonstrating the rules applied together. Include code blocks
+          where appropriate. This section is optional but recommended for non-trivial conventions.}
+          ```
+
+          ## Quality Criteria
+
+          - The convention follows the required H1 title format: `# Convention: {Display Name} ({prefix.name})`
+          - Rules are numbered consecutively across all sections
+          - Every rule uses at least one RFC 2119 keyword (MUST, SHOULD, MAY, etc.)
+          - Rules are specific and actionable — no vague aspirational statements
+          - Rules are grouped into coherent sections with clear H2 headings
+          - If the convention covers a non-trivial pattern, a golden example section is included
+          - The file is written to `.deepwork/tmp/convention_draft.md`, NOT directly to `conventions/`
+
+          ## Context
+
+          This is the first step in the convention workflow. The draft produced here will be cross-referenced against all existing conventions in the next step to identify overlaps and redundancies. Writing to a temp location first allows the cross-reference step to analyze the draft before any existing files are modified. The convention identity (prefix, topic, display name) chosen here determines the final filename in `conventions/`.
+        inputs:
+          convention_topic:
+            required: true
+        outputs:
+          convention_draft_md:
+            required: true
+
+      - name: cross_reference
+        instructions: |
+          # Cross-Reference
+
+          ## Objective
+
+          Scan every existing convention in `conventions/` to identify overlaps, redundancies, and cross-reference opportunities with the new convention draft. Produce a deduplication plan before any files are modified.
+
+          ## Task
+
+          Read the convention draft from the previous step and systematically compare it against all existing conventions. For each overlap found, determine the correct resolution: keep in the new convention, keep in the existing one, merge, or add a cross-reference.
+
+          ### Process
+
+          1. **Read the convention draft**
+             - Read `.deepwork/tmp/convention_draft.md` from the draft step
+             - Extract all rules and their RFC 2119 keywords
+             - Note the convention's prefix and topic
+
+          2. **Inventory all existing conventions**
+             - List all files in `conventions/` matching `*.md` (excluding `AGENTS.md` and `AGENTS_TEMPLATE.md`)
+             - Read `conventions/archetypes.yaml` to understand how each convention is currently wired
+
+          3. **Systematic comparison**
+
+             For each existing convention:
+             - Read the file
+             - Compare rule-by-rule against the new draft
+             - Flag any of these overlap types:
+
+             | Overlap Type              | Description                                                       | Example                                                                   |
+             | ------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------- |
+             | **Duplicate**             | Same rule exists in both, word-for-word or near-identical         | Both say "scripts MUST use strict mode"                                   |
+             | **Subsume**               | New convention's rule is a superset of an existing rule           | New has detailed ShellCheck rules; existing has a one-liner about linting |
+             | **Conflict**              | Rules contradict each other                                       | New says MUST; existing says SHOULD for same behavior                     |
+             | **Cross-ref opportunity** | Rules are related but complementary — should reference each other | New covers shell style; existing covers Nix `writeShellApplication`       |
+
+          4. **Build the deduplication plan**
+
+             For each overlap found, propose a resolution:
+             - **Keep in new**: The new convention is the authoritative home for this rule. Remove from existing.
+             - **Keep in existing**: The existing convention is the better home. Remove from draft.
+             - **Merge**: Combine the two rules into a stronger version in one location.
+             - **Add cross-reference**: Add a "see `{prefix.topic}` for X" note in both directions.
+             - **No action**: Overlap is superficial; both rules serve different contexts.
+
+          5. **Check for orphaned references**
+             - If removing rules from an existing convention, verify no other conventions or archetypes reference those specific rule numbers
+             - If an existing convention would become empty or trivially small after dedup, propose folding its remaining rules into another convention
+
+          ## Output Format
+
+          ### cross_reference_report.md
+
+          Written to `.deepwork/tmp/cross_reference_report.md`.
+
+          **Structure**:
+
+          ```markdown
+          # Cross-Reference Report
+
+          ## New Convention
+
+          - **File**: {prefix}.{topic}.md
+          - **Display Name**: {Display Name}
+          - **Rule Count**: {N}
+
+          ## Conventions Scanned
+
+          | File                       | Rules | Overlaps Found |
+          | -------------------------- | ----- | -------------- |
+          | process.version-control.md | 12    | 2              |
+          | tool.nix-devshell.md       | 21    | 0              |
+          | ...                        | ...   | ...            |
+
+          ## Overlaps
+
+          ### Overlap 1: {Brief description}
+
+          - **New draft rule**: #{N} — "{rule text}"
+          - **Existing convention**: {filename} rule #{M} — "{rule text}"
+          - **Type**: {Duplicate|Subsume|Conflict|Cross-ref}
+          - **Resolution**: {Keep in new|Keep in existing|Merge|Add cross-reference|No action}
+          - **Rationale**: {Why this resolution}
+
+          ### Overlap 2: {Brief description}
+
+          [repeat for each overlap]
+
+          ## Proposed Changes
+
+          ### Files to Modify
+
+          - `conventions/{existing}.md` — Remove rules #{M}, #{N}; add cross-reference to {new}
+          - `conventions/{other}.md` — Add cross-reference to {new} in section X
+
+          ### Files to Create
+
+          - `conventions/{prefix}.{topic}.md` — The new convention (from draft, minus removed overlaps)
+
+          ### Files to Delete
+
+          - (none, or list conventions that become empty after dedup)
+
+          ### Archetypes Changes
+
+          - (what needs to change in archetypes.yaml — to be confirmed with user in the next step)
+
+          ## No Overlaps Found With
+
+          [List conventions that were checked but had no overlaps — confirms thorough scan]
+          ```
+
+          ## Quality Criteria
+
+          - Every existing convention in `conventions/` was checked — the report lists all files scanned
+          - Identified overlaps cite specific rule numbers from both the draft and existing conventions
+          - Each overlap has a concrete resolution with rationale
+          - The proposed changes section is actionable — specific files, specific rules, specific edits
+          - No conventions were skipped in the scan
+
+          ## Context
+
+          This step is the key differentiator of the convention workflow — it prevents rule duplication across the convention corpus. Without this step, conventions accumulate redundant rules that confuse agents and create conflicting guidance. The dedup plan produced here is consumed by the apply step, which makes the actual file changes. No files are modified in this step — it is analysis only.
+        inputs:
+          convention_draft_md:
+            required: true
+        outputs:
+          cross_reference_report_md:
+            required: true
+
+      - name: apply_convention
+        instructions: |
+          # Apply Convention
+
+          ## Objective
+
+          Execute the deduplication plan from the cross-reference step: write the final convention file, update or remove redundant rules in existing conventions, add cross-references, and wire the new convention into `archetypes.yaml`.
+
+          ## Task
+
+          Read both the convention draft and the cross-reference report, then make all the file changes. Ask structured questions to determine which archetypes and roles should include the new convention.
+
+          ### Process
+
+          1. **Read inputs**
+             - Read `.deepwork/tmp/convention_draft.md` (the draft)
+             - Read `.deepwork/tmp/cross_reference_report.md` (the dedup plan)
+             - Read `conventions/archetypes.yaml` (current wiring)
+
+          2. **Apply draft modifications**
+             - If the cross-reference report says to remove rules from the draft (keep in existing), remove them
+             - If the report says to merge rules, write the merged version
+             - Renumber rules if removals create gaps — rules MUST be numbered consecutively within each section
+
+          3. **Write the final convention file**
+             - Write to `conventions/{prefix}.{topic}.md`
+             - Verify the H1 title matches the format: `# Convention: {Display Name} ({prefix.topic})`
+             - Verify the RFC 2119 comment header is present
+
+          4. **Update existing conventions**
+             - For each "Remove from existing" action in the report:
+               - Edit the existing convention file
+               - Remove the specified rules
+               - Renumber remaining rules to stay consecutive
+               - Add a cross-reference comment where the removed rules were, e.g., "See `{prefix.topic}` for {topic} rules."
+             - For each "Add cross-reference" action:
+               - Add a brief note in the relevant section pointing to the other convention
+
+          5. **Handle empty or trivially small conventions**
+             - If an existing convention is reduced to fewer than 3 rules after dedup, consider folding its remaining rules into a related convention
+             - If folding, update all references in `archetypes.yaml` accordingly
+
+          6. **Wire into archetypes**
+
+             Before asking, read `conventions/archetypes.yaml` and present the user with context:
+             - List which archetypes exist and their descriptions
+             - Show which roles within each archetype already reference related conventions (e.g., if the new convention is about shell scripts, show which roles already have `tool.nix-devshell` or `tool.nix`)
+             - This helps the user make an informed decision about placement
+
+             Ask structured questions to determine:
+             - Which archetypes should include this convention? (engineer, product, both, neither)
+             - Should it be **inlined** (always in context — use for critical operational rules) or **referenced** (on-demand — use for manuals and guides)?
+             - Should it be added to any specific roles within the archetype?
+
+             Then edit `conventions/archetypes.yaml`:
+             - Add to `inlined_conventions` or `referenced_conventions` as determined
+             - If adding to roles, add to the `conventions` list under the appropriate roles
+
+          7. **Verify consistency**
+             - Read the modified `archetypes.yaml` to confirm valid YAML
+             - Spot-check that cross-references are bidirectional (if A references B, B references A)
+             - Confirm no rule numbers are duplicated or skipped in any modified file
+
+          ## Output Format
+
+          ### change_summary.md
+
+          Written to `.deepwork/tmp/change_summary.md`.
+
+          **Structure**:
+
+          ```markdown
+          # Convention Change Summary
+
+          ## Convention Created
+
+          - **File**: `conventions/{prefix}.{topic}.md`
+          - **Display Name**: {Display Name}
+          - **Final Rule Count**: {N}
+
+          ## Existing Conventions Modified
+
+          ### `conventions/{existing}.md`
+
+          - **Rules removed**: #{M}, #{N} (moved to new convention)
+          - **Cross-reference added**: "See `{prefix.topic}` for {topic}."
+          - **Rules renumbered**: Yes/No
+
+          [Repeat for each modified file]
+
+          ## Existing Conventions Deleted
+
+          - (none, or list with rationale)
+
+          ## Archetypes Updated
+
+          ### {archetype_name}
+
+          - **Added to**: {inlined_conventions|referenced_conventions}
+          - **Added to roles**: {role1, role2} (or "none")
+
+          [Repeat for each archetype]
+
+          ## Files Changed (for commit)
+
+          - `conventions/{prefix}.{topic}.md` (created)
+          - `conventions/{existing}.md` (modified)
+          - `conventions/archetypes.yaml` (modified)
+          ```
+
+          ## Quality Criteria
+
+          - All redundancies from the cross-reference report are resolved — no duplicate rules remain across conventions
+          - The new convention appears in the correct archetypes (inlined or referenced) and roles
+          - Cross-references between conventions are bidirectional and accurate
+          - Rules removed from existing conventions were moved to the new convention or confirmed truly redundant — nothing silently dropped
+          - All modified convention files have consecutive rule numbering with no gaps
+          - `archetypes.yaml` is valid YAML after edits
+
+          ## Context
+
+          This is the action step — it makes all the actual file changes. The draft and cross-reference steps were analysis; this step commits to the changes. After this step, the convention corpus should be internally consistent with no duplicated rules and proper cross-references. The next step (commit) will commit all these changes to main.
+        inputs:
+          convention_draft_md:
+            required: true
+          cross_reference_report_md:
+            required: true
+        outputs:
+          change_summary_md:
+            required: true
+
+      - name: commit_convention
+        instructions: |
+          # Commit Convention
+
+          ## Objective
+
+          Commit all convention changes to the main branch and push to the remote. This is the final step — after this, the convention is live.
+
+          ## Task
+
+          Review the change summary, stage only convention-related files, create a properly formatted commit, and push to origin/main.
+
+          ### Process
+
+          1. **Read the change summary**
+             - Read `.deepwork/tmp/change_summary.md` from the apply step
+             - Extract the list of files changed
+
+          2. **Verify working tree state**
+             - Run `git status` to see all modified/untracked files
+             - Confirm that only convention-related files are changed:
+               - `conventions/*.md` (created or modified)
+               - `conventions/archetypes.yaml` (modified)
+             - If there are unrelated changes in the working tree, do NOT stage them — only stage convention files
+
+          3. **Review the diff**
+             - Run `git diff` on the files to be committed
+             - Verify the changes match what the change summary describes
+             - Check for accidental whitespace changes, encoding issues, or unintended edits
+
+          4. **Create the commit**
+             - Stage only the convention files listed in the change summary
+             - Write a commit message following conventional commits format:
+               - If creating a new convention: `docs(conventions): add {prefix}.{topic} convention`
+               - If also modifying existing conventions: `docs(conventions): add {prefix}.{topic} + deduplicate overlapping rules`
+               - If only updating existing: `docs(conventions): update {conventions} with cross-references`
+             - The commit body should list the key changes (new convention, rules moved, cross-refs added)
+
+          5. **Push to remote**
+             - Push to `origin/main`
+             - If the push is rejected because the remote has new commits, handle the rebase:
+               1. Stash any unstaged changes: `git stash`
+               2. Rebase on top of remote: `git pull --rebase origin main`
+               3. Restore stashed changes: `git stash pop`
+               4. Retry the push
+             - Verify the push succeeded
+
+          6. **Clean up temp files**
+             - Remove `.deepwork/tmp/convention_draft.md`
+             - Remove `.deepwork/tmp/cross_reference_report.md`
+             - Remove `.deepwork/tmp/change_summary.md`
+
+          ## Output Format
+
+          ### commit_result.md
+
+          Written to `.deepwork/tmp/commit_result.md`.
+
+          **Structure**:
+
+          ```markdown
+          # Commit Result
+
+          ## Commit
+
+          - **Hash**: {short hash}
+          - **Message**: {commit message first line}
+          - **Branch**: main
+          - **Pushed**: Yes/No
+
+          ## Files in Commit
+
+          - `conventions/{prefix}.{topic}.md` (new)
+          - `conventions/{existing}.md` (modified)
+          - `conventions/archetypes.yaml` (modified)
+
+          ## Verification
+
+          - `git status` clean: Yes/No
+          - Push to origin/main: Success/Failed
+          ```
+
+          ## Quality Criteria
+
+          - The commit message follows conventional commits format (`docs(conventions): ...`)
+          - The commit has been pushed to `origin/main` successfully
+          - The commit contains only convention-related files — no unrelated changes leaked in
+          - Temp files in `.deepwork/tmp/` are cleaned up
+
+          ## Context
+
+          This is the final step in the convention workflow. Unlike the `develop` workflow which uses worktrees and requires human-in-the-loop deploys, conventions commit directly to main because they are documentation files that do not affect Nix builds or host deployments. The convention becomes available to agents after the next `ks build` or `ks update` regenerates the CLAUDE.md instruction files from `archetypes.yaml`.
+        inputs:
+          change_summary_md:
+            required: true
+        outputs:
+          commit_result_md:
+            required: true
+
+  update:
+    summary: "Deploy pending keystone changes to fleet: survey, triage, fix, build, ks update --lock, validate"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Keystone is a NixOS-based infrastructure platform. Development follows a strict
+      worktree-based workflow to keep the main branch always deployable.
+
+      **Exception**: The `update` workflow is for catching up — getting the fleet to a fully locked,
+      fully built state ready for `ks update --lock`. It surveys the gap between what's locked in
+      nixos-config and what's on keystone main, triages issues, applies quick fixes, runs preflight
+      builds for all hosts, then hands off to the human for the final `ks update --lock` and validates.
+
+      ## Two-repo model
+
+      - **keystone** — the NixOS module library (this repo). Worktree branches are created here.
+      - **nixos-config** — the per-deployment configuration that imports keystone as a flake input.
+        `ks update --lock` pulls the latest keystone main, locks flake.lock, builds, and deploys.
+
+      ## Fast path vs full system
+
+      During development, use `ks build` (home-manager only, no sudo) for fast iteration.
+      This catches most evaluation errors and is sufficient for iterating on terminal/desktop
+      module changes. However, the final deploy MUST always be `ks update --lock` which does
+      a full system build + lock + deploy. Never consider a change complete until it has been
+      through the full system path.
+
+      ## Multi-host fleet
+
+      Keystone manages multiple hosts (workstation, server, etc.) connected via Tailscale.
+      After deploying to the current host, the validate step must check whether other hosts
+      also need updating (e.g., if keystone module changes affect server services). Use
+      `ks doctor` and the hosts table from `hosts.nix` to determine which hosts need attention.
+      All hosts must be nominal before the workflow is complete.
+
+      ## Key commands
+
+      - `nix flake check --no-build` — fast evaluation check (catches type errors, missing imports)
+      - `ks build` — build home-manager profiles only (fast, no sudo)
+      - `ks build --lock` — full system build + lock + push
+      - `ks update` — pull, build, deploy current host (requires sudo)
+      - `ks update --lock` — pull, lock, build, push, deploy (requires sudo, human-only)
+      - `ks doctor` — **AI entrypoint only** — this launches the `/ks.doctor` slash command (spawns a new model session). NEVER call `ks doctor` as a shell command inside a workflow step — use `systemctl --failed` and `journalctl -p err` for direct health checks instead.
+
+      ## Iterative loop rules
+
+      If the build step fails, loop back to implement to fix the issue.
+      If validation finds problems after deploy, create a new worktree and loop back to plan.
+      DeepWork review findings are fixed in-place in the worktree before proceeding.
+    steps:
+      - name: survey_fleet
+        instructions: |
+          # Survey Fleet
+
+          ## Objective
+
+          Gather the current state of the keystone fleet: what keystone revision is locked in nixos-config, what's on keystone main, the commit changelog between them, and a preliminary health check of all reachable hosts.
+
+          ## Task
+
+          Build a comprehensive snapshot of the fleet's current state to inform the update plan. This step collects data only — no changes are made.
+
+          ### Process
+
+          1. **Determine the keystone revision gap**
+             - Find the config repo by reading the activation-time pointer at `/run/current-system/keystone-system-flake` (written by `keystone.systemFlake`). On a non-running-NixOS host, fall back to `~/.keystone/repos/nixos-config`.
+             - Read `flake.lock` to extract the currently locked keystone revision:
+               ```bash
+               nix eval --raw <nixos-config-path>#inputs.keystone.rev 2>/dev/null \
+                 || jq -r '.nodes.keystone.locked.rev' <nixos-config-path>/flake.lock
+               ```
+             - Get the latest commit on keystone main:
+               ```bash
+               git -C <keystone-path> rev-parse origin/main
+               ```
+             - If the revs differ, list all commits in the gap:
+               ```bash
+               git -C <keystone-path> log --oneline <locked-rev>..origin/main
+               ```
+             - If the revs match, note "keystone is up to date" and the workflow can be short-circuited
+
+          2. **Check nixos-config recent commits**
+             - Review the last 20 commits on nixos-config's current branch (usually main):
+               ```bash
+               git -C <nixos-config-path> log --oneline -20
+               ```
+             - Note any uncommitted changes in nixos-config: `git -C <nixos-config-path> status`
+
+          3. **Check current host health directly**
+             - **Do NOT run `ks doctor`** — that command is an AI entrypoint (`/ks.doctor` slash command) and would create a recursive loop
+             - Instead, run direct shell health checks:
+               ```bash
+               systemctl is-system-running           # overall state: running / degraded
+               systemctl --failed                    # list any failed units
+               journalctl -p err --since '1 hour ago' --no-pager | tail -20
+               ```
+             - Note any failed units or recent errors — these are pre-existing issues, not caused by pending changes
+
+          4. **Gather fleet data via nix eval**
+             Use the same nix eval patterns as `ks doctor` (see AGENTS.md "Nix Eval for System Context"):
+             - **Hosts table**: `nix eval -f <config-path>/hosts.nix --json`
+             - **Agents** (per host):
+               ```bash
+               nix eval <config-path>#nixosConfigurations.<HOST>.config.keystone.os.agents \
+                 --json --apply 'a: builtins.mapAttrs (_: v: {
+                   fullName = v.fullName; host = v.host or null;
+                   archetype = v.archetype; desktop = v.desktop.enable;
+                   mail = v.mail.provision; chrome = v.chrome.enable;
+                 }) a'
+               ```
+             - **Users** (per host):
+               ```bash
+               nix eval <config-path>#nixosConfigurations.<HOST>.config.keystone.os.users \
+                 --json --apply 'u: builtins.mapAttrs (_: v: { fullName = v.fullName or ""; }) u'
+               ```
+             - **Enabled services** (server hosts):
+               ```bash
+               nix eval <config-path>#nixosConfigurations.<HOST>.config.keystone.server._enabledServices \
+                 --json 2>/dev/null
+               ```
+
+          5. **Check host reachability**
+             - From the hosts table, for each host with an `sshTarget`, check reachability:
+               ```bash
+               ssh -o ConnectTimeout=5 -o BatchMode=yes root@<sshTarget> echo ok 2>/dev/null
+               ```
+             - Record which hosts are reachable and which are not
+             - For reachable hosts, capture their current NixOS generation:
+               ```bash
+               ssh root@<sshTarget> readlink /nix/var/nix/profiles/system
+               ```
+             - Skip VMs and test hosts (those with `sshTarget: null` or `baremetal: false` where not cloud)
+
+          6. **Cross-reference known issues with GitHub**
+             - For any failed units or health problems found in step 3, search GitHub before treating them as new:
+               ```bash
+               gh issue list --search "<keyword>" --repo ncrmro/keystone
+               gh issue list --search "<keyword>" --repo ncrmro/nixos-config
+               ```
+             - Note the issue URL next to each finding in the health section — do not create duplicates
+
+          7. **Check for agenix-secrets changes**
+             - If `agenix-secrets/` exists in nixos-config, check if it's clean and up to date:
+               ```bash
+               git -C <nixos-config-path>/agenix-secrets status --short
+               git -C <nixos-config-path>/agenix-secrets log origin/main..HEAD --oneline
+               ```
+
+          ## Output Format
+
+          ### fleet_survey.md
+
+          ```markdown
+          # Fleet Survey
+
+          **Date**: [current date/time]
+          **nixos-config path**: [path]
+          **keystone path**: [path]
+
+          ## Keystone Revision Gap
+
+          - **Locked in flake.lock**: `[commit hash]` ([date])
+          - **Latest on main**: `[commit hash]` ([date])
+          - **Commits behind**: [N]
+
+          ### Changelog (oldest -> newest)
+
+          | Hash      | Message                           | Modules Touched    |
+          | --------- | --------------------------------- | ------------------ |
+          | `abc1234` | feat(os): add new agent option    | modules/os/agents/ |
+          | `def5678` | fix(terminal): shell prompt color | modules/terminal/  |
+          | ...       | ...                               | ...                |
+
+          ## nixos-config Status
+
+          - **Branch**: [main]
+          - **Clean**: [yes | no — details]
+          - **Recent commits**:
+          ```
+
+          [last 10 commits one-line]
+
+          ```
+
+          ## Preliminary Health (Current Host)
+
+          - **Hostname**: [hostname]
+          - **System state**: [running | degraded | maintenance]
+          - **Failed units**: [list from `systemctl --failed`, or "None"]
+          - **Recent errors**: [summary from `journalctl -p err`, or "None"]
+
+          ## Host Reachability
+
+          | Host | Role | SSH Target | Reachable | Generation | Notes |
+          |------|------|------------|-----------|------------|-------|
+          | ncrmro-workstation | client | ncrmro-workstation.mercury | yes | 142 | current host |
+          | ocean | server | ocean.mercury | yes | 87 | — |
+          | mercury | server | 216.128.136.32 | yes | 45 | VPS |
+          | maia | server | maia.mercury | no | — | offline |
+          | mox | client | mox.mercury | no | — | offline |
+
+          ## Agenix Secrets
+
+          - **Status**: [clean | dirty — details]
+          - **Up to date**: [yes | no — commits behind]
+          ```
+
+          ## Quality Criteria
+
+          - The report shows the exact keystone commit currently locked in flake.lock and the latest commit on keystone main, with the full commit log between them
+          - All hosts in hosts.nix are listed with their reachability status — unreachable hosts are noted, not silently skipped
+          - Direct host health checks (`systemctl --failed`, `journalctl -p err`) were run on the current host and any issues are documented
+
+          ## Context
+
+          This is the first step of the update workflow. The data collected here drives all subsequent decisions: the plan_update step uses the changelog to classify changes, the execute_fixes step uses pre-existing issues to prioritize work, and the run_update step uses host reachability to determine deployment targets. Accuracy here prevents surprises during deployment.
+        inputs: {}
+        outputs:
+          fleet_survey_md:
+            required: true
+
+      - name: plan_update
+        instructions: |
+          # Plan Update
+
+          ## Objective
+
+          Analyze the fleet survey to classify every pending change, triage issues, and produce a concrete update plan with a verification checklist for post-deployment.
+
+          ## Task
+
+          Read the fleet survey from the previous step and produce an update plan that categorizes each change and defines what needs to happen before and after `ks update --lock`.
+
+          ### Process
+
+          1. **Read the fleet survey**
+             - Load fleet_survey.md from the survey_fleet step
+             - Understand the keystone revision gap, changelog, host reachability, and pre-existing issues
+
+          2. **Classify each commit in the gap**
+             For every commit between the locked rev and keystone main, assign one of:
+             - **verify-only** — The change is self-contained and already merged. After deployment, just confirm it works. Examples: new module option with default value, documentation change, convention update.
+             - **ad-hoc-fix** — A small issue spotted in the changelog or pre-existing doctor findings that can be fixed quickly (< 30 min) in a keystone worktree before deploying. Examples: typo in config path, missing default value, shellcheck warning.
+             - **needs-issue** — A complex problem requiring its own development cycle. Too risky or large to fix ad-hoc before deploying. Examples: service migration, breaking API change, multi-host coordination issue.
+
+          3. **Analyze module impact**
+             - For each commit, determine which modules are affected (os, terminal, desktop, server)
+             - Map modules to hosts that consume them:
+               - `modules/os/` -> all hosts
+               - `modules/terminal/` -> all workstations + agent hosts
+               - `modules/desktop/` -> workstations with desktop enabled
+               - `modules/server/` -> server hosts (ocean, mercury, maia)
+             - Use this to determine which hosts MUST be updated and in what order
+
+          4. **Check for breaking changes and boot-critical changes**
+             - Look for commits that rename options, remove defaults, change service configs
+             - If found, flag them prominently and note what verification they need
+             - **CRITICAL**: Check if any changes touch Secure Boot (lanzaboote), bootloader, kernel, or systemd-boot:
+               - If YES: recommend `--boot` flag AND deploying to ONE local host first (laptop/workstation with physical access), rebooting to verify, THEN deploying to remote hosts
+               - A past lanzaboote update broke Secure Boot on ocean and required physical BIOS intervention — remote servers must NEVER be the first host to receive bootloader changes
+             - Check if any changes require a reboot (`--boot` flag for ks update) even without bootloader changes (e.g., kernel module changes)
+
+          5. **Build the verification checklist**
+             For each change category, define concrete post-deployment checks:
+             - New module options -> verify option is available in `nix eval`
+             - Service changes -> verify service is running: `systemctl status <service>`
+             - Agent changes -> verify agent health: `agentctl <agent> status`
+             - Terminal/desktop -> verify in user session
+             - Pre-existing doctor issues -> verify they're still present or resolved
+
+          6. **Determine deployment order**
+             - Current host first (fastest feedback loop)
+             - Then servers (ocean, mercury, maia) — most critical
+             - Then other clients (mox, ncrmro-laptop)
+             - Skip unreachable hosts — note them as "deferred"
+
+          ## Output Format
+
+          ### update_plan.md
+
+          ```markdown
+          # Update Plan
+
+          **Date**: [date]
+          **Keystone gap**: `[locked]` -> `[latest]` ([N] commits)
+          **Pre-existing issues**: [count from doctor]
+
+          ## Change Triage
+
+          ### Verify Only
+
+          | #   | Commit    | Summary                         | Affected Hosts   | Post-Deploy Check     |
+          | --- | --------- | ------------------------------- | ---------------- | --------------------- |
+          | 1   | `abc1234` | feat(terminal): add shell alias | workstations     | `type ll` in terminal |
+          | 2   | `def5678` | docs(os): update AGENTS.md      | none (docs only) | —                     |
+
+          ### Ad-Hoc Fixes (before deploy)
+
+          | #   | Issue                                | Fix                         | Estimated Effort | Commit Ref   |
+          | --- | ------------------------------------ | --------------------------- | ---------------- | ------------ |
+          | 1   | Missing default for `foo.bar` option | Add `default = true`        | 5 min            | `ghi9012`    |
+          | 2   | ks doctor shows stale agent timer    | Reset timer in agent config | 10 min           | pre-existing |
+
+          ### Needs Issue
+
+          | #   | Problem                              | Why Not Ad-Hoc                                | Severity |
+          | --- | ------------------------------------ | --------------------------------------------- | -------- |
+          | 1   | Service X needs migration to new API | Multi-host coordination, rollback plan needed | medium   |
+
+          ## Deployment Plan
+
+          ### Order
+
+          1. ncrmro-workstation (current host) — `ks update --lock`
+          2. ocean — remote deploy via Tailscale
+          3. mercury — remote deploy via VPS IP
+          4. [deferred: mox — unreachable]
+
+          ### Flags
+
+          - `--boot` required: [yes — reason | no]
+          - Expected build time: [estimate based on change scope]
+
+          ## Post-Deployment Verification Checklist
+
+          - [ ] `ks doctor` on current host shows no new issues
+          - [ ] [specific check for change 1]
+          - [ ] [specific check for change 2]
+          - [ ] Remote hosts: `ssh root@ocean systemctl --failed` shows no new failures
+          - [ ] Agent health: `agentctl <agent> status` nominal for all local agents
+          - [ ] Pre-existing issues: [resolved | still present — expected]
+
+          ## Risk Assessment
+
+          - **Overall risk**: [low | medium | high]
+          - **Rollback plan**: Previous generation available via `nixos-rebuild switch --rollback`
+          - **Blockers**: [none | list blockers that must be resolved before deploy]
+          ```
+
+          ## Quality Criteria
+
+          - Every commit in the keystone rev gap is classified as verify-only, ad-hoc-fix, or needs-issue — none are unaccounted for
+          - The plan includes a concrete checklist of things to verify after deployment, derived from the changes
+          - Items marked needs-issue have clear justification for why they can't be fixed ad-hoc (scope, risk, or complexity)
+
+          ## Context
+
+          This step is the decision-making core of the update workflow. A good plan prevents deployment surprises by ensuring all changes are understood before `ks update --lock` runs. The triage categories directly drive the next step (execute_fixes) — ad-hoc items get fixed, needs-issue items get GitHub issues, and verify-only items go straight to the post-deploy checklist. The verification checklist becomes the acceptance criteria for the final validate step.
+        inputs:
+          fleet_survey_md:
+            required: true
+        outputs:
+          update_plan_md:
+            required: true
+
+      - name: execute_fixes
+        instructions: |
+          # Execute Fixes
+
+          ## Objective
+
+          Apply all ad-hoc fixes identified in the update plan and file GitHub issues for items that are too large or risky to fix before deployment.
+
+          ## Task
+
+          Work through the update plan's triage lists: fix small issues in keystone worktrees and create tracked issues for larger problems. After this step, keystone main should be ready for a clean `ks update --lock`.
+
+          ### Process
+
+          1. **Read the update plan**
+             - Load update_plan.md from the plan_update step
+             - Extract the ad-hoc fixes list and the needs-issue list
+
+          2. **Execute ad-hoc fixes**
+             For each item in the "Ad-Hoc Fixes" table:
+             - Create a worktree branch off keystone main:
+               ```bash
+               git worktree add ../keystone-fix-<short-name> -b fix/<short-name> main
+               ```
+             - Make the fix in the worktree
+             - Run a quick build check: `nix flake check --no-build` from the worktree
+             - Commit with conventional commit format: `fix(scope): description`
+             - Merge back to main:
+               ```bash
+               git checkout main && git merge fix/<short-name> --ff-only
+               ```
+             - Clean up the worktree: `git worktree remove ../keystone-fix-<short-name>`
+             - Push main: `git push origin main`
+
+             **If a fix is more complex than expected** (> 30 min or introduces risk), stop and reclassify it as needs-issue instead. Do not force a bad fix.
+
+          3. **File issues for large items**
+             For each item in the "Needs Issue" table:
+             - Use the `keystone_system/issue` workflow via the DeepWork MCP tools as a nested workflow, OR
+             - Create a GitHub issue directly:
+               ```bash
+               gh issue create --repo ncrmro/keystone --title "type(scope): description" \
+                 --body "## Problem\n\n[description]\n\n## Context\n\nIdentified during ks.update survey on [date].\nSeverity: [from plan]\n\n## Why Not Ad-Hoc\n\n[justification from plan]"
+               ```
+             - Record the issue URL for the report
+
+          4. **Handle pre-existing doctor issues**
+             - If the plan identified pre-existing issues from `ks doctor`, determine if any can be fixed ad-hoc
+             - Fix those that are simple (same worktree process as above)
+             - File issues for complex ones
+             - Some pre-existing issues may be expected/known — document those as "acknowledged"
+
+          5. **Verify keystone main is clean**
+             - After all fixes are merged and pushed:
+               ```bash
+               git -C <keystone-path> status
+               git -C <keystone-path> log origin/main..HEAD --oneline
+               ```
+             - Confirm no uncommitted changes and no unpushed commits
+             - Run a final `nix flake check --no-build` from nixos-config to verify the latest keystone evaluates cleanly
+
+          6. **Assess readiness**
+             - If all ad-hoc fixes are applied and no blockers remain -> ready for run_update
+             - If blockers exist (fix attempts failed, critical issues found) -> document them and call `go_to_step` with `step_id: "plan_update"` to re-triage
+
+          **Maximum loop iterations**: If this is the 2nd attempt at execute_fixes, stop and present all remaining issues to the human for guidance rather than looping again.
+
+          ## Output Format
+
+          ### fixes_report.md
+
+          ```markdown
+          # Fixes Report
+
+          **Date**: [date]
+          **Keystone main**: `[current main hash]`
+
+          ## Ad-Hoc Fixes Applied
+
+          | #   | Fix                     | Commit    | Branch              | Status   |
+          | --- | ----------------------- | --------- | ------------------- | -------- |
+          | 1   | Add default for foo.bar | `abc1234` | fix/foo-bar-default | merged   |
+          | 2   | Reset stale agent timer | `def5678` | fix/agent-timer     | merged   |
+
+          ## Issues Filed
+
+          | #   | Problem                 | Issue URL                                    | Severity |
+          | --- | ----------------------- | -------------------------------------------- | -------- |
+          | 1   | Service X API migration | https://github.com/ncrmro/keystone/issues/42 | medium   |
+
+          ## Pre-Existing Issues
+
+          | #   | Issue                    | Resolution                           |
+          | --- | ------------------------ | ------------------------------------ |
+          | 1   | Agent-drago offline 13d  | Filed as issue (see above)           |
+          | 2   | Stale flake.lock warning | Will be resolved by ks update --lock |
+
+          ## Readiness Assessment
+
+          - **Keystone main clean**: [yes | no]
+          - **All ad-hoc fixes merged**: [yes | no — details]
+          - **All issues filed**: [yes | no — details]
+          - **Blockers**: [none | list with details]
+          - **Ready for ks update --lock**: [yes | no — what's blocking]
+          ```
+
+          ## Quality Criteria
+
+          - Every item marked ad-hoc-fix in the plan is resolved — committed and pushed to keystone main
+          - Every item marked needs-issue has a GitHub issue URL linked in the report
+          - Any remaining blockers that would prevent ks update --lock from succeeding are documented with mitigation steps
+
+          ## Context
+
+          This step bridges the gap between planning and deployment. By fixing small issues now, we reduce the risk of `ks update --lock` failing mid-deploy. By filing issues for large problems, we ensure nothing is forgotten. The key discipline is not over-scoping ad-hoc fixes — if a fix takes more than 30 minutes or introduces new risk, it becomes an issue for a proper development cycle via `ks.develop`.
+        inputs:
+          update_plan_md:
+            required: true
+        outputs:
+          fixes_report_md:
+            required: true
+
+      - name: preflight_build
+        instructions: |
+          # Preflight Build
+
+          ## Objective
+
+          Run `ks build` for all target hosts to catch Nix evaluation errors before the human runs `ks update --lock`. This is a non-sudo, agent-driven step that validates the build will succeed.
+
+          ## Task
+
+          Build all target hosts from the deployment plan to verify Nix evaluation and build pass. This catches errors early — before the human invests time in the full deploy.
+
+          ### Process
+
+          1. **Determine target hosts**
+             - Read the deployment plan from update_plan.md
+             - Extract the ordered list of reachable hosts
+             - These are the hosts that will be built
+
+          2. **Update flake lock to latest keystone**
+             - In nixos-config, update the keystone flake input to pick up any fixes from execute_fixes:
+               ```bash
+               nix flake update keystone --flake <nixos-config-path>
+               ```
+             - This does NOT require sudo — it just updates flake.lock
+
+          3. **Build all target hosts**
+             - Run `ks build` with the target hosts:
+               ```bash
+               ks build <host1>,<host2>,<host3>
+               ```
+             - This builds home-manager profiles for all specified hosts (no sudo needed)
+             - Capture the full output
+
+          4. **Handle failures**
+             - If a build fails with a Nix evaluation error:
+               - Analyze the error (missing option, type mismatch, import failure)
+               - Determine if the fix is in keystone or nixos-config
+               - If fixable: call `go_to_step` with `step_id: "execute_fixes"` to apply the fix
+               - If complex: document the error for the human
+             - If all builds succeed: proceed to run_update
+
+          5. **Document results**
+             - Record per-host build status
+             - Note any warnings (Nix deprecation warnings are expected and can be ignored)
+
+          **Maximum loop iterations**: If builds fail twice after looping back to execute_fixes, stop and present the errors to the human.
+
+          ## Output Format
+
+          ### build_result.md
+
+          ```markdown
+          # Preflight Build Result
+
+          **Date**: [date]
+          **nixos-config path**: [path]
+          **Keystone rev in flake.lock**: `[hash]`
+
+          ## Build Command
+          ```
+
+          ks build <host1>,<host2>,<host3>
+
+          ```
+
+          ## Per-Host Results
+
+          | Host | Build Status | Notes |
+          |------|-------------|-------|
+          | ncrmro-workstation | success | — |
+          | ocean | success | — |
+          | mercury | success | — |
+          | maia | success | — |
+
+          ## Warnings
+
+          - [Notable warnings, or "none beyond standard Nix deprecation warnings"]
+
+          ## Errors
+
+          - [Error details if any host failed, or "none"]
+
+          ## Ready for Deploy
+
+          - **All hosts build clean**: [yes | no]
+          - **Recommended command**: `ks update --lock <host1>,<host2>,<host3>`
+          ```
+
+          ## Quality Criteria
+
+          - Every reachable host from the deployment plan was built — none were silently skipped
+          - All hosts build successfully, or failures are documented with error details
+
+          ## Context
+
+          This step exists to catch build failures before the human invests time in the full `ks update --lock` pipeline. `ks build` runs without sudo and evaluates the Nix configuration for each host. If it passes here, `ks update --lock` is very likely to succeed (the main remaining risk is service activation, not the build itself). The build result also provides the exact `ks update --lock` command with host list for the human to copy-paste.
+        inputs:
+          update_plan_md:
+            required: true
+          fixes_report_md:
+            required: true
+        outputs:
+          preflight_build_result_md:
+            required: true
+
+      - name: run_update
+        instructions: |
+          # Run Update
+
+          ## Objective
+
+          Guide the human through running `ks update --lock` to deploy all pending keystone changes to the fleet.
+
+          ## Task
+
+          This is a **human-in-the-loop** step. The agent cannot run `ks update --lock` because it requires sudo. Present the exact command to run and capture the results.
+
+          ### Process
+
+          1. **Present the exact command**
+             - Read the build results from preflight_build to get the host list and confirm builds passed
+             - **Always use `--lock` explicitly** — never omit it, even though it's the default
+
+             **Determine deployment strategy based on risk:**
+             - **Low risk (docs, conventions, terminal/desktop features)**: All hosts in one command:
+               ```
+               ks update --lock <host1>,<host2>,<host3>,<host4>
+               ```
+             - **Medium risk (OS module changes, service config)**: Recommend current host first, then remotes:
+               ```
+               # Step 1: Deploy to local host first
+               ks update --lock <current-host>
+               # Step 2: After verifying, deploy to remotes
+               ks update --lock <remote1>,<remote2>,<remote3>
+               ```
+             - **High risk (bootloader, lanzaboote, Secure Boot, kernel changes)**: ONE local host with `--boot`, reboot, verify, THEN remotes:
+               ```
+               # Step 1: Deploy to local workstation/laptop ONLY (physical access required)
+               ks update --lock --boot <local-host>
+               # Step 2: REBOOT and verify Secure Boot works
+               # Step 3: Only after confirming boot success, deploy to remotes
+               ks update --lock --boot <remote1>,<remote2>
+               ```
+               **WARNING**: A past lanzaboote update broke Secure Boot on a remote server and required physical BIOS intervention. NEVER deploy bootloader changes to remote hosts first.
+
+             **When `--boot` requires a reboot**, the current session will be lost. Before the human reboots, output clear resume instructions:
+
+             ```
+             After reboot, resume this workflow:
+               claude --resume    # or: gemini
+               > The ks.update workflow is at the run_update step.
+               > I just rebooted after `ks update --lock --boot <host>`.
+               > Boot was [successful / failed]. Next: [deploy remotes / run validate].
+             ```
+
+             Also write a `.deepwork/tmp/resume_context.md` file with:
+             - Current workflow step (`run_update`)
+             - Which hosts have been deployed and which remain
+             - The verification checklist from the plan
+             - The exact next command to run
+               This file survives the reboot and gives the next session full context.
+
+             - Include a brief summary of what's being deployed:
+               - Number of keystone commits since last lock
+               - Key changes (2-3 bullet points)
+               - Which hosts and in what order
+               - Risk level and why
+             - Remind them this requires sudo
+
+          2. **Wait for results**
+             - The human will run the command and report back
+             - If the output is unclear, ask structured questions:
+               - Did the build succeed for all hosts?
+               - Were there any errors or warnings?
+               - Did deployment succeed for each host?
+               - Were any hosts skipped (unreachable)?
+
+          3. **Handle failures**
+             - **Build failure**: Since preflight_build already validated, this is unexpected. Analyze the error:
+               - If fixable ad-hoc: call `go_to_step` with `step_id: "execute_fixes"` to apply the fix and retry
+               - If complex: document the error and ask the human for guidance
+             - **Deploy failure** (switch-to-configuration): Document the error. This usually means a service failed to start.
+               - Check `journalctl -xeu <service>` for details
+               - Previous generation is available via `nixos-rebuild switch --rollback`
+             - **Partial success** (some hosts deployed, others failed): Document which succeeded and which failed. The validate step will handle follow-up.
+
+          4. **Document the deployment**
+             - Capture the key output from `ks update --lock`
+             - Note the keystone commit that was locked
+             - Record per-host deployment status
+
+          **Maximum loop iterations**: If the deploy fails twice after looping back to execute_fixes, stop and ask the human to investigate manually.
+
+          ## Output Format
+
+          ### update_result.md
+
+          ```markdown
+          # Update Result
+
+          **Date**: [date/time]
+          **Command**: `ks update --lock <host1>,<host2>,<host3>`
+
+          ## Keystone Revision
+
+          - **Previous locked**: `[old hash]`
+          - **Now locked**: `[new hash]`
+          - **Commits deployed**: [N]
+
+          ## Build Results
+
+          | Host               | Build Status | Notes          |
+          | ------------------ | ------------ | -------------- |
+          | ncrmro-workstation | success      | —              |
+          | ocean              | success      | built remotely |
+          | mercury            | success      | —              |
+
+          ## Deployment Results
+
+          | Host               | Deploy Status | Generation | Notes                         |
+          | ------------------ | ------------- | ---------- | ----------------------------- |
+          | ncrmro-workstation | success       | 476        | switched in-place             |
+          | ocean              | success       | 367        | deployed via Tailscale        |
+          | mercury            | failed        | 49         | connection timeout — deferred |
+
+          ## Warnings
+
+          - [Notable warnings from build output, or "none"]
+
+          ## Deferred Hosts
+
+          - [mox — unreachable since survey, skipped]
+
+          ## Notes
+
+          - [Any relevant observations from the deploy process]
+          ```
+
+          ## Quality Criteria
+
+          - The human confirmed `ks update --lock` completed (at least partially)
+          - The locked keystone commit is documented
+          - Per-host deployment status is captured — successes and failures are both recorded
+          - Any warnings or issues are documented for the validate step
+
+          ## Context
+
+          This is the only step requiring human intervention in the update workflow. `ks update --lock` is the full pipeline: pull repos, lock flake inputs, build all hosts, push the lock commit, and deploy sequentially. It requires sudo because NixOS system activation requires root. Since the preflight_build step already validated that all hosts build cleanly, failures here are typically service activation issues rather than build errors. After this step, the system is running the new configuration and the validate step will verify everything is nominal.
+        inputs:
+          preflight_build_result_md:
+            required: true
+        outputs:
+          update_result_md:
+            required: true
+
+      - name: validate
+        instructions: |
+          # Validate
+
+          ## Objective
+
+          Run `ks doctor` on the current host and check all affected hosts in the fleet to verify the system is nominal after deployment.
+
+          ## Task
+
+          Verify that the deployed changes are working correctly across all hosts. This step can also be run standalone via the `doctor` workflow to check fleet health at any time.
+
+          ### Process
+
+          1. **Check current host health directly**
+             - **Do NOT run `ks doctor`** — it is an AI entrypoint (`/ks.doctor` slash command), not a shell diagnostic tool
+             - Run direct health checks instead:
+               ```bash
+               systemctl is-system-running           # overall state
+               systemctl --failed                    # list failed units
+               journalctl -p err --since '1 hour ago' --no-pager | tail -30
+               ```
+             - For service-specific checks related to the deployed changes, run `systemctl status <service>` directly
+             - Pay special attention to services related to the changes that were deployed
+
+          2. **Check the validation criteria from the plan**
+             - If this step is running as part of the `develop` workflow, read the plan.md from the plan step
+             - Verify each validation criterion defined in the plan is satisfied
+             - Run the specific commands listed in the plan's "Validation Criteria" section
+
+          3. **Check agent health**
+             - List all configured agents via nix eval (see AGENTS.md "Nix Eval for System Context"):
+               ```bash
+               nix eval ~/.keystone/repos/nixos-config#nixosConfigurations.<HOST>.config.keystone.os.agents \
+                 --json --apply 'a: builtins.mapAttrs (_: v: { fullName = v.fullName; host = v.host or null; archetype = v.archetype; desktop = v.desktop.enable; mail = v.mail.provision; chrome = v.chrome.enable; }) a'
+               ```
+             - For each agent on the current host, check:
+               - `agentctl <agent> status` — are core services running?
+               - `agentctl <agent> tasks` — are tasks processing or stuck? Note count of pending tasks.
+               - `agentctl <agent> jobs` (or equivalent) — what are the 3-5 most recent jobs? Are any stuck/failed?
+               - `agentctl <agent> email` — is mail flowing?
+             - For agents on remote hosts, SSH in and run equivalent checks
+             - **Tailscale note**: `tailscale status` shows per-agent Tailscale nodes. Agent Tailscale integration is a **TODO feature** — offline agent nodes are expected and informational only. Only flag if a _host-level_ Tailscale node goes offline.
+
+          4. **Cross-reference issues with GitHub**
+             - For each issue found (failed units, stuck agents, unhealthy services), search GitHub before treating it as new:
+               ```bash
+               gh issue list --search "<keyword>" --repo ncrmro/keystone
+               gh issue list --search "<keyword>" --repo ncrmro/nixos-config
+               ```
+             - If an existing issue is found: link it in the report — do not create a duplicate
+             - If no existing issue: document it as a new finding requiring a new issue
+
+          5. **Determine fleet impact**
+             - Read the hosts table: `ks agent` can show the fleet, or evaluate `hosts.nix` directly
+             - Determine which other hosts are affected by the changes:
+               - Server module changes affect the server host
+               - Agent module changes affect hosts running agents
+               - Terminal/desktop changes affect all workstations
+               - Domain/services changes may affect all hosts
+             - If no other hosts are affected, document why and skip multi-host checks
+
+          6. **Check other affected hosts**
+             - For each affected remote host:
+               - SSH in and check service status: `ssh root@<host> systemctl --failed`
+               - Check for any deployment-related issues: `ssh root@<host> journalctl -p err --since '1 hour ago'`
+               - If the remote host needs updating too, inform the human
+             - Ask structured questions to confirm if the human wants to update remote hosts now
+
+          7. **Evaluate results**
+             - If all checks pass: complete the workflow
+             - If issues found on current host: document them. If they are caused by the recent changes, call `go_to_step` with `step_id: "plan"` to create a fix (this requires a new worktree since we already merged)
+             - If remote hosts need attention: document what needs to happen
+
+          8. **Archive report to zk notes** (see `tool.zk-notes` and `process.notes`)
+             - Fleet health reports contain personal deployment data — archive to the configured notes dir (`$NOTES_DIR`, `~/notes` for Keystone human users), NOT leave them in the open-source repo
+             - **Find prior report** (required — used for `previous_report` chain):
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" list reports/ \
+                 --tag "report/keystone-system" \
+                 --tag "repo/ncrmro/nixos-config" \
+                 --tag "source/deepwork/ks-doctor" \
+                 --sort created- --limit 1 --format json
+               ```
+             - **Create the report note**:
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" new reports/ --title "keystone fleet health $(date +%Y-%m-%d)" \
+                 --no-input --print-path \
+                 --extra report_kind="keystone-system" \
+                 --extra source_ref="ks.doctor" \
+                 --extra type="report" \
+                 --extra author="ks.doctor"
+               ```
+             - **Write note content** — required frontmatter (`type: report`, `tags: [report/keystone-system, repo/ncrmro/nixos-config, source/deepwork/ks-doctor]`, `previous_report: <prior note id or omit if none>`) followed by a concise summary:
+               - Keystone revision gap (commits behind, impactful changes)
+               - Host reachability table
+               - Failed units per host with GitHub issue links
+               - Action items
+             - **Link from a relevant hub if one exists**:
+               ```bash
+               NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+               zk --notebook-dir "$NOTES_DIR" list index/ --tag "status/active" --format json
+               ```
+               If there is a system or operations hub for this notebook, append a link to the new report in its report ledger section. Do not require a `project/keystone` hub.
+
+          **Maximum loop iterations**: If this is the 2nd validation failure, stop looping and present all findings to the human for manual resolution.
+
+          ## Output Format
+
+          ### validation_report.md
+
+          ```markdown
+          # Validation Report
+
+          ## Current Host
+
+          - **Hostname**: [hostname]
+          - **System state**: [running | degraded | maintenance]
+          - **Failed units**: [from `systemctl --failed`, or "None"]
+          - **Recent errors**: [from `journalctl -p err`, or "None"]
+
+          ## Plan Validation Criteria
+
+          | Criterion             | Status    | Evidence                        |
+          | --------------------- | --------- | ------------------------------- |
+          | [criterion from plan] | PASS/FAIL | [command output or observation] |
+          | [criterion from plan] | PASS/FAIL | [command output or observation] |
+
+          ## Agent Health
+
+          ### [agent-name] (host: [host])
+
+          - **Services**: [running | failed — details]
+          - **Tasks**: [N pending | idle | stuck since HH:MM]
+          - **Recent jobs**: [last 3-5 job names or "none in last 24h"]
+          - **Blocking issues**: [description or "none"]
+          - **Mail**: [ok | down]
+          - **Tailscale**: [online | offline] _(offline is expected — agent Tailscale integration is a TODO)_
+
+          ## Fleet Impact Assessment
+
+          - **Changes affect**: [list of affected hosts, or "current host only"]
+          - **Hosts checked**: [list]
+          - **Hosts needing update**: [list, or "none"]
+
+          ## Remote Host Status
+
+          ### [hostname] (if applicable)
+
+          - **Status**: [nominal | issues found | needs update]
+          - **Details**: [findings]
+
+          ## Issues Found
+
+          | Issue                                         | Existing tracker item   | Status       |
+          | --------------------------------------------- | ----------------------- | ------------ |
+          | [e.g., syncoid-rpool-to-ocean.service failed] | [#42 — link]            | pre-existing |
+          | [e.g., unknown service crash]                 | none — new issue needed | new          |
+
+          ## Overall Status
+
+          - **System nominal**: [yes | no — details]
+          - **All validation criteria met**: [yes | no — which failed]
+          - **Action needed**: [none | list of follow-up actions]
+          ```
+
+          ## Quality Criteria
+
+          - Direct health checks on the current host (`systemctl --failed`, `journalctl -p err`) show no critical issues
+          - All hosts affected by the changes have been checked or confirmed not impacted
+          - The specific validation criteria from the plan are confirmed working on the live system
+          - Each agent's task queue, recent jobs, and any blocking issues are reported
+          - Every issue found is cross-referenced against the issue tracker — existing issues are linked, genuinely new issues are flagged for creation
+          - A dated fleet health note has been written to the configured notes dir via `zk` — the report must not remain only in the keystone repo's `.deepwork/` folder
+
+          ## Context
+
+          This is the final quality gate in the develop workflow. It ensures that changes don't just build — they actually work on a live system. The multi-host check is critical because keystone manages a fleet of interconnected hosts, and a change that works on the workstation might break a server service or agent provisioning. This step can also be invoked standalone via the `doctor` workflow for routine fleet health checks.
+        inputs:
+          update_result_md:
+            required: true
+        outputs:
+          validation_report_md:
+            required: true

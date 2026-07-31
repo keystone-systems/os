@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Tracked pre-commit hook for keystone.
+# Runs nixfmt on staged .nix files and shellcheck on staged shell scripts.
+# Install: ./bin/precommit-install or ./bin/pre-commit --install
+
+set -euo pipefail
+
+install_hook() {
+  local repo_root hook_file script_path
+
+  repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"
+  if [[ -z "$repo_root" ]]; then
+    echo "Error: Not in a git repository" >&2
+    exit 1
+  fi
+
+  hook_file="$(git rev-parse --git-path hooks/pre-commit)"
+  script_path="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
+
+  mkdir -p "$(dirname "$hook_file")"
+  ln -sfn "$script_path" "$hook_file"
+
+  echo "Pre-commit hook installed successfully at $hook_file"
+  echo "The hook points to $script_path"
+  echo "It formats staged .nix files with nixfmt and lints staged .sh/.bash files with ShellCheck"
+}
+
+if [[ "${1:-}" == "--install" ]]; then
+  install_hook
+  exit 0
+fi
+
+# Collect staged files (excludes deleted files via --diff-filter=d).
+staged_nix_files="$(git diff --cached --name-only --diff-filter=d -- '*.nix')"
+staged_shell_files="$(git diff --cached --name-only --diff-filter=d -- '*.sh' '*.bash')"
+
+# --- nixfmt on staged .nix files ---
+if [[ -n "$staged_nix_files" ]]; then
+  if ! command -v nixfmt &>/dev/null; then
+    echo "Error: nixfmt is not installed. Enter the devshell or install nixfmt." >&2
+    exit 1
+  fi
+
+  echo "Running nixfmt on staged .nix files..."
+  while IFS= read -r file; do
+    [[ -f "$file" ]] && nixfmt "$file"
+  done <<< "$staged_nix_files"
+
+  # Restage only the files we formatted.
+  echo "$staged_nix_files" | xargs git add --
+fi
+
+# --- shellcheck on staged shell scripts ---
+if [[ -n "$staged_shell_files" ]]; then
+  if ! command -v shellcheck &>/dev/null; then
+    echo "Error: shellcheck is not installed. Enter the devshell or install shellcheck." >&2
+    exit 1
+  fi
+
+  echo "Running shellcheck on staged shell scripts..."
+  while IFS= read -r file; do
+    [[ -f "$file" ]] && shellcheck --severity=error "$file"
+  done <<< "$staged_shell_files"
+fi

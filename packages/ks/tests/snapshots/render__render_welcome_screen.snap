@@ -1,0 +1,18 @@
+---
+source: tests/render.rs
+assertion_line: 50
+expression: output
+---
+                       Welcome to ks!                       
+                                                            
+                                                            
+                                                            
+                                                            
+                                                            
+                > Import existing repository                
+                                                            
+                                                            
+                     Create new repository                  
+                                                            
+                                                            
+    ↑/↓ or j/k to navigate • Enter to select • q to quit

@@ -1,0 +1,12 @@
+{
+  "name": "keystone-devcontainer",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "workspaceFolder": "/workspaces/keystone",
+  "userEnvProbe": "loginShell",
+  "updateRemoteUserUID": false,
+  "onCreateCommand": "nix develop --command echo 'done building nix dev environment'",
+  "waitFor": "onCreateCommand"
+}

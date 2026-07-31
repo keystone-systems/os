@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""
+screenshot - Capture VM display for debugging
+
+Captures a screenshot from a libvirt VM's graphical console.
+Zero external dependencies - uses only Python standard library.
+
+USAGE:
+    ./bin/screenshot [domain-name] [output-path]
+
+EXAMPLES:
+    ./bin/screenshot                           # keystone-test-vm -> screenshots/vm-screenshot-*.png
+    ./bin/screenshot keystone-test-vm          # specific domain
+    ./bin/screenshot keystone-test-vm out.png  # specific output path
+
+OUTPUT:
+    Prints the relative path to the PNG file for easy reading with Read tool.
+
+RELATED FILES:
+    - bin/test-deployment   - Full-stack deployment test
+    - bin/virtual-machine   - Libvirt VM management
+"""
+
+import subprocess
+import sys
+import os
+import tempfile
+from datetime import datetime
+from pathlib import Path
+
+
+def screenshot(domain: str, output_path: str = None) -> str:
+    """
+    Capture a screenshot from a libvirt VM.
+
+    Args:
+        domain: Name of the libvirt domain (VM)
+        output_path: Optional output path for the PNG file
+
+    Returns:
+        Relative path to the saved PNG file
+    """
+    # Generate default output path if not provided
+    if output_path is None:
+        # Create screenshots directory if it doesn't exist
+        screenshots_dir = Path("screenshots")
+        screenshots_dir.mkdir(exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        output_path = f"screenshots/vm-screenshot-{timestamp}.png"
+
+    # Ensure .png extension
+    if not output_path.endswith('.png'):
+        output_path = f"{output_path}.png"
+
+    # virsh screenshot outputs PNG despite requesting .ppm extension
+    try:
+        result = subprocess.run(
+            ["virsh", "screenshot", domain, output_path],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Failed to capture screenshot from domain '{domain}'", file=sys.stderr)
+        print(f"Make sure the VM is running: virsh list --all", file=sys.stderr)
+        if e.stderr:
+            print(f"Details: {e.stderr}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print("ERROR: virsh command not found. Is libvirt installed?", file=sys.stderr)
+        sys.exit(1)
+
+    # Return relative path
+    return output_path
+
+
+def main():
+    # Parse arguments
+    domain = sys.argv[1] if len(sys.argv) > 1 else "keystone-test-vm"
+    output_path = sys.argv[2] if len(sys.argv) > 2 else None
+
+    # Capture and print path
+    path = screenshot(domain, output_path)
+    print(path)
+
+
+if __name__ == "__main__":
+    main()

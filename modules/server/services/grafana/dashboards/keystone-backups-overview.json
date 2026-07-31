@@ -1,0 +1,189 @@
+{
+  "uid": "keystone-backups-overview",
+  "title": "Keystone Backups Overview",
+  "tags": ["keystone", "backup", "zfs"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 0,
+  "editable": true,
+  "refresh": "5m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "job",
+        "label": "Backup Unit",
+        "type": "query",
+        "refresh": 1,
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(node_systemd_unit_state{name=~\"syncoid.*\\\\.service\"}, name)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "System index",
+      "url": "/d/keystone-system-index/keystone-system-index"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Healthy Backup Units",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "(count(node_systemd_unit_state{name=~\"$job\",state=\"failed\"}) - count(node_systemd_unit_state{name=~\"$job\",state=\"failed\"} == 1)) / clamp_min(count(node_systemd_unit_state{name=~\"$job\",state=\"failed\"}), 1) * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 50 },
+              { "color": "green", "value": 100 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Active Backup Timers",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(node_systemd_unit_state{name=~\"syncoid.*\\\\.timer\",state=\"active\"} == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Failing Jobs Count",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "count(node_systemd_unit_state{name=~\"$job\",state=\"failed\"} == 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Backup Unit Status",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "node_systemd_unit_state{name=~\"$job\",state=\"failed\"}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "state": true
+            },
+            "renameByName": {
+              "name": "Unit",
+              "Value": "Failed"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Failed" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": { "text": "No", "color": "green" },
+                      "1": { "text": "Yes", "color": "red" }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "title": "Failing Backup Units",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "node_systemd_unit_state{name=~\"$job\",state=\"failed\"}",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    }
+  ]
+}

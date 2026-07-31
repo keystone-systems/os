@@ -1,0 +1,20 @@
+[
+  {
+    "id": "1",
+    "flags": [],
+    "subject": "[ping] e2e-test",
+    "from": {
+      "name": "Test User",
+      "addr": "test@ncrmro.com"
+    },
+    "to": [
+      {
+        "name": "Test Agent",
+        "addr": "agent-test@ncrmro.com"
+      }
+    ],
+    "date": "2026-04-07T12:00:00Z",
+    "has_attachment": false,
+    "body": "ping"
+  }
+]

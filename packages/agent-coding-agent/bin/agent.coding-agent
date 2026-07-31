@@ -1,0 +1,489 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AGENT_SPACE="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+##############################################################################
+# Usage
+##############################################################################
+usage() {
+  cat <<'EOF'
+Usage: agent.coding-agent --repo OWNER/REPO --task "description" [OPTIONS]
+
+Orchestrates coding tasks: branch, invoke subagent, push, PR, review.
+
+Required:
+  --repo OWNER/REPO        Target repository (must exist in .repos/)
+  --task "description"      What to implement
+
+Optional:
+  --branch PREFIX/NAME      Full branch name (default: auto-generated)
+  --prefix PREFIX           Branch prefix: feature|fix|chore|refactor|docs (default: feature)
+  --provider NAME           Agent CLI: claude|codex|gemini (default: claude)
+  --model MODEL             Model override (e.g. sonnet, opus)
+  --max-review-cycles N     Review/fix iterations (default: 2)
+  --review-only PR_NUMBER   Skip coding, review an existing PR
+  --skip-review             Skip review, just push and create draft PR
+  --timeout SECONDS         Per-invocation timeout (default: 600)
+  --help                    Show this help message
+EOF
+  exit 0
+}
+
+##############################################################################
+# Defaults
+##############################################################################
+REPO=""
+TASK=""
+BRANCH=""
+PREFIX="feature"
+PROVIDER="claude"
+MODEL=""
+MAX_REVIEW_CYCLES=2
+REVIEW_ONLY=""
+SKIP_REVIEW=false
+TIMEOUT=600
+
+##############################################################################
+# Parse arguments
+##############################################################################
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --repo)       REPO="$2"; shift 2 ;;
+    --task)       TASK="$2"; shift 2 ;;
+    --branch)     BRANCH="$2"; shift 2 ;;
+    --prefix)     PREFIX="$2"; shift 2 ;;
+    --provider)   PROVIDER="$2"; shift 2 ;;
+    --model)      MODEL="$2"; shift 2 ;;
+    --max-review-cycles) MAX_REVIEW_CYCLES="$2"; shift 2 ;;
+    --review-only) REVIEW_ONLY="$2"; shift 2 ;;
+    --skip-review) SKIP_REVIEW=true; shift ;;
+    --timeout)    TIMEOUT="$2"; shift 2 ;;
+    --help)       usage ;;
+    *)            echo "ERROR: Unknown argument: $1" >&2; usage ;;
+  esac
+done
+
+##############################################################################
+# Validate required args
+##############################################################################
+if [[ -z "$REPO" ]]; then
+  echo "ERROR: --repo is required" >&2
+  exit 1
+fi
+
+if [[ -z "$TASK" && -z "$REVIEW_ONLY" ]]; then
+  echo "ERROR: --task is required (unless using --review-only)" >&2
+  exit 1
+fi
+
+REPO_DIR="$AGENT_SPACE/.repos/$REPO"
+
+##############################################################################
+# Cleanup trap
+##############################################################################
+TEMP_FILES=()
+cleanup() {
+  local exit_code=$?
+  for f in "${TEMP_FILES[@]}"; do
+    rm -f "$f"
+  done
+  # Return to default branch on exit (best-effort)
+  if [[ -n "${DEFAULT_BRANCH:-}" && -d "$REPO_DIR" ]]; then
+    git -C "$REPO_DIR" checkout "$DEFAULT_BRANCH" 2>/dev/null || true
+  fi
+  exit "$exit_code"
+}
+trap cleanup EXIT
+
+##############################################################################
+# Helpers
+##############################################################################
+slugify() {
+  echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-40
+}
+
+log() {
+  echo "[coding-agent] $*"
+}
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+##############################################################################
+# 1. Pre-flight checks
+##############################################################################
+log "Pre-flight: checking $REPO_DIR"
+
+[[ -d "$REPO_DIR" ]] || die "Repo directory does not exist: $REPO_DIR (clone it first)"
+[[ -d "$REPO_DIR/.git" ]] || die "Not a git repository: $REPO_DIR"
+
+# Detect remote type
+REMOTE_URL="$(git -C "$REPO_DIR" remote get-url origin 2>/dev/null)" || die "No 'origin' remote in $REPO_DIR"
+if [[ "$REMOTE_URL" == *"github.com"* ]]; then
+  REMOTE_TYPE="github"
+elif [[ "$REMOTE_URL" == *"git.ncrmro.com"* ]]; then
+  REMOTE_TYPE="forgejo"
+else
+  die "Unknown remote type for URL: $REMOTE_URL"
+fi
+log "Remote type: $REMOTE_TYPE"
+
+# Detect default branch
+DEFAULT_BRANCH="$(git -C "$REPO_DIR" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')" || true
+if [[ -z "$DEFAULT_BRANCH" ]]; then
+  # Fallback: try common names
+  if git -C "$REPO_DIR" rev-parse --verify origin/main &>/dev/null; then
+    DEFAULT_BRANCH="main"
+  elif git -C "$REPO_DIR" rev-parse --verify origin/master &>/dev/null; then
+    DEFAULT_BRANCH="master"
+  else
+    die "Cannot detect default branch. Set origin/HEAD with: git remote set-head origin --auto"
+  fi
+fi
+log "Default branch: $DEFAULT_BRANCH"
+
+# Ensure clean state on default branch
+git -C "$REPO_DIR" checkout "$DEFAULT_BRANCH" 2>/dev/null || die "Failed to checkout $DEFAULT_BRANCH"
+git -C "$REPO_DIR" fetch origin || die "Failed to fetch origin"
+git -C "$REPO_DIR" pull --ff-only origin "$DEFAULT_BRANCH" || die "Failed to pull $DEFAULT_BRANCH (non-fast-forward)"
+
+if ! git -C "$REPO_DIR" diff --quiet || ! git -C "$REPO_DIR" diff --cached --quiet; then
+  die "Working tree is not clean on $DEFAULT_BRANCH. Commit or stash changes first."
+fi
+
+log "Pre-flight passed"
+
+##############################################################################
+# Handle --review-only mode
+##############################################################################
+if [[ -n "$REVIEW_ONLY" ]]; then
+  PR_NUMBER="$REVIEW_ONLY"
+  log "Review-only mode for PR #$PR_NUMBER"
+
+  # Get PR branch
+  if [[ "$REMOTE_TYPE" == "github" ]]; then
+    PR_BRANCH="$(gh pr view "$PR_NUMBER" --repo "$REPO" --json headRefName --jq '.headRefName')" || die "Failed to get PR branch"
+  else
+    die "Review-only for Forgejo not yet implemented"
+  fi
+
+  git -C "$REPO_DIR" fetch origin "$PR_BRANCH"
+  git -C "$REPO_DIR" checkout "$PR_BRANCH"
+
+  DIFF="$(git -C "$REPO_DIR" diff "$DEFAULT_BRANCH".."$PR_BRANCH")"
+  COMMIT_LOG="$(git -C "$REPO_DIR" log --oneline "$DEFAULT_BRANCH".."$PR_BRANCH")"
+
+  REVIEW_PROMPT_FILE="$(mktemp)"
+  TEMP_FILES+=("$REVIEW_PROMPT_FILE")
+
+  cat > "$REVIEW_PROMPT_FILE" <<REVIEWEOF
+## Code Review
+
+Review the following changes for PR #$PR_NUMBER.
+
+### Commit Log
+$COMMIT_LOG
+
+### Diff
+$DIFF
+
+### Instructions
+1. Review the code for correctness, style, and potential issues.
+2. Output your findings using this exact format:
+
+For each issue found:
+COMMENT: path/to/file.ext:LINE_NUMBER
+Description of the issue.
+END_COMMENT
+
+After all comments (or if no issues found):
+VERDICT: PASS
+(or VERDICT: FAIL if there are issues that must be fixed)
+
+Only use VERDICT: FAIL for real problems, not style preferences.
+REVIEWEOF
+
+  PROVIDER_SCRIPT="$SCRIPT_DIR/agent.coding-agent.$PROVIDER"
+  [[ -x "$PROVIDER_SCRIPT" ]] || die "Provider script not found or not executable: $PROVIDER_SCRIPT"
+
+  log "Running review agent..."
+  REVIEW_OUTPUT="$("$PROVIDER_SCRIPT" "$REPO_DIR" "$REVIEW_PROMPT_FILE" "$TIMEOUT" --model sonnet 2>&1)" || true
+
+  echo "$REVIEW_OUTPUT"
+  log "Review complete"
+  exit 0
+fi
+
+##############################################################################
+# 2. Create branch
+##############################################################################
+if [[ -z "$BRANCH" ]]; then
+  SLUG="$(slugify "$TASK")"
+  BRANCH="$PREFIX/$SLUG"
+fi
+log "Branch: $BRANCH"
+
+git -C "$REPO_DIR" checkout -b "$BRANCH" || die "Failed to create branch: $BRANCH"
+
+##############################################################################
+# 3. Generate system prompt
+##############################################################################
+SYSTEM_PROMPT_FILE="$(mktemp)"
+TEMP_FILES+=("$SYSTEM_PROMPT_FILE")
+
+cat > "$SYSTEM_PROMPT_FILE" <<SYSEOF
+## Task
+$TASK
+
+## Git Context
+Branch: $BRANCH (created from $DEFAULT_BRANCH)
+Repository: $REPO_DIR
+Remote: $REMOTE_TYPE
+
+## Rules
+1. COMMIT your work as you go. Make multiple, focused commits with descriptive
+   conventional messages (e.g. "feat: add user auth middleware", "test: add auth tests").
+   Do NOT save all changes for one big commit at the end.
+2. Run the project's tests if they exist. Fix failures.
+3. Do NOT push. Do NOT create PRs. The orchestrator script handles that.
+4. Do NOT switch branches. Stay on '$BRANCH'.
+5. If the repo has AGENTS.md or CLAUDE.md, read it for project conventions.
+6. Focus on the task. No unrelated changes.
+7. If blocked, create BLOCKED.md explaining the issue, then exit.
+SYSEOF
+
+##############################################################################
+# 4. Run coding agent
+##############################################################################
+PROVIDER_SCRIPT="$SCRIPT_DIR/agent.coding-agent.$PROVIDER"
+[[ -x "$PROVIDER_SCRIPT" ]] || die "Provider script not found or not executable: $PROVIDER_SCRIPT"
+
+MODEL_ARGS=""
+if [[ -n "$MODEL" ]]; then
+  MODEL_ARGS="--model $MODEL"
+fi
+
+log "Running coding agent ($PROVIDER)..."
+"$PROVIDER_SCRIPT" "$REPO_DIR" "$SYSTEM_PROMPT_FILE" "$TIMEOUT" $MODEL_ARGS || die "Coding agent failed"
+
+##############################################################################
+# 5. Verify work
+##############################################################################
+COMMIT_COUNT="$(git -C "$REPO_DIR" rev-list --count "$DEFAULT_BRANCH".."$BRANCH")"
+if [[ "$COMMIT_COUNT" -eq 0 ]]; then
+  die "Agent produced no commits on $BRANCH"
+fi
+log "Agent produced $COMMIT_COUNT commit(s)"
+
+# Check for BLOCKED.md
+if [[ -f "$REPO_DIR/BLOCKED.md" ]]; then
+  log "WARNING: Agent created BLOCKED.md:"
+  cat "$REPO_DIR/BLOCKED.md"
+  log "Continuing with push/PR anyway..."
+fi
+
+##############################################################################
+# 6. Push
+##############################################################################
+log "Pushing $BRANCH to origin..."
+
+if [[ "$REMOTE_TYPE" == "github" ]]; then
+  # Use token-based URL for push
+  GH_TOKEN="$(gh auth token)" || die "Failed to get GitHub token"
+  git -C "$REPO_DIR" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+  git -C "$REPO_DIR" push -u origin "$BRANCH" || {
+    git -C "$REPO_DIR" remote set-url origin "https://github.com/${REPO}.git"
+    die "Failed to push branch"
+  }
+  git -C "$REPO_DIR" remote set-url origin "https://github.com/${REPO}.git"
+else
+  # Forgejo uses SSH
+  git -C "$REPO_DIR" push -u origin "$BRANCH" || die "Failed to push branch"
+fi
+
+log "Push succeeded"
+
+##############################################################################
+# 7. Create draft PR
+##############################################################################
+# Generate PR title from task (first 70 chars)
+PR_TITLE="$(echo "$TASK" | cut -c1-70)"
+PR_BODY="## Summary
+
+$TASK
+
+## Changes
+
+$(git -C "$REPO_DIR" log --oneline "$DEFAULT_BRANCH".."$BRANCH")
+
+---
+Created by coding-agent ($PROVIDER)"
+
+log "Creating draft PR..."
+
+if [[ "$REMOTE_TYPE" == "github" ]]; then
+  PR_URL="$(gh pr create --repo "$REPO" --head "$BRANCH" --base "$DEFAULT_BRANCH" --draft \
+    --title "$PR_TITLE" --body "$PR_BODY" 2>&1)" || die "Failed to create PR: $PR_URL"
+  # Extract PR number from URL
+  PR_NUMBER="$(echo "$PR_URL" | grep -oE '[0-9]+$')"
+  log "Created draft PR: $PR_URL"
+elif [[ "$REMOTE_TYPE" == "forgejo" ]]; then
+  PR_OUTPUT="$(fj --host https://git.ncrmro.com pr create --repo "$REPO" \
+    --head "$BRANCH" --base "$DEFAULT_BRANCH" "WIP: $PR_TITLE" 2>&1)" || die "Failed to create PR: $PR_OUTPUT"
+  PR_NUMBER="$(echo "$PR_OUTPUT" | grep -oE '[0-9]+'| head -1)"
+  PR_URL="https://git.ncrmro.com/$REPO/pulls/$PR_NUMBER"
+  log "Created draft PR: $PR_URL"
+fi
+
+##############################################################################
+# 8. Review cycle
+##############################################################################
+if [[ "$SKIP_REVIEW" == true ]]; then
+  log "Skipping review (--skip-review)"
+else
+  REVIEW_PASSED=false
+
+  for cycle in $(seq 1 "$MAX_REVIEW_CYCLES"); do
+    log "Review cycle $cycle/$MAX_REVIEW_CYCLES"
+
+    # Gather diff and log
+    DIFF="$(git -C "$REPO_DIR" diff "$DEFAULT_BRANCH".."$BRANCH")"
+    COMMIT_LOG="$(git -C "$REPO_DIR" log --oneline "$DEFAULT_BRANCH".."$BRANCH")"
+
+    # Build review prompt
+    REVIEW_PROMPT_FILE="$(mktemp)"
+    TEMP_FILES+=("$REVIEW_PROMPT_FILE")
+
+    cat > "$REVIEW_PROMPT_FILE" <<REVIEWEOF
+## Code Review
+
+Review the following changes for correctness, style, and potential issues.
+
+### Task
+$TASK
+
+### Commit Log
+$COMMIT_LOG
+
+### Diff
+$DIFF
+
+### Instructions
+1. Review the code for correctness, style, and potential issues.
+2. Output your findings using this exact format:
+
+For each issue found:
+COMMENT: path/to/file.ext:LINE_NUMBER
+Description of the issue.
+END_COMMENT
+
+After all comments (or if no issues found):
+VERDICT: PASS
+(or VERDICT: FAIL if there are issues that must be fixed)
+
+Only use VERDICT: FAIL for real problems, not style preferences.
+REVIEWEOF
+
+    log "Running review agent (cycle $cycle)..."
+    REVIEW_OUTPUT="$("$PROVIDER_SCRIPT" "$REPO_DIR" "$REVIEW_PROMPT_FILE" "$TIMEOUT" --model sonnet 2>&1)" || true
+
+    # Parse verdict
+    if echo "$REVIEW_OUTPUT" | grep -q "VERDICT: PASS"; then
+      log "Review PASSED"
+      REVIEW_PASSED=true
+
+      # Post review comments (if any COMMENT blocks exist)
+      if echo "$REVIEW_OUTPUT" | grep -q "^COMMENT:"; then
+        log "Posting review comments..."
+        post_review_comments "$REVIEW_OUTPUT"
+      fi
+
+      break
+    fi
+
+    log "Review FAILED (cycle $cycle)"
+
+    # Extract comments for feedback
+    REVIEW_COMMENTS="$(echo "$REVIEW_OUTPUT" | sed -n '/^COMMENT:/,/^END_COMMENT/p')"
+
+    # Post review comments
+    if [[ -n "$REVIEW_COMMENTS" ]]; then
+      if [[ "$REMOTE_TYPE" == "github" ]]; then
+        # Post as PR review comment (summary)
+        gh pr comment "$PR_NUMBER" --repo "$REPO" --body "## Automated Review (cycle $cycle)
+
+$REVIEW_COMMENTS" 2>/dev/null || log "WARNING: Failed to post review comment"
+      elif [[ "$REMOTE_TYPE" == "forgejo" ]]; then
+        fj --host https://git.ncrmro.com pr comment --repo "$REPO" "$PR_NUMBER" \
+          "Automated review (cycle $cycle): $REVIEW_COMMENTS" 2>/dev/null || log "WARNING: Failed to post review comment"
+      fi
+    fi
+
+    # If not last cycle, re-run coding agent with review feedback
+    if [[ "$cycle" -lt "$MAX_REVIEW_CYCLES" ]]; then
+      FIX_PROMPT_FILE="$(mktemp)"
+      TEMP_FILES+=("$FIX_PROMPT_FILE")
+
+      cat > "$FIX_PROMPT_FILE" <<FIXEOF
+## Task
+Fix the issues found during code review.
+
+## Git Context
+Branch: $BRANCH (created from $DEFAULT_BRANCH)
+Repository: $REPO_DIR
+Remote: $REMOTE_TYPE
+
+## Review Feedback
+$REVIEW_COMMENTS
+
+## Rules
+1. Fix ONLY the issues described in the review feedback above.
+2. COMMIT your fixes with descriptive messages (e.g. "fix: address review feedback").
+3. Run the project's tests if they exist. Fix failures.
+4. Do NOT push. Do NOT create PRs.
+5. Do NOT switch branches. Stay on '$BRANCH'.
+6. Do NOT make unrelated changes.
+FIXEOF
+
+      log "Re-running coding agent to fix review issues..."
+      "$PROVIDER_SCRIPT" "$REPO_DIR" "$FIX_PROMPT_FILE" "$TIMEOUT" $MODEL_ARGS || log "WARNING: Fix agent exited with error"
+
+      # Push fixes
+      log "Pushing fixes..."
+      if [[ "$REMOTE_TYPE" == "github" ]]; then
+        GH_TOKEN="$(gh auth token)"
+        git -C "$REPO_DIR" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+        git -C "$REPO_DIR" push origin "$BRANCH" || log "WARNING: Failed to push fixes"
+        git -C "$REPO_DIR" remote set-url origin "https://github.com/${REPO}.git"
+      else
+        git -C "$REPO_DIR" push origin "$BRANCH" || log "WARNING: Failed to push fixes"
+      fi
+    fi
+  done
+
+  ##############################################################################
+  # 9. Mark ready for review (if passed)
+  ##############################################################################
+  if [[ "$REVIEW_PASSED" == true ]]; then
+    log "Marking PR as ready for review..."
+    if [[ "$REMOTE_TYPE" == "github" ]]; then
+      gh pr ready "$PR_NUMBER" --repo "$REPO" 2>/dev/null || log "WARNING: Failed to mark PR ready"
+    elif [[ "$REMOTE_TYPE" == "forgejo" ]]; then
+      # Forgejo: rename PR to remove WIP prefix
+      fj --host https://git.ncrmro.com pr edit --repo "$REPO" "$PR_NUMBER" \
+        --title "$PR_TITLE" 2>/dev/null || log "WARNING: Failed to remove WIP prefix"
+    fi
+    log "PR marked ready for review"
+  else
+    log "Review did not pass after $MAX_REVIEW_CYCLES cycles. PR remains as draft."
+  fi
+fi
+
+##############################################################################
+# Done
+##############################################################################
+log "Complete. PR: ${PR_URL:-unknown}"

@@ -1,0 +1,292 @@
+#!/usr/bin/env bash
+# iso-burn-usb — write the Keystone installer ISO to a USB stick with safety checks
+#
+# Guided alternative to a raw `dd` invocation. Locates the ISO produced by
+# `nix build .#iso`, lists ONLY removable USB block devices on the host
+# (internal NVMe/SATA disks are filtered out entirely), shows model + size +
+# partition layout for the picked device, and requires the literal word
+# `BURN` to be typed before any writes happen. Auto-mounted partitions on
+# the target are unmounted before dd so the write doesn't race against a
+# file manager.
+#
+# Usage (from the keystone-config dev shell or via `nix develop -c`):
+#   iso-burn-usb                        # auto-find result/iso/*.iso, guided pick
+#   iso-burn-usb --build                # run `nix build .#iso` first, then burn
+#   iso-burn-usb --iso PATH             # override the ISO source
+#   iso-burn-usb --device /dev/sdb      # skip the picker, still confirm
+#   iso-burn-usb --no-sync              # skip final `sync` (faster but unsafe)
+#
+# `./bin/iso-burn-usb` also works after `chmod +x bin/*`; the dev-shell form
+# is canonical because `nix flake new -t` strips executable bits on scaffold.
+#
+# Supports Linux (lsblk + dd) and macOS (diskutil + dd on the raw device).
+# Windows users: this script does not run; use Rufus in "DD Image" mode.
+
+set -euo pipefail
+
+# Locate the keystone-config root by walking up from CWD looking for a
+# `flake.nix`. Covers both invocation paths:
+#   - `./bin/iso-burn-usb` from the scaffold root (PWD is the root)
+#   - `nix develop -c iso-burn-usb` from anywhere inside the scaffold
+#     (BASH_SOURCE resolves to /nix/store, not useful; PWD is)
+# Override via `--iso PATH` if your ISO lives elsewhere.
+find_config_root() {
+  local dir="$PWD"
+  while [[ "$dir" != "/" ]]; do
+    [[ -f "$dir/flake.nix" ]] && { printf '%s\n' "$dir"; return 0; }
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+CONFIG_ROOT="$(find_config_root 2>/dev/null)" || true
+
+ISO_PATH=""
+DEVICE_OVERRIDE=""
+DO_SYNC=true
+BUILD_FIRST=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --iso)      ISO_PATH="$2"; shift 2 ;;
+    --device)   DEVICE_OVERRIDE="$2"; shift 2 ;;
+    --no-sync)  DO_SYNC=false; shift ;;
+    --build)    BUILD_FIRST=true; shift ;;
+    -h|--help)
+      sed -n '/^# iso-burn-usb/,/^set -euo/{/^set -euo/!p;}' "$0" | sed -e 's/^# \{0,1\}//'
+      exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+done
+
+OS="$(uname -s)"
+
+# ── optionally build the ISO first ──────────────────────────────────────────
+# `--build` collapses the two-step "nix build .#iso → burn" flow into one
+# command. The build runs in the keystone-config root so the resulting
+# `result/iso/*.iso` is exactly where the discovery step below expects to
+# find it.
+
+if [[ "$BUILD_FIRST" == "true" ]]; then
+  if [[ -z "$CONFIG_ROOT" ]]; then
+    echo "ERROR: --build requires running from inside a keystone-config" >&2
+    echo "       (no flake.nix found upward from $PWD)." >&2
+    exit 1
+  fi
+  echo "Building ISO in $CONFIG_ROOT…"
+  ( cd "$CONFIG_ROOT" && nix build .#iso )
+fi
+
+# ── locate the ISO ───────────────────────────────────────────────────────────
+
+if [[ -z "$ISO_PATH" && -n "$CONFIG_ROOT" ]]; then
+  ISO_PATH="$(find "$CONFIG_ROOT/result/iso" -maxdepth 1 -name '*.iso' -print -quit 2>/dev/null || true)"
+fi
+if [[ -z "$ISO_PATH" || ! -f "$ISO_PATH" ]]; then
+  if [[ -z "$CONFIG_ROOT" ]]; then
+    echo "ERROR: No keystone-config detected — no flake.nix found in $PWD or any parent." >&2
+    echo "       cd into your scaffolded keystone-config first, or pass --iso PATH." >&2
+  else
+    echo "ERROR: No ISO found at $CONFIG_ROOT/result/iso/*.iso." >&2
+    echo "       Run 'nix build .#iso' from $CONFIG_ROOT first," >&2
+    echo "       or pass --iso PATH to point at an existing build." >&2
+  fi
+  exit 1
+fi
+
+ISO_SIZE_BYTES="$(stat -c%s "$ISO_PATH" 2>/dev/null || stat -f%z "$ISO_PATH")"
+ISO_SIZE_HUMAN="$(numfmt --to=iec --suffix=B "$ISO_SIZE_BYTES" 2>/dev/null || echo "${ISO_SIZE_BYTES}B")"
+
+echo "ISO: $ISO_PATH  ($ISO_SIZE_HUMAN)"
+echo
+
+# ── list USB devices ─────────────────────────────────────────────────────────
+# CRITICAL: this filter is the primary safety boundary. If a future change
+# causes an internal NVMe or SATA disk to appear in the picker, a misclick can
+# overwrite the user's driver disk in seconds. Filter must remain strict.
+
+declare -a USB_DEVS=()
+declare -A USB_INFO=()  # device → human description
+
+case "$OS" in
+  Linux)
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      dev="$(awk '{print $1}' <<<"$line")"
+      info="$(awk '{$1=""; sub(/^ /,""); print}' <<<"$line")"
+      USB_DEVS+=("$dev")
+      USB_INFO["$dev"]="$info"
+    done < <(lsblk -dpno NAME,SIZE,MODEL,VENDOR,TRAN | awk '$NF=="usb"')
+    ;;
+  Darwin)
+    while IFS= read -r dev; do
+      [[ -z "$dev" ]] && continue
+      info="$(diskutil info "$dev" 2>/dev/null | awk -F: '
+        /Device \/ Media Name/ {gsub(/^ +| +$/,"",$2); name=$2}
+        /Disk Size/             {gsub(/^ +| +$/,"",$2); size=$2}
+        END {print name, "—", size}')"
+      USB_DEVS+=("$dev")
+      USB_INFO["$dev"]="$info"
+    done < <(diskutil list external physical | awk '/^\/dev\/disk/ {print $1}')
+    ;;
+  *)
+    echo "ERROR: Unsupported platform: $OS" >&2
+    echo "       Linux + macOS only. Windows users: use Rufus in DD Image mode." >&2
+    exit 1
+    ;;
+esac
+
+# ── pick a device ────────────────────────────────────────────────────────────
+
+DEVICE=""
+
+if [[ -n "$DEVICE_OVERRIDE" ]]; then
+  # SECURITY: even when --device is provided, refuse if the path isn't in the
+  # detected USB list. Prevents a stray --device /dev/nvme0n1 from succeeding.
+  if [[ ! " ${USB_DEVS[*]:-} " =~ \ ${DEVICE_OVERRIDE}\  ]]; then
+    echo "ERROR: $DEVICE_OVERRIDE is not in the list of detected USB devices." >&2
+    echo "       Detected USB devices: ${USB_DEVS[*]:-(none)}" >&2
+    echo "       For non-USB targets, use raw 'dd' manually (you assume the risk)." >&2
+    exit 1
+  fi
+  DEVICE="$DEVICE_OVERRIDE"
+elif [[ ${#USB_DEVS[@]} -eq 0 ]]; then
+  echo "ERROR: No removable USB storage detected." >&2
+  echo "       Plug in a USB stick, wait a moment, then re-run." >&2
+  exit 1
+elif [[ ${#USB_DEVS[@]} -eq 1 ]]; then
+  DEVICE="${USB_DEVS[0]}"
+  echo "Detected one USB device: $DEVICE  (${USB_INFO[$DEVICE]})"
+else
+  echo "Multiple USB devices detected. Pick one:"
+  for i in "${!USB_DEVS[@]}"; do
+    d="${USB_DEVS[$i]}"
+    printf "  [%d] %s  — %s\n" "$((i+1))" "$d" "${USB_INFO[$d]}"
+  done
+  echo
+  read -r -p "Selection [1-${#USB_DEVS[@]}]: " sel
+  if ! [[ "$sel" =~ ^[1-9][0-9]*$ ]] || (( sel < 1 || sel > ${#USB_DEVS[@]} )); then
+    echo "ERROR: Invalid selection." >&2
+    exit 1
+  fi
+  DEVICE="${USB_DEVS[$((sel-1))]}"
+fi
+
+echo
+
+# ── device size sanity check ─────────────────────────────────────────────────
+
+case "$OS" in
+  Linux)
+    DEVICE_SIZE_BYTES="$(lsblk -dbno SIZE "$DEVICE" 2>/dev/null || echo 0)"
+    ;;
+  Darwin)
+    DEVICE_SIZE_BYTES="$(diskutil info "$DEVICE" 2>/dev/null \
+      | awk -F'[()]' '/Disk Size/ {print $2}' | awk '{print $1}')"
+    ;;
+esac
+
+if [[ "${DEVICE_SIZE_BYTES:-0}" -gt 0 && "${DEVICE_SIZE_BYTES}" -lt "${ISO_SIZE_BYTES}" ]]; then
+  echo "ERROR: $DEVICE is smaller than the ISO." >&2
+  echo "       Device: ${DEVICE_SIZE_BYTES} bytes; ISO: ${ISO_SIZE_BYTES} bytes." >&2
+  exit 1
+fi
+
+# ── show what's about to happen ──────────────────────────────────────────────
+
+echo "═══════════════════════════════════════════════════════════════════════"
+echo " Source : $ISO_PATH"
+echo "          (${ISO_SIZE_HUMAN})"
+echo " Target : $DEVICE"
+echo "          ${USB_INFO[$DEVICE]:-}"
+echo
+echo " Current partition layout on $DEVICE:"
+case "$OS" in
+  Linux)  lsblk "$DEVICE" 2>/dev/null | sed 's/^/   /' ;;
+  Darwin) diskutil list "$DEVICE" | sed 's/^/   /' ;;
+esac
+echo
+echo " ⚠ THIS WILL DESTROY ALL DATA ON $DEVICE."
+echo "═══════════════════════════════════════════════════════════════════════"
+echo
+
+# ── hard confirmation ────────────────────────────────────────────────────────
+# CRITICAL: require typing a literal word rather than y/n. The muscle-memory
+# cost of a y/n prompt is near-zero; typing BURN forces the user to read the
+# device path one more time before committing.
+
+read -r -p "Type BURN (uppercase) to proceed, or anything else to abort: " confirm
+if [[ "$confirm" != "BURN" ]]; then
+  echo "Aborted. No writes performed."
+  exit 0
+fi
+
+# ── acquire sudo credentials before destructive ops ──────────────────────────
+# Done AFTER the BURN check so an aborted run never prompts for a password,
+# and BEFORE unmount + dd so the user is not interrupted mid-write by a
+# credential refresh. A single `sudo -v` covers both steps below.
+
+echo
+echo "The unmount + dd steps need elevated privileges."
+if ! sudo -v; then
+  echo "ERROR: Could not acquire sudo credentials. Burn aborted." >&2
+  exit 1
+fi
+
+# Refresh the cached sudo timestamp every 60s while the script is alive.
+# USB2 + a 2 GB ISO can run 15+ minutes — past sudo's default
+# `timestamp_timeout` of 15 — and a mid-write expiration would interrupt dd.
+# The loop exits on its own once the timestamp can no longer be refreshed
+# (e.g. the trap killed sudo's parent), so no special cleanup beyond the
+# EXIT trap below is needed.
+( while sudo -n true 2>/dev/null; do sleep 60; done ) &
+SUDO_KEEPER_PID=$!
+trap 'kill "$SUDO_KEEPER_PID" 2>/dev/null || true' EXIT
+
+# ── unmount any auto-mounted partitions on the target ────────────────────────
+
+echo
+case "$OS" in
+  Linux)
+    # Unmount every mount with a source under $DEVICE (e.g. /dev/sdb1, /dev/sdb2).
+    while read -r mountpoint; do
+      [[ -z "$mountpoint" ]] && continue
+      echo "Unmounting $mountpoint…"
+      sudo umount "$mountpoint"
+    done < <(lsblk -nrpo MOUNTPOINT "$DEVICE" | awk 'NF')
+    ;;
+  Darwin)
+    # diskutil unmountDisk handles all slices on the device in one call.
+    echo "Unmounting $DEVICE…"
+    diskutil unmountDisk "$DEVICE"
+    ;;
+esac
+
+# ── dd ───────────────────────────────────────────────────────────────────────
+
+echo
+echo "Writing… (this takes 2-10 minutes depending on USB speed)"
+case "$OS" in
+  Linux)
+    sudo dd if="$ISO_PATH" of="$DEVICE" bs=4M status=progress conv=fsync
+    ;;
+  Darwin)
+    # On macOS, /dev/rdiskN (raw, character device) is dramatically faster than
+    # /dev/diskN. dd on BSD also needs lowercase 'm' for the block size.
+    raw_device="${DEVICE/\/dev\/disk/\/dev\/rdisk}"
+    sudo dd if="$ISO_PATH" of="$raw_device" bs=4m
+    ;;
+esac
+
+if [[ "$DO_SYNC" == "true" ]]; then
+  echo "Syncing buffers…"
+  sync
+fi
+
+echo
+echo "✓ Done. You can now eject $DEVICE and boot the target hardware from it."
+case "$OS" in
+  Darwin)
+    echo "  Eject: diskutil eject $DEVICE"
+    ;;
+esac

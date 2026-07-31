@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+ZIDE_DIR="${ZIDE_DIR:-$(cd -- "${script_dir}/.." && pwd -P)}"
+export ZIDE_DIR
+
+usage() {
+  cat <<'EOF'
+Usage: zide-pick [OPTIONS] [working_dir]
+
+Options:
+  -h, --help       Show this help text.
+  -c, --command    Editor command mode: open, hsplit, or vsplit.
+  -p, --picker     File picker command to use.
+EOF
+}
+
+picker=""
+command="open"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -c | --command)
+      [[ $# -ge 2 ]] || { echo "zide-pick: --command requires a value" >&2; exit 2; }
+      command="$2"
+      shift 2
+      ;;
+    -p | --picker)
+      [[ $# -ge 2 ]] || { echo "zide-pick: --picker requires a value" >&2; exit 2; }
+      picker="$2"
+      shift 2
+      ;;
+    -*)
+      echo "zide-pick: unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+picker="${picker:-${ZIDE_FILE_PICKER:-yazi}}"
+working_dir="${1:-$PWD}"
+
+if ! command -v "$picker" >/dev/null 2>&1; then
+  echo "zide-pick: picker is not installed or not on PATH: $picker" >&2
+  exit 1
+fi
+
+env_args=(EDITOR="zide-edit -c ${command}")
+if [[ "$picker" == "yazi" && "${ZIDE_USE_YAZI_CONFIG:-true}" != "false" ]]; then
+  env_args+=(YAZI_CONFIG_HOME="${ZIDE_USE_YAZI_CONFIG:-${ZIDE_DIR}/yazi}")
+fi
+if [[ "$picker" == "lf" && "${ZIDE_USE_LF_CONFIG:-true}" != "false" ]]; then
+  env_args+=(LF_CONFIG_HOME="${ZIDE_USE_LF_CONFIG:-${ZIDE_DIR}}")
+fi
+
+env "${env_args[@]}" "$picker" "$working_dir"

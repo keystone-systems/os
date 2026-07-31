@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Generate SSH host key for initrd
+# This key is used by the SSH daemon that runs during boot to unlock encrypted disks
+
+KEY_PATH="/etc/ssh/initrd_ssh_host_ed25519_key"
+
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root (for /etc/ssh access)"
+   echo "Usage: sudo ./bin/generate-initrd-ssh-key"
+   exit 1
+fi
+
+if [ -f "$KEY_PATH" ]; then
+    echo "Initrd SSH host key already exists at $KEY_PATH"
+    echo "Fingerprint:"
+    ssh-keygen -lf "$KEY_PATH"
+    echo ""
+    echo "To regenerate, first remove the existing key:"
+    echo "  sudo rm $KEY_PATH $KEY_PATH.pub"
+    exit 0
+fi
+
+echo "Generating ED25519 SSH host key for initrd..."
+ssh-keygen -t ed25519 -N "" -f "$KEY_PATH" -C "initrd-ssh-host-key"
+
+echo ""
+echo "✓ Initrd SSH host key generated successfully!"
+echo ""
+echo "Key location: $KEY_PATH"
+echo "Public key location: $KEY_PATH.pub"
+echo ""
+echo "Fingerprint:"
+ssh-keygen -lf "$KEY_PATH"
+echo ""
+echo "IMPORTANT: The first time you SSH to unlock the disk during boot,"
+echo "you will see a host key warning. This is normal."
+echo ""
+echo "To avoid the warning, you can add the fingerprint to your known_hosts:"
+echo "  ssh-keyscan -t ed25519 192.168.100.99 >> ~/.ssh/known_hosts"
+echo ""
+echo "After regenerating your NixOS system with this key, the initrd SSH"
+echo "daemon will use this key for remote disk unlocking."

@@ -1,0 +1,67 @@
+# Ensure Labels
+
+## Objective
+
+Verify that the three required labels (`product`, `engineering`, `plan`) exist on the repository. Create any that are missing.
+
+## Task
+
+### Process
+
+1. **Read existing labels** from `platform_context.md`
+
+2. **Check for required labels**
+   - Required: `product`, `engineering`, `plan`
+   - Match case-insensitively against existing labels
+   - If an exact-case match exists, mark as present
+   - If a case-insensitive match exists but with wrong casing, note the discrepancy
+
+3. **Create missing labels**
+
+   **GitHub:**
+
+   ```bash
+   gh label create "product" --repo {owner}/{repo} --color "7057ff" --description "Product/UX scope"
+   gh label create "engineering" --repo {owner}/{repo} --color "0075ca" --description "Technical scope"
+   gh label create "plan" --repo {owner}/{repo} --color "e4e669" --description "Planning/coordination"
+   ```
+
+   **Forgejo:**
+
+   ```bash
+   tea label create --login forgejo --repo {owner}/{repo} --name "product" --color "#7057ff" --description "Product/UX scope"
+   ```
+
+   (repeat for each missing label)
+
+4. **Verify creation**
+   - Re-list labels to confirm the new labels exist
+
+## Output Format
+
+### labels_report.md
+
+```markdown
+# Labels Report
+
+## Summary
+
+- **Required Labels**: 3
+- **Already Present**: [count]
+- **Created**: [count]
+- **Case Mismatches**: [count]
+
+## Details
+
+| Label       | Status                                | Notes     |
+| ----------- | ------------------------------------- | --------- |
+| product     | [present \| created \| case mismatch] | [details] |
+| engineering | [present \| created \| case mismatch] | [details] |
+| plan        | [present \| created \| case mismatch] | [details] |
+```
+
+## Quality Criteria
+
+- All three required labels are accounted for
+- Missing labels were created with appropriate colors and descriptions
+- Case mismatches are documented

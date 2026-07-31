@@ -1,0 +1,28 @@
+# Nix build outputs
+result
+result-*
+installer-iso
+
+# Local ISO test artifacts
+.test-iso*
+
+# ISO files
+*.iso
+
+# Nix development
+.direnv/
+
+# Editor / AI tool files
+.vscode/
+.gemini/
+*.swp
+*.swo
+*~
+
+# No per-tool dirs in the consumer flake under the .agents/skills/ standard.
+# Committed agent assets live at /agents/_shared/ and /agents/skills/; both
+# are tracked. See conventions/tool.cli-coding-agents.md.
+
+# OS files
+.DS_Store
+Thumbs.db

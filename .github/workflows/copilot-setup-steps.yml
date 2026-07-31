@@ -1,0 +1,60 @@
+name: Copilot Setup Steps
+
+# Automatically run the setup steps when they are changed to allow for easy validation, and
+# allow manual testing through the repository's "Actions" tab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the repository code to access flake.nix and related files
+      - uses: actions/checkout@v4
+
+      # Install Nix package manager with flakes support for building NixOS configurations
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Configure Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: ks-systems
+      # Validate flake syntax and configuration correctness
+      # This catches basic errors like missing inputs or invalid Nix expressions
+      - name: Check flake
+        run: nix flake check
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: packages/ks/target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      - name: Build dependencies
+        run: cargo build --manifest-path packages/ks/Cargo.toml

@@ -1,0 +1,68 @@
+name: Warm Cache
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      cache_branch_name:
+        description: Branch name used in the internal Nix cache key.
+        required: false
+        type: string
+        default: ""
+      save_nix_cache:
+        description: Save branch-scoped Nix caches for this invocation.
+        required: false
+        type: boolean
+        default: false
+    # No secrets: block — this workflow resolves CACHIX_AUTH_TOKEN from its
+    # own 'environment: release', not from the caller. Callers do not need to
+    # forward it (and cannot, unless they themselves are in the environment).
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-cache-${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  warm-cache:
+    runs-on: ubuntu-latest
+    # Scoped to the release environment so secrets.CACHIX_AUTH_TOKEN
+    # (held there) is injected. Branch policies on the environment allow
+    # both 'main' (release pushes) and 'ci/installer-cache-warm-validation'
+    # (the PR validate caller) to run this job.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Restore and save internal Nix cache
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || github.ref_name }}-${{ github.job }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-${{ runner.os }}-${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || github.ref_name }}-${{ github.job }}-
+          restore-prefixes-all-matches: |
+            nix-${{ runner.os }}-${{ github.event.repository.default_branch }}-${{ github.job }}-
+          gc-max-store-size-linux: 6G
+          save: ${{ github.event_name == 'workflow_call' && inputs.save_nix_cache || false }}
+
+      # Push to ks-systems (production cache — what every Keystone user pulls
+      # from); pull ks-ci as a substituter too. Must be a single cachix-action
+      # call: 'cachix authtoken' writes a single global slot in
+      # ~/.config/cachix/cachix.dhall, so two configure steps would overwrite
+      # each other and break later 'cachix watch-exec ks-systems' pushes.
+      - name: Configure Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: ks-systems
+          extraPullNames: ks-ci
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Warm cache
+        run: |
+          ./bin/warm-cachix --fixture-dir "$RUNNER_TEMP/keystone-starter-fixture"

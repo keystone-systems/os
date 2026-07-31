@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="$1"
+SYSTEM_PROMPT_FILE="$2"
+TIMEOUT="$3"
+shift 3
+
+MODEL_FLAG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --model) MODEL_FLAG="--model $2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+
+SYSTEM_PROMPT="$(cat "$SYSTEM_PROMPT_FILE")"
+
+cd "$REPO_DIR"
+unset CLAUDECODE
+
+timeout "$TIMEOUT" claude \
+  --print \
+  --dangerously-skip-permissions \
+  $MODEL_FLAG \
+  --append-system-prompt "$SYSTEM_PROMPT" \
+  -p "Read the task in your system prompt. Implement the required changes. Make focused commits as you go with descriptive messages."

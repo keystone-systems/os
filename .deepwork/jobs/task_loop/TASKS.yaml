@@ -1,0 +1,222 @@
+tasks:
+  - name: "execute-cross-account-cloud-resources-phase-1"
+    description: "Pull PR #486 (ncrmro/catalyst) and execute phase 1 of spec/012-cross-account-cloud-resources"
+    status: blocked
+    source: email
+    source_ref: "email-37-nicholas.romero@ncrmro.com"
+    project: "catalyst"
+    model: sonnet
+  - name: "investigate-forgejo-project-board-internals"
+    description: "Clone the Forgejo repo and reverse-engineer how the web UI manages project boards. Map all web routes, handlers, data models, and auth requirements. Determine if board operations can be automated programmatically (e.g., via curl with API token). Produce a written report and proof-of-concept if feasible."
+    status: completed
+    project: "agent-space"
+    source: "internal"
+    source_ref: "task-discovery"
+    model: opus
+  - name: "verify-plantcaravan-build"
+    description: "Verify you can build plantcaravan.com"
+    status: completed
+    source: email
+    source_ref: "email-34-nicholas.romero@ncrmro.com"
+    project: "plant-caravan"
+    model: sonnet
+  - name: "implement-cloud-platform-user-stories"
+    description: "Implement cloud platform user stories (plant-caravan milestone). Includes auth, locations, zones, plants, sensors, recommendations, and harvest alerts. Requires product approval. Phase 2 (wire dashboard to real data) implemented in PR #47. Engineering assessment posted. Awaiting product approval from CPO for phases 3-5."
+    status: completed
+    source: "github-issue"
+    source_ref: "https://github.com/ncrmro/plant-caravan/issues/41"
+    project: "plant-caravan"
+    model: opus
+  - name: "investigate-catalyst-deploy-preview"
+    description: "Investigate why catalyst is failing to deploy preview environment"
+    status: completed
+    source: email
+    source_ref: "email-36-nicholas.romero@ncrmro.com"
+    project: "catalyst"
+    model: sonnet
+  - name: "document-catalyst-helm-vm-test-issues"
+    description: "Document any issues in getting catalyst helm vm tests running"
+    status: completed
+    source: email
+    source_ref: "email-32-nicholas.romero@ncrmro.com"
+    project: "catalyst"
+    model: sonnet
+  - name: "provide-himalaya-cardmom-example"
+    description: "Provide example of user and agents configuring himalaya and cardmom with their gmail/icloud calendar email inboxes"
+    status: completed
+    source: "github-issue"
+    source_ref: "https://github.com/ncrmro/keystone/issues/98"
+    project: "keystone"
+    model: sonnet
+  - name: "verify-meze-tests"
+    description: "Verify you can run meze tests. Unit tests: 703 passed, 62 skipped (48 files). Component tests: 64 passed (5 files). Both run successfully via `nix develop --command npm run test:unit` and `npm run test:components`."
+    status: completed
+    source: email
+    source_ref: "email-33-nicholas.romero@ncrmro.com"
+    project: "meze"
+    model: sonnet
+  - name: "reply-with-pong"
+    description: "Reply to Nicholas's ping email with pong"
+    status: completed
+    source: email
+    source_ref: "email-30-nicholas.romero@ncrmro.com"
+    project: "agent-space"
+    model: haiku
+  - name: "create-native-app-ios-wayland-spike"
+    description: "Create a spike showing building a native app for iOS and Wayland Linux. Forgejo repo drago/native-app-spike — Flutter 3.41 app with Nix devshell, Linux Wayland build verified, 3/3 widget tests passing, iOS project structure scaffolded (requires macOS to compile)."
+    status: completed
+    source: email
+    source_ref: "email-39-nicholas.romero@ncrmro.com"
+    model: opus
+  - name: "investigate-keystone-vm-tests"
+    description: "Investigate Keystone VM tests and document any issues found"
+    status: completed
+    source: email
+    source_ref: "email-25-nicholas.romero@ncrmro.com"
+    project: "keystone"
+    model: sonnet
+  - name: "respond-to-login-github-blocker"
+    description: "Respond to Nicholas regarding login-to-github-with-chrome task blocked on credentials"
+    status: completed
+    source: email
+    source_ref: "email-35-nicholas.romero@ncrmro.com"
+    project: "agent-space"
+    model: haiku
+  - name: "accept-github-invites"
+    description: "Accept Github invites in gmail"
+    status: completed
+    source: email
+    source_ref: "email-24-nicholas.romero@ncrmro.com"
+    project: "agent-space"
+    model: haiku
+  - name: "review-nicholas-status-email"
+    description: "Read and respond to Nicholas's status email from 2026-03-14. Subject is '[status]' and currently unread. Determine if action is needed."
+    status: completed
+    source: email
+    source_ref: "email-38-nicholas.romero@ncrmro.com"
+    project: "agent-space"
+    model: haiku
+  - name: "review-keystone-tui-user-stories"
+    description: "Review the Keystone TUI user stories in issue #132. Luce has prepared 9 engineering + 2 product stories for the Keystone TUI milestone. Provide engineering feedback on feasibility and phasing, or approve if ready to proceed."
+    status: completed
+    source: "github-issue"
+    source_ref: "https://github.com/ncrmro/keystone/issues/132"
+    project: "keystone"
+    model: sonnet
+  - name: "review-projctl-session-management-stories"
+    description: "Review the projctl Terminal Session Management user stories in issue #102. Nicholas has approved the stories. Determine if implementation can proceed or if additional clarity is needed. All 5 stories approved for implementation. Specs merged (#107), plan in #108. Implementation starts with Phase 1 (#110, #111)."
+    status: completed
+    source: "github-issue"
+    source_ref: "https://github.com/ncrmro/keystone/issues/102"
+    project: "keystone"
+    model: sonnet
+  - name: daily-priorities-2026-03-19
+    description: Send daily status digest email to Nicholas with priorities, PRs, and blockers
+    status: completed
+    source: schedule
+    source_ref: schedule-daily-priorities-2026-03-19
+    workflow: daily_status/send
+    model: sonnet
+  - name: login-to-github-with-chrome
+    description: "Try and get logged into GitHub with Google Chrome and Google account"
+    status: completed
+    source: email
+    source_ref: "email-23-nicholas.romero@ncrmro.com"
+    project: "agent-space"
+    model: haiku
+  - name: "review-seaweedfs-blob-store-pr"
+    description: "Review Copilot-authored PR #88 (ncrmro/keystone) adding SeaweedFS S3-compatible blob store service. Assess implementation quality, test coverage, and architectural fit. Provide feedback or approve for merge."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/88"
+    project: "keystone"
+    model: sonnet
+  - name: "review-task-spike-from-email-28"
+    description: "Review and process spike task from Nicholas's email (ID 28, sent 2026-02-22). Determine spike requirements and scope."
+    status: completed
+    source: email
+    source_ref: "email-28-nicholas.romero@ncrmro.com"
+    model: haiku
+  - name: "review-task-spike-from-email-27"
+    description: "Review and process spike task from Nicholas's email (ID 27, sent 2026-02-22). Determine spike requirements and scope."
+    status: completed
+    source: email
+    source_ref: "email-27-nicholas.romero@ncrmro.com"
+    model: haiku
+  - name: "track-agentctl-sandbox-podman"
+    description: "Track feat(agent): sandbox agentctl AI tool launches in podman by default. Luce is working on this (draft PR #161). Issue #123 is assigned to both kdrgo and luce-ncrmro. Monitor progress and provide input as needed."
+    status: completed
+    source: "github-issue"
+    source_ref: "https://github.com/ncrmro/keystone/issues/123"
+    project: "keystone"
+    model: haiku
+  - name: "review-task-loop-sources-pr"
+    description: "Review Copilot-authored PR #160 (ncrmro/keystone) adding built-in GitHub and Forgejo sources in task loop. Assess implementation, test coverage, and architectural fit. This PR implements the infrastructure for ingesting tasks from multiple sources."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/160"
+    project: "keystone"
+    model: sonnet
+  - name: "review-external-mail-provider-pr"
+    description: "Review PR #136 (ncrmro/keystone) adding external mail provider support (Gmail, iCloud). Copilot raised comments about updating header documentation in calendar.nix and contacts.nix modules to reflect that config is generated when either host or url is set (not just host). Address review feedback."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/136"
+    project: "keystone"
+    model: sonnet
+  - name: "review-os-agents-documentation-pr"
+    description: "Review PR #100 (ncrmro/keystone): docs(agent) improve os-agents documentation with diagrams and reorganization. Copilot raised 8 comments about service naming, timer design diagrams, SSH configuration examples, and broken documentation links. Kdrgo has addressed multiple comments. Follow up on remaining feedback and determine if PR is ready to merge."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/100"
+    project: "keystone"
+    model: sonnet
+  - name: "review-agents-path-refactor-pr"
+    description: "Review PR #106 (ncrmro/keystone): refactor(agent) use PATH instead of replaceVars for task-loop and scheduler tools. Copilot raised 2 comments about full scope of #103 (bash PATH, issue comments, assignee typo) and terminal.enable dependency. Kdrgo has addressed feedback. Verify all #103 acceptance criteria are met and confirm terminal.enable removal is correct."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/106"
+    project: "keystone"
+    model: sonnet
+  - name: "review-projctl-spec-pr"
+    description: "Review PR #107 (ncrmro/keystone): docs(specs) functional requirement specs for projctl terminal session management. Copilot raised 9 comments about contradictions with REQ-010 (pclaude vs agentctl), spec gaps (AGENT.md vs AGENTS.md naming), and session naming scheme consistency. Luce has reviewed. Determine if feedback requires spec updates before merge."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/107"
+    project: "keystone"
+    model: sonnet
+  - name: "review-conventions-sync-pr"
+    description: "Review PR #157 (ncrmro/keystone): feat(conventions) sync 4 new conventions from agent-space. Copilot raised 7 comments about CODEOWNERS patterns, heredoc formatting, and cross-convention consistency (ops.* vs process.*, etc.). Kdrgo has addressed 6 comments and updated PR description. Verify all feedback is addressed and ready for merge."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/157"
+    project: "keystone"
+    model: sonnet
+  - name: "review-agents-split-modules-pr"
+    description: "Review PR #97 (ncrmro/keystone): refactor(agent) split agents.nix into focused sub-modules. Copilot raised 7 comments about script argument forwarding ($* vs $@), enable option filtering, PATH configuration for scheduler, and misleading comments. Kdrgo has addressed multiple comments. Verify all fixes are correct and complete."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/97"
+    project: "keystone"
+    model: sonnet
+  - name: "review-agents-system-paths-pr"
+    description: "Review PR #91 (ncrmro/keystone): fix(agents) include system paths in agent systemd services PATH. Copilot raised 6 comments about scope (nodejs addition, CLI agent config, naming consistency, secret handling in JSON, respectGitIgnore default). Evaluate feedback and determine if additional changes are needed."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/91"
+    project: "keystone"
+    model: sonnet
+  - name: "review-forgejo-sources-pr"
+    description: "Review PR #81 (ncrmro/keystone): feat(terminal) add fetch-forgejo-sources package. Copilot marked with empty review comments. Assess implementation and determine if PR is ready."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/81"
+    project: "keystone"
+    model: sonnet
+  - name: "review-prioritize-checksum-pr"
+    description: "Review PR #79 (ncrmro/keystone): perf(agent) skip redundant prioritize step via input checksum. Copilot marked with empty review comments. Assess performance improvement and readiness."
+    status: completed
+    source: "github-pr"
+    source_ref: "https://github.com/ncrmro/keystone/pull/79"
+    project: "keystone"
+    model: sonnet

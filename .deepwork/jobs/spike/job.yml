@@ -1,0 +1,552 @@
+name: spike
+summary: Time-boxed investigation to answer a technical question or validate feasibility for a project
+step_arguments:
+  - name: project
+    description: Project name (must match an existing project in projects/)
+    type: string
+  - name: question
+    description: The technical question or hypothesis to investigate
+    type: string
+  - name: context
+    description: "Relevant context: constraints, existing code references, links, or background"
+    type: string
+  - name: scope
+    description: Scope document defining the spike question, constraints, and success criteria
+    type: file_path
+  - name: research
+    description: Research findings with source references addressing the spike question
+    type: file_path
+  - name: prototype
+    description: Minimal proof-of-concept code or sketch validating feasibility
+    type: file_path
+  - name: report_readme
+    description: Findings report (README.md) with conclusion, evidence, and next steps
+    type: file_path
+  - name: project_file
+    description: Updated project file with spike takeaways and references
+    type: file_path
+workflows:
+  spike:
+    summary: Time-boxed investigation from scoping through findings report
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Time-boxed research and prototyping to reduce uncertainty for a project.
+
+      Scopes the investigation, gathers information (web search and/or codebase),
+      builds a minimal prototype, and produces a findings report with next steps.
+
+      Outputs are saved to spikes/[spike_name]/ (git-tracked, excluded from zk indexing). When
+      a project is detected, a symlink is created at projects/[ProjectName]/spikes/[spike_name].
+
+      If a .zk/ notebook is present, the learn step also creates a report note in reports/ and
+      an ADR in decisions/ (when a clear architectural decision was reached), both using
+      zk new --print-path. Notes are tagged project/<slug> when a project is scoped.
+
+      Learn step captures takeaways back into the project file.
+    steps:
+      - name: scope
+        instructions: |
+          # Define Spike Scope
+
+          ## Objective
+
+          Define the spike question or hypothesis, validate the project exists, derive a spike name, and create a scope document with constraints and success criteria.
+
+          ## Task
+
+          ### Process
+
+          1. **Gather inputs using structured questions**
+             - Ask structured questions to collect:
+               - **project**: Which project is this spike for? (must exist in `projects/`)
+               - **question**: What technical question or hypothesis are we investigating?
+               - **context**: Any constraints, existing code, links, or background?
+             - Read `projects/README.md` to validate the project exists
+             - If the project doesn't exist, stop and inform the user
+
+          2. **Derive the spike name**
+             - Convert the question into a short, descriptive slug (lowercase, hyphens)
+             - Example: "Can we use SQLite for offline sync?" → `sqlite-offline-sync`
+             - Confirm with the user if ambiguous
+
+          3. **Create the output directory**
+
+             ```bash
+             mkdir -p spikes/[spike_name]
+             ```
+
+          4. **Ensure spike directory is properly configured** (if working in a zk notes repo)
+             - `spikes/` is **git-tracked** — do NOT add it to `.gitignore`
+             - Check for `.zk/config.toml` at or above the working directory
+             - If found, verify `spikes` appears in the `ignore` list under `[note]`
+             - If not present, add it: `ignore = ["spikes"]` (or append if the key exists)
+             - Common build artifacts (`.direnv/`, `result`, `result-*`, `.venv/`) should be covered by the repo-level `.gitignore`
+
+          5. **Write scope.md**
+             - Summarize the question, context, constraints, and what "done" looks like
+             - Include the project name in the scope metadata for symlink creation in later steps
+
+          ## Output Format
+
+          ### spikes/[spike_name]/scope.md
+
+          ```markdown
+          # Spike: [Short Title]
+
+          ## Metadata
+
+          - **Project**: [project_name]
+
+          ## Question
+
+          [The specific question or hypothesis to investigate]
+
+          ## Context
+
+          [Background, constraints, relevant code references, links]
+
+          ## Success Criteria
+
+          - [ ] [What constitutes a sufficient answer]
+          - [ ] [What prototype would prove feasibility, if applicable]
+
+          ## Out of Scope
+
+          - [What we are NOT investigating in this spike]
+          ```
+
+          ## Quality Criteria
+
+          - Project validated against `projects/README.md`
+          - Question is specific and answerable (not vague)
+          - Question targets ONE approach or layer, not a survey of multiple options
+          - Success criteria are concrete and verifiable
+          - Spike name is a concise slug derived from the question
+          - Output directory created at `spikes/[spike_name]/`
+          - If working in a zk notes repo, `spikes` is in the `ignore` list in `.zk/config.toml`
+          - Scope includes project metadata for symlink creation in later steps
+
+          ## Scope Narrowing Guidance
+
+          A spike should answer **one focused question**, not survey every possible approach. When the user's request implies multiple competing approaches (e.g., "try Gemini and GPT-4o and grid overlay and direct OCR"), help narrow scope:
+
+          1. **Ask**: "Which approach do you most want to validate?" or "What's the riskiest assumption?"
+          2. **Suggest splitting**: If multiple approaches truly need evaluation, propose separate spikes — one per approach — rather than a single broad spike that tries everything.
+          3. **Prefer depth over breadth**: A spike that deeply validates one approach (with a working prototype) is more useful than one that shallowly surveys five.
+          4. **Decompose layered questions**: If the question has independent layers (e.g., "Can we extract bounding boxes AND render highlights?"), each layer is its own spike. The first spike's conclusion feeds the next.
+
+          The user may override this guidance — they're the domain expert. But proactively suggesting a tighter scope prevents wasted effort and produces clearer conclusions.
+
+          ## Context
+
+          This step gates the entire spike. A well-scoped question prevents wasted effort in later steps. The spike name becomes the folder name for all outputs.
+        inputs:
+          project:
+            required: true
+          question:
+            required: true
+          context:
+            required: true
+        outputs:
+          scope:
+            required: true
+      - name: research
+        instructions: |
+          # Gather Information
+
+          ## Objective
+
+          Research the spike question using web search, codebase exploration, or both, and compile findings with source references.
+
+          ## Task
+
+          ### Process
+
+          1. **Read the scope document**
+             - Read `spikes/[spike_name]/scope.md`
+             - Understand the question, context, and success criteria
+
+          2. **Choose research approach**
+             - **Web search**: For external libraries, APIs, patterns, or prior art
+             - **Codebase exploration**: For understanding existing code, finding integration points
+             - **Both**: When the question involves fitting external solutions into existing code
+
+          3. **Gather findings**
+             - Consult at least 3 distinct sources
+             - For each finding, record the source (URL, file path, or doc reference)
+             - Note relevance to the spike question
+             - Capture code snippets or examples where helpful
+
+          4. **Write research.md**
+             - Organize findings by theme or approach
+             - Include source references inline
+
+          ## Output Format
+
+          ### spikes/[spike_name]/research.md
+
+          ```markdown
+          # Research: [Spike Title]
+
+          ## Approach
+
+          [Brief description of research methods used: web search, codebase, both]
+
+          ## Findings
+
+          ### [Finding/Theme 1]
+
+          [Description of what was learned]
+
+          - Source: [URL or file path]
+
+          ### [Finding/Theme 2]
+
+          [Description of what was learned]
+
+          - Source: [URL or file path]
+
+          ### [Finding/Theme 3]
+
+          [Description of what was learned]
+
+          - Source: [URL or file path]
+
+          ## Key Takeaways
+
+          - [Most important insight for answering the spike question]
+          - [Second insight]
+          - [Third insight]
+
+          ## Open Questions
+
+          - [Anything that remains unclear and might need prototyping]
+          ```
+
+          ## Quality Criteria
+
+          - Directly addresses the question from scope.md
+          - At least 3 sources consulted (web, docs, or codebase)
+          - Each finding includes its source reference
+          - Key takeaways synthesize findings toward answering the spike question
+
+          ## Context
+
+          Research feeds directly into the prototype step. Focus on findings that are actionable — things that inform what to build or try, not just background reading.
+        inputs:
+          scope:
+            required: true
+        outputs:
+          research:
+            required: true
+        process_requirements:
+          verify_research: |
+            Verify the research:
+            1. Directly addresses the question defined in scope.md
+            2. Consulted at least 3 sources (web, docs, or codebase)
+            3. Each finding includes its source reference
+      - name: prototype
+        instructions: |
+          # Build Prototype
+
+          ## Objective
+
+          Build a minimal proof-of-concept or code sketch that validates the spike's feasibility question based on research findings.
+
+          ## Task
+
+          ### Process
+
+          1. **Read inputs**
+             - Read `spikes/[spike_name]/scope.md` for success criteria
+             - Read `spikes/[spike_name]/research.md` for approach guidance
+
+          2. **Plan the prototype**
+             - Identify the minimum code needed to answer the spike question
+             - Keep it small: a single script, a config file, or a few focused files
+             - **Use the project's established tooling and patterns.** A spike prototype is minimal, but it must use the same libraries, frameworks, and code patterns as the repo it will graduate into. Never reinvent or bypass existing infrastructure (e.g., never generate OpenSCAD via string concatenation when AnchorSCAD exists, never write raw SQL when an ORM is available, never hand-roll HTTP when the project has an API client). Check the project's repo for existing patterns before writing any code.
+
+          3. **Build it**
+             - Create files under `spikes/[spike_name]/prototype/`
+             - Include comments explaining what's being tested
+             - If the prototype requires setup steps, add a brief `README.md` in the prototype directory
+
+          4. **Evaluate against success criteria**
+             - Check each success criterion from scope.md
+             - Note what worked, what didn't, and any surprises
+
+          5. **Capture iteration notes**
+             - After prototyping, always reflect on what to change in the next revision
+             - Document in a session log or CALIBRATION.md (for hardware) within the prototype directory
+             - Categories to cover: what worked, what didn't, what was annoying, what needs redesign
+             - For hardware prototypes: record measurements, calibration values, wiring changes, and part swaps as they happen — don't rely on memory after the session
+
+          ## Output Format
+
+          ### spikes/[spike_name]/prototype/
+
+          A directory containing prototype code. Structure depends on the spike, but typically:
+
+          ```
+          prototype/
+          ├── README.md          # (optional) Setup/run instructions
+          ├── main.py            # or whatever language is appropriate
+          ├── flake.nix          # (if Nix dev shell needed) Dev environment
+          ├── .envrc             # (required if flake.nix exists) Contains: use flake
+          ├── .gitignore         # (if build artifacts) Ignore result/, .direnv/, etc.
+          └── ...                # supporting files as needed
+          ```
+
+          Each file should include a header comment:
+
+          ```
+          # Spike: [spike_name]
+          # Testing: [what this file validates]
+          ```
+
+          ## Quality Criteria
+
+          - Prototype directly tests the spike question from scope.md
+          - Code is minimal — only what's needed to validate feasibility
+          - **Prototype uses the project's established tooling** — no raw/ad-hoc code generation when a framework or library already exists in the repo (e.g., AnchorSCAD for CAD, ORM for database, project API client for HTTP)
+          - Files include comments explaining what's being tested
+          - Results (what worked/didn't) are observable from running or reading the code
+          - Iteration notes captured: what to improve, redesign, or change for the next revision
+
+          ## When to Build vs. Skip
+
+          Not every spike needs a full prototype:
+
+          - **Build** when the question is about feasibility — "can this work?" needs running code to answer
+          - **Demonstrate** when research already answers the question — create a minimal config or script showing the approach
+          - **Skip building** is never an option — always produce _something_ in `prototype/`, even if it's a single config file or annotated code sketch
+
+          If the prototype involves Nix flakes, infrastructure, or build outputs: ensure build artifacts are gitignored and document build/run steps in a prototype `README.md`. **Always include a `.envrc` with `use flake` alongside any `flake.nix`** so that direnv automatically activates the dev shell when entering the prototype directory.
+
+          ## Context
+
+          The prototype exists to answer the spike question with evidence, not to build a feature. It's disposable. If the research step's findings already answer the question definitively, the prototype can be a minimal demonstration rather than an exploration.
+        inputs:
+          scope:
+            required: true
+          research:
+            required: true
+        outputs:
+          prototype:
+            required: true
+      - name: report
+        instructions: |
+          # Write Findings Report
+
+          ## Objective
+
+          Synthesize the spike's research and prototype results into a README.md with a clear conclusion, evidence, and next steps. Create a project symlink if a project was specified.
+
+          ## Task
+
+          ### Process
+
+          1. **Read all spike artifacts**
+             - `spikes/[spike_name]/scope.md` — the question, success criteria, and project metadata
+             - `spikes/[spike_name]/research.md` — gathered findings
+             - `spikes/[spike_name]/prototype/` — code and results
+
+          2. **Evaluate the spike question**
+             - Was the question answered? Fully, partially, or not at all?
+             - Which success criteria were met?
+             - What evidence supports the conclusion?
+
+          3. **Write the README.md**
+             - Lead with the conclusion (answered/not answered/partially)
+             - Reference specific research findings and prototype results
+             - List concrete next steps
+
+          4. **Create project symlink (if applicable)**
+
+             If scope.md specifies a project:
+
+             ```bash
+             # Create the project's spikes directory if it doesn't exist
+             mkdir -p projects/[ProjectName]/spikes
+
+             # Create a relative symlink (3 levels: projects/[Project]/spikes/ → repo root)
+             ln -s ../../../spikes/[spike_name] projects/[ProjectName]/spikes/[spike_name]
+             ```
+
+             Use the project name as it appears in `projects/README.md` (matching the folder name under `projects/`). Verify the symlink resolves correctly.
+
+          ## Output Format
+
+          ### spikes/[spike_name]/README.md
+
+          ```markdown
+          # Spike: [Short Title]
+
+          ## Question
+
+          [The original spike question from scope.md]
+
+          ## Conclusion
+
+          [One paragraph: Was the question answered? What's the recommendation?]
+
+          ## Evidence
+
+          ### Research Findings
+
+          - [Key finding 1 with source reference]
+          - [Key finding 2 with source reference]
+
+          ### Prototype Results
+
+          - [What the prototype demonstrated]
+          - [What worked / what didn't]
+
+          ## Recommendation
+
+          [Clear recommendation: proceed, don't proceed, or investigate further with specifics]
+
+          ## Iteration Notes
+
+          [What to change in the next revision — design improvements, pain points, things that were annoying or fragile. Group by category (e.g., Power, Wiring, Enclosure, Software).]
+
+          ## Next Steps
+
+          - [ ] [Concrete action item 1]
+          - [ ] [Concrete action item 2]
+          - [ ] [Concrete action item 3]
+
+          ## Graduation Notes
+
+          [If prototype code will move to a repo, note what must change for production readiness. Prototypes should already use the project's established tooling, so graduation is about integration (registering parts, adding tests, wiring into CI) rather than rewriting from scratch.]
+          ```
+
+          ## Quality Criteria
+
+          - README.md summarizes the spike question and conclusion
+          - References research sources and prototype code where applicable
+          - Includes a clear recommendation or decision
+          - Lists concrete next steps
+          - If prototype produced code, includes graduation notes about what must be refactored when moving to a repo
+          - If a project was specified in scope.md, a symlink exists at `projects/[ProjectName]/spikes/[spike_name]` and resolves correctly (verify with `readlink -f` and confirm the target directory contains the spike files)
+
+          ## Context
+
+          This is the primary deliverable of the spike. Someone reading only this README should understand what was investigated, what was found, and what to do next. The learn step will pull key takeaways from this report into the project file. The project symlink ensures the spike is discoverable from the project directory.
+        inputs:
+          scope:
+            required: true
+          research:
+            required: true
+          prototype:
+            required: true
+        outputs:
+          report_readme:
+            required: true
+        process_requirements:
+          verify_report: |
+            Verify the report:
+            1. README.md summarizes the spike question and conclusion
+            2. References research sources and prototype code where applicable
+            3. Includes a clear recommendation or decision
+            4. Lists concrete next steps
+            5. If a project was specified in scope.md, a symlink exists at projects/[ProjectName]/spikes/[spike_name] AND resolves to the correct target (verify with readlink)
+      - name: learn
+        instructions: |
+          # Capture Learnings
+
+          ## Objective
+
+          Update the project file with key takeaways from the spike, and — when a zk notes repo is present — create a report note and an ADR capturing the outcome.
+
+          ## Task
+
+          ### Process
+
+          1. **Read the spike report**
+             - Read `spikes/[spike_name]/README.md`
+             - Extract the conclusion, recommendation, and next steps
+
+          2. **Read the project file**
+             - Read `projects/[project]/[project].md` (or the project's main file)
+             - Understand where spike references belong in the existing structure
+
+          3. **Update the project file**
+             - Add a spike reference under an appropriate section (e.g., "## Spikes" or "## Research")
+             - Include: spike name, date, one-line conclusion, link to spike README, and next steps
+             - Next steps belong **under the spike entry**, not in a separate global section
+             - Link format: `[spike_name]([project_folder]/spikes/[spike_name]/README.md)`
+               (relative to the project `.md` file; resolves via symlink `projects/[project]/spikes/[spike_name]/` → `../../../spikes/[spike_name]`)
+
+          4. **Create zk notes** (if working in a zk notes repo)
+             - Check for a `.zk/` directory at or above the working directory — skip this step if absent
+
+             **4a. Report note** — spike summary in `reports/`
+
+             ```bash
+             zk new --title "Spike: [spike_name]" --no-input --print-path reports/
+             ```
+
+             Edit the created file to fill in:
+             - `report_kind: spike`
+             - `source_ref: spikes/[spike_name]/README.md`
+             - `tags`: `[report/spike, source/deepwork]` plus `project/<slug>` if a project was scoped
+             - Body: one-paragraph summary of the question, conclusion, and recommendation; link to `spikes/[spike_name]/README.md`
+
+             **4b. Decision note (ADR)** — only if the spike concluded with a clear architectural decision
+
+             ```bash
+             zk new --title "[Decision Title]" --no-input --print-path decisions/
+             ```
+
+             Fill in the template sections:
+             - **Context**: spike question and motivation
+             - **Decision**: what was decided
+             - **Consequences**: trade-offs and next steps
+             - **Links**: link to the report note and `spikes/[spike_name]/README.md`
+             - Add `project/<slug>` tag if a project was scoped
+
+             **4c. Link from hub** — if a project hub note exists (`index/` with tag `project/<slug>` and `status/active`), add links to both the report note and ADR in the hub's report ledger section
+
+             Run `zk index` after all notes are created.
+
+          ## Output Format
+
+          ### projects/[project]/[project].md
+
+          Add a section like this (create the Spikes section if it doesn't exist):
+
+          ```markdown
+          ## Spikes
+
+          ### [spike_name] (YYYY-MM-DD)
+
+          **Conclusion**: [One-sentence summary of the finding]
+          **Link**: [spike_name]([project_folder]/spikes/[spike_name]/README.md)
+
+          - [ ] [Next step 1]
+          - [ ] [Next step 2]
+          ```
+
+          **Important**: Next steps are scoped per spike, nested under the spike heading — do NOT add them to a separate global "Next Steps" section.
+
+          ## Quality Criteria
+
+          - Project file updated with spike reference including date and conclusion
+          - Link to spike README is correct relative path (resolves via symlink)
+          - Entry is concise (not duplicating the full report)
+          - Next steps added under the spike entry if applicable
+          - If working in a zk notes repo: report note exists in `reports/` with `type: report`, `report_kind: spike`, and project tag if applicable; ADR exists in `decisions/` if spike concluded with a clear architectural decision
+
+          ## Graduation Warning
+
+          If the spike produced prototype code that will graduate to a repo, the project file entry should note what integration work remains. Prototypes already use the project's established tooling (per the prototype step), so graduation is about registering parts, adding tests, wiring into CI, and production hardening — not a full rewrite.
+
+          ## Context
+
+          This closes the loop — the spike's findings are captured where they'll be found during regular project work. Without this step, spikes get forgotten in subdirectories.
+        inputs:
+          report_readme:
+            required: true
+        outputs:
+          project_file:
+            required: true

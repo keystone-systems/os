@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# iso-vm-preview — boot the installer ISO in a local QEMU VM for validation
+#
+# Boots the ISO produced by `nix build .#iso` in a UEFI VM so you can confirm
+# the installer reaches a login prompt (or the TUI, if enabled) before writing
+# the image to a USB stick. Catches boot-chain regressions that only show up
+# after the kernel hands off — the classic "got to DHCP but never reached the
+# console" failure mode.
+#
+# Self-contained: pulls qemu and OVMF from nixpkgs at run time. No libvirt,
+# no system-installed QEMU, no KEYSTONE_LOCKED_PATH required.
+#
+# Usage (from the keystone-config dev shell or via `nix develop -c`):
+#   iso-vm-preview              # graphical window + serial mirrored on stdio
+#   iso-vm-preview --headless   # serial on stdio only (no window)
+#   iso-vm-preview --iso PATH   # override the default result/iso/*.iso lookup
+#   iso-vm-preview --disk PATH  # override the scratch install disk path
+#   iso-vm-preview --memory MB  # RAM in MB (default: 4096)
+#   iso-vm-preview --cpus N     # vCPU count (default: 2)
+#   iso-vm-preview --clean      # remove the scratch disk + NVRAM before booting
+#
+# `./bin/iso-vm-preview` also works after `chmod +x bin/*`; the dev-shell form
+# is canonical because `nix flake new -t` strips executable bits on scaffold.
+#
+# Exit the VM with Ctrl+A then X (serial console), or close the QEMU window.
+
+set -euo pipefail
+
+# Locate the keystone-config root by walking up from CWD looking for a
+# `flake.nix`. Covers both `./bin/iso-vm-preview` (PWD is the root) and
+# `nix develop -c iso-vm-preview` from anywhere inside the scaffold (the
+# script lives in /nix/store under that invocation, so its own path is
+# not informative). Override via `--iso PATH`.
+find_config_root() {
+  local dir="$PWD"
+  while [[ "$dir" != "/" ]]; do
+    [[ -f "$dir/flake.nix" ]] && { printf '%s\n' "$dir"; return 0; }
+    dir="$(dirname "$dir")"
+  done
+  return 1
+}
+
+CONFIG_ROOT="$(find_config_root 2>/dev/null)" || true
+
+ISO_PATH=""
+HEADLESS=false
+DISK="/tmp/keystone-iso-vm-preview-disk.qcow2"
+DISK_SIZE="32G"
+VARS_COPY="/tmp/keystone-iso-vm-preview-vars.fd"
+MEMORY=4096
+VCPUS=2
+CLEAN=false
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --headless) HEADLESS=true; shift ;;
+        --iso)      ISO_PATH="$2"; shift 2 ;;
+        --disk)     DISK="$2"; shift 2 ;;
+        --memory)   MEMORY="$2"; shift 2 ;;
+        --cpus)     VCPUS="$2"; shift 2 ;;
+        --clean)    CLEAN=true; shift ;;
+        -h|--help)
+            sed -n '/^# iso-vm-preview/,/^set -euo/{/^set -euo/!p;}' "$0" \
+                | sed -e 's/^# \{0,1\}//'
+            exit 0 ;;
+        *) echo "Unknown argument: $1" >&2; exit 1 ;;
+    esac
+done
+
+if [[ "$CLEAN" == "true" ]]; then
+    rm -f "$DISK" "$VARS_COPY"
+fi
+
+if [[ -z "$ISO_PATH" && -n "$CONFIG_ROOT" ]]; then
+    ISO_PATH="$(find "$CONFIG_ROOT/result/iso" -maxdepth 1 -name '*.iso' -print -quit 2>/dev/null || true)"
+fi
+if [[ -z "$ISO_PATH" || ! -f "$ISO_PATH" ]]; then
+    if [[ -z "$CONFIG_ROOT" ]]; then
+        echo "ERROR: No keystone-config detected — no flake.nix found in $PWD or any parent." >&2
+        echo "       cd into your scaffolded keystone-config first, or pass --iso PATH." >&2
+    else
+        echo "ERROR: No ISO found at $CONFIG_ROOT/result/iso/*.iso." >&2
+        echo "       Run 'nix build .#iso' from $CONFIG_ROOT first," >&2
+        echo "       or pass --iso PATH to point at an existing build." >&2
+    fi
+    exit 1
+fi
+
+QEMU_BINARY="qemu-system-x86_64"
+ACCEL="kvm"
+if [[ ! -r /dev/kvm ]]; then
+    echo "WARN: /dev/kvm not accessible — falling back to TCG (slow)." >&2
+    ACCEL="tcg"
+fi
+
+# OVMF firmware (UEFI). The installer is EFI-only.
+echo "Resolving OVMF firmware…" >&2
+OVMF_PATH="$(nix build --no-link --print-out-paths nixpkgs#OVMF.fd 2>/dev/null)"
+OVMF_CODE="${OVMF_PATH}/FV/OVMF_CODE.fd"
+OVMF_VARS_TEMPLATE="${OVMF_PATH}/FV/OVMF_VARS.fd"
+
+# Per-run VARS copy so writes don't try to mutate the read-only nix-store template.
+if [[ ! -f "$VARS_COPY" ]]; then
+    install -m 0644 "$OVMF_VARS_TEMPLATE" "$VARS_COPY"
+fi
+
+# Scratch disk so a curious user can actually run `ks install` from inside the VM.
+if [[ ! -f "$DISK" ]]; then
+    echo "Creating scratch install disk ($DISK, $DISK_SIZE)…" >&2
+    nix shell --quiet nixpkgs#qemu --command qemu-img create -f qcow2 "$DISK" "$DISK_SIZE" >/dev/null
+fi
+
+QEMU_ARGS=(
+    -machine "type=q35,accel=${ACCEL}"
+    -smp "$VCPUS"
+    -m "$MEMORY"
+    -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}"
+    -drive "if=pflash,format=raw,file=${VARS_COPY}"
+    -drive "file=${DISK},if=virtio,format=qcow2"
+    -cdrom "$ISO_PATH"
+    -nic "user,model=virtio-net-pci,hostfwd=tcp::12222-:22"
+    -boot "order=d,menu=off"
+)
+if [[ "$ACCEL" == "kvm" ]]; then
+    QEMU_ARGS+=(-cpu host)
+fi
+
+if [[ "$HEADLESS" == "true" ]]; then
+    # No graphical console — TUI installer (if enabled) and login prompt only
+    # appear on tty1, which you cannot see in this mode. Useful for scripted
+    # checks: serial messages, sshd start, network bring-up.
+    QEMU_ARGS+=(-nographic -serial mon:stdio)
+else
+    QEMU_ARGS+=(-display gtk,grab-on-hover=on -serial mon:stdio)
+fi
+
+cat >&2 <<EOF
+Booting:  $ISO_PATH
+Disk:     $DISK
+Memory:   ${MEMORY}M   vCPUs: $VCPUS   Accel: $ACCEL
+SSH:      ssh -p 12222 -o StrictHostKeyChecking=no root@localhost
+          (only works if you set keystone.installer.sshKeys in flake.nix)
+
+Watch for: 'Reached target Multi-User System' → login prompt on tty1
+           (or the Keystone installer TUI if keystone.installer.tui.enable = true).
+Exit:      Ctrl+A then X (serial), or close the QEMU window.
+
+EOF
+
+exec nix shell --quiet nixpkgs#qemu --command "$QEMU_BINARY" "${QEMU_ARGS[@]}"

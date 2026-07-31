@@ -1,0 +1,2 @@
+templates/default/tests/e2e/screenshots/*.png filter=lfs diff=lfs merge=lfs -text
+templates/default/tests/e2e/screenshots/*.ppm filter=lfs diff=lfs merge=lfs -text

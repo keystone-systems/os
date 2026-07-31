@@ -1,0 +1,17 @@
+{
+  "name": "agents-e2e",
+  "version": "0.1.0",
+  "description": "End-to-end OS agent product lifecycle test (REQ-031)",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "typecheck": "bun x tsc --noEmit",
+    "lint": "bun x @biomejs/biome check src/",
+    "lint:fix": "bun x @biomejs/biome check --write src/"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/bun": "latest",
+    "typescript": "^5.8"
+  }
+}

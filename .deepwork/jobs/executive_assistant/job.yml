@@ -1,0 +1,3770 @@
+name: executive_assistant
+summary: "Executive assistant workflows: event planning, calendar management, inbox cleanup, event discovery, portfolio review, and zk-backed task coordination"
+
+step_arguments:
+  # ── plan_event user inputs ──────────────────────────────────────────
+  - name: event_description
+    description: "What is the event? (e.g., team offsite, product launch dinner, investor meeting)"
+    type: string
+  - name: date_range
+    description: "Preferred date range for the event"
+    type: string
+  - name: attendee_count
+    description: "Expected number of attendees"
+    type: string
+  - name: budget
+    description: "Budget range for the event (e.g., $500-$1000)"
+    type: string
+
+  # ── plan_event file outputs ─────────────────────────────────────────
+  - name: event_requirements_file
+    description: "Structured requirements document with all event parameters"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify all user-provided inputs are captured, no unresolved ambiguities, requirements are specific enough for research."
+  - name: event_options_file
+    description: "Researched options for venues, catering, and logistics with pros/cons"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read event_requirements_file to verify options match the stated requirements and budget. All options must fall within budget and date range. Each option must include name, cost estimate, and capacity."
+  - name: event_plan_file
+    description: "Complete event plan with agenda, venue selection, logistics, and draft invitations"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read event_requirements_file and event_options_file to verify the plan is consistent. The plan must cover venue, agenda, catering, and logistics. A clear timeline and draft invitation text must be included."
+  - name: final_event_plan_file
+    description: "Final approved event plan ready for execution"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "The plan must contain clear decisions (not options) for every logistics item. A checklist of next actions with owners and deadlines must be included."
+
+  # ── manage_calendar user inputs ─────────────────────────────────────
+  - name: time_range
+    description: "Time range to review (e.g., 'this week', 'next 2 weeks', 'March 2026')"
+    type: string
+  - name: calendar_source
+    description: "Calendar source or account to review"
+    type: string
+
+  # ── manage_calendar file outputs ────────────────────────────────────
+  - name: calendar_snapshot_file
+    description: "Current calendar state with all entries in the time range"
+    type: file_path
+  - name: calendar_analysis_file
+    description: "Analysis of conflicts, double-bookings, gaps, and suggested changes"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read calendar_snapshot_file to verify that identified conflicts are real and suggestions are reasonable. All conflicts must correspond to actual overlapping entries. Suggestions must be specific and actionable."
+  - name: calendar_changes_file
+    description: "Log of changes made and invitations sent"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read calendar_analysis_file to verify that only the suggested changes were applied. Every change must correspond to a suggestion. All invitations must be logged. No unintended modifications."
+  - name: calendar_summary_file
+    description: "Final calendar summary confirming all changes are in place"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "All planned changes from the analysis must be accounted for. The summary must give a clear picture of the calendar's final state."
+
+  # ── clean_inbox user inputs ─────────────────────────────────────────
+  - name: inbox_account
+    description: "Email account to clean (e.g., luce@ncrmro.com)"
+    type: string
+  - name: priority_rules
+    description: "Priority rules (e.g., 'flag anything from investors, archive newsletters')"
+    type: string
+
+  # ── clean_inbox file outputs ────────────────────────────────────────
+  - name: inbox_snapshot_file
+    description: "List of messages with sender, subject, date, and preview"
+    type: file_path
+  - name: categorized_inbox_file
+    description: "Messages categorized by priority and action needed"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read inbox_snapshot_file and check that the priority_rules input was respected. Every message from the snapshot must be categorized. Priority rules must be reflected."
+  - name: draft_replies_file
+    description: "Draft replies for messages flagged as needing a response"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "All drafts must use professional, concise language appropriate for the recipient. Each draft must address the sender's question or request with a clear next step."
+  - name: inbox_actions_log_file
+    description: "Log of all actions taken on inbox messages"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Every action taken must be logged with message ID and result. Only messages categorized as delete were deleted. Important messages must be preserved."
+
+  # ── discover_events user inputs ─────────────────────────────────────
+  - name: interest_areas
+    description: "Areas of interest (e.g., 'AI/ML, startups, Nix/NixOS, Rust')"
+    type: string
+  - name: location
+    description: "Location or region for events (e.g., 'Austin TX', 'remote', 'US')"
+    type: string
+
+  # ── discover_events file outputs ────────────────────────────────────
+  - name: interest_profile_file
+    description: "Structured profile of interests, projects, and event preferences"
+    type: file_path
+  - name: event_candidates_file
+    description: "Raw list of discovered events with details"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read interest_profile_file to verify events are relevant to the stated interests and location. All events must be plausibly relevant. Each must include name, date, location, URL, and description."
+  - name: ranked_events_file
+    description: "Events ranked by relevance with scores and rationale"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read interest_profile_file and event_candidates_file to verify scoring rationale aligns with stated interests. Each event must have a clear score and rationale. Low-relevance events must be excluded with justification."
+  - name: event_recommendations_file
+    description: "Final curated list of recommended events with action items"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Each recommendation must include enough information to decide whether to attend. Registration links or next steps must be included. The reason each event matters to the human's goals must be stated."
+
+  # ── task_loop user inputs ───────────────────────────────────────────
+  - name: notes_root
+    description: "Root directory containing owner repos (default: ~/.keystone/repos)"
+    type: string
+  - name: human_owner
+    description: "Owner slug for the human operator's notes repo (default: ncrmro)"
+    type: string
+  - name: owner_filter
+    description: "Optional comma-separated owner list to limit sync targets"
+    type: string
+  - name: target_date
+    description: "Optional ISO date to replay the workflow for a specific day"
+    type: string
+  - name: focus_window
+    description: "Near-term horizon to prioritize, such as 'today' or 'next 48 hours'"
+    type: string
+
+  # ── task_loop file outputs ──────────────────────────────────────────
+  - name: notes_repo_inventory_file
+    description: "Discovered notes repos, owner roles, working date, and any missing repos"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "The inventory must record one working date and one human owner. Each discovered owner repo must include an absolute notes path and existence status."
+  - name: calendar_context_file
+    description: "Calendar-critical events, deadlines, and task implications for the working date"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "The report must use specific dates and times for every event it cites. Each calendar item must state whether it should promote, defer, or monitor related work."
+  - name: active_task_notes_file
+    description: "Inventory of active task notes, linked projects, milestones, issues, and pull requests"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Task discovery must be grounded in zk notes and active project hubs, not legacy YAML task ledgers. Each tracked task must record available project, repo, milestone, issue, and PR references."
+  - name: agent_activity_file
+    description: "Current agent assignments, note mirrors, recent progress, and blockers"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Each active agent owner must have either current assignments or an explicit 'none' status. Mirrored task-note state between human and agent repos must be described accurately."
+  - name: daily_priorities_file
+    description: "Eisenhower-matrix priorities with ranked next actions and explicit Q4 disposal plan"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Calendar-critical items must outrank backlog work. Every priority entry must have an owner, a concrete next action, and a reason for its rank. An Eisenhower matrix must be present. Every Q4 item must have an explicit disposal action."
+  - name: executive_assistant_daily_file
+    description: "The dated executive-assistant daily note with priorities, delegation, blockers, and carry-forward links"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "The output must identify exactly one daily note for the working date. Unfinished work must be carried forward by linking existing task notes instead of duplicating content."
+  - name: owner_sync_log_file
+    description: "Per-owner sync actions, mirrored notes updated, and any skipped repos or conflicts"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "The log must treat the human notes repo as the coordination source of truth. Agent repos must receive only assigned-work mirrors plus backlinks to the human daily note."
+  - name: task_loop_summary_file
+    description: "Final summary with today's priorities, delegated work, blockers, and note paths"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "The summary must give the operator a short, concrete list of what to do now, what is delegated, and what is blocked. Updated daily note and mirrored owner note paths must be included. Each Do Now item must name an explicit owner and a specific deadline or time reference."
+
+  # ── portfolio_review user inputs ────────────────────────────────────
+  - name: notes_path
+    description: "Path to the notes repo (e.g., ~/code/ncrmro/obsidian or ~/notes)"
+    type: string
+
+  # ── portfolio_review file outputs ───────────────────────────────────
+  - name: project_list_file
+    description: "Structured list of all active projects with name, slug, repos, platform, and local clone paths"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Every active project from the notes repo must be included with at least one repo reference. Each repo entry must specify platform (github or forgejo). Archived or inactive projects must be excluded or clearly marked."
+  - name: all_summaries_file
+    description: "Combined per-project status summaries collected from all sub-workflow runs"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read project_list_file to verify every active project has a corresponding summary. All per-project summaries must follow the same structure (status, milestones, activity, blockers)."
+  - name: portfolio_report_file
+    description: "The final portfolio review report written to projects/portfolio/reviews/YYYY-MM.md in the notes repo"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read all_summaries_file to verify the report accurately reflects per-project data without fabrication. Must include portfolio summary, per-project table, milestone detail, cross-project analysis, priority recommendations, and Eisenhower matrices. All status indicators must cite specific data."
+
+  # ── portfolio_review_one user inputs ────────────────────────────────
+  - name: project_slug
+    description: "The project slug (e.g., 'keystone', 'catalyst', 'meze')"
+    type: string
+  - name: project_repos
+    description: "Comma-separated list of repos as owner/repo:platform (e.g., 'ncrmro/keystone:github,ncrmro/keystone:forgejo')"
+    type: string
+
+  # ── portfolio_review_one file outputs ───────────────────────────────
+  - name: project_data_file
+    description: "Raw collected data: milestone list with issue counts, recent git commits, charter/profile excerpts"
+    type: file_path
+  - name: project_summary_file
+    description: "Formatted status summary: status indicator, goals, milestones, recent activity, blockers, next actions"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Read project_data_file to verify the summary accurately reflects the raw data. The status indicator must be justified by specific data points. All open milestones must be listed. Activity must be summarized. Next actions must be concrete."
+
+workflows:
+  plan_event:
+    summary: "Plan an event end-to-end: venue ideas, agenda, invitations, logistics"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. These workflows handle
+      common administrative and strategic tasks that support the CEO's productivity.
+
+      Tools available:
+      - Email: Use the himalaya CLI for reading, sending, and managing email
+      - Calendar: Check for calendar tools or integrations available in the environment
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+      - zk notes: Use `zk --notebook-dir <path>` for note discovery, creation, linking, and indexing
+      - Zellij fleet survey: Use `zellij list-sessions` and `zellij --session <name> action dump-screen <path>` to inspect live agent activity.
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Draft communications for review before sending — never send without confirmation
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+      - Reference specific dates, times, and contacts where possible
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+    steps:
+      - name: event_gather_requirements
+        instructions: |
+          # Gather Event Requirements
+
+          ## Objective
+
+          Collect all necessary details about the event from the user to produce a structured requirements document that guides venue research and planning.
+
+          ## Task
+
+          Ask structured questions to fully understand the event the user wants to plan. Use the AskUserQuestion tool to gather information interactively. Do not assume details — clarify ambiguities before proceeding.
+
+          ### Process
+
+          1. **Review provided inputs**
+             - Read the event description, date range, attendee count, and budget provided as inputs
+             - Identify any gaps or ambiguities in the provided information
+
+          2. **Ask structured questions to fill gaps**
+             - Event type and formality level (casual meetup, formal dinner, workshop, conference)
+             - Location preferences (city, neighborhood, indoor/outdoor, accessibility needs)
+             - Catering requirements (dietary restrictions, meal type, open bar vs. cash bar)
+             - AV or special equipment needs
+             - Accommodation needs for out-of-town guests
+             - Any hard constraints (must-haves or deal-breakers)
+
+          3. **Confirm understanding**
+             - Summarize all requirements back to the user
+             - Ask if anything is missing or needs adjustment
+
+          4. **Write the requirements document**
+             - Organize all gathered information into the output format below
+
+          ## Output Format
+
+          ### event_requirements.md
+
+          A structured requirements document capturing every parameter for the event.
+
+          **Structure**:
+
+          ```markdown
+          # Event Requirements
+
+          ## Overview
+
+          - **Event**: [event name/description]
+          - **Type**: [e.g., team offsite, dinner, workshop]
+          - **Date Range**: [preferred dates]
+          - **Attendee Count**: [number]
+          - **Budget**: [range]
+
+          ## Venue Requirements
+
+          - **Location**: [city/area preference]
+          - **Setting**: [indoor/outdoor/hybrid]
+          - **Capacity**: [minimum needed]
+          - **Accessibility**: [requirements]
+
+          ## Catering
+
+          - **Meal Type**: [breakfast/lunch/dinner/snacks]
+          - **Dietary Restrictions**: [list]
+          - **Beverage**: [open bar/cash bar/non-alcoholic only]
+
+          ## Equipment & Logistics
+
+          - **AV Needs**: [projector, microphone, etc.]
+          - **Special Equipment**: [whiteboards, breakout rooms, etc.]
+          - **Accommodation**: [needed/not needed, details]
+
+          ## Constraints
+
+          - **Must-Haves**: [non-negotiable requirements]
+          - **Deal-Breakers**: [things to avoid]
+          - **Other Notes**: [any additional context]
+          ```
+
+          ## Quality Criteria
+
+          - All user-provided inputs are captured in the document
+          - No unresolved ambiguities — gaps were clarified through questions
+          - Requirements are specific enough to guide venue and logistics research
+          - Budget and date range are clearly stated
+          - Format is clean and scannable
+
+          ## Context
+
+          This is the foundation step for event planning. A thorough requirements document prevents wasted research on unsuitable options and ensures the final plan meets the user's actual needs.
+        inputs:
+          event_description: { required: true }
+          date_range: { required: true }
+          attendee_count: { required: true }
+          budget: { required: true }
+        outputs:
+          event_requirements_file: { required: true }
+
+      - name: event_research_options
+        instructions: |
+          # Research Event Options
+
+          ## Objective
+
+          Research venues, catering, and logistics options that match the event requirements, presenting each with enough detail for the user to make a decision.
+
+          ## Task
+
+          Using the event requirements document, search for and evaluate options across venues, catering, and logistics providers. Present a curated shortlist with pros, cons, and cost estimates.
+
+          ### Process
+
+          1. **Read the requirements document**
+             - Parse all constraints: budget, location, capacity, dietary needs, equipment
+             - Note hard constraints vs. nice-to-haves
+
+          2. **Research venue options**
+             - Use WebSearch to find venues matching location and capacity requirements
+             - Identify 3-5 venue options at different price points
+             - For each venue, gather: name, address, capacity, estimated cost, amenities, availability
+
+          3. **Research catering options**
+             - Search for caterers in the target area or venues with in-house catering
+             - Match to dietary restrictions and meal type requirements
+             - Get estimated per-person pricing
+
+          4. **Identify logistics needs**
+             - Transportation (parking, shuttle services)
+             - Accommodation options if needed
+             - AV rental if not included with venue
+
+          5. **Compile options with evaluation**
+             - Rate each option against the requirements
+             - Note pros and cons for each
+             - Flag any that exceed budget or miss key requirements
+
+          ## Output Format
+
+          ### event_options.md
+
+          A structured document presenting all researched options.
+
+          **Structure**:
+
+          ```markdown
+          # Event Options Research
+
+          ## Requirements Summary
+
+          [Brief recap of key requirements from the input document]
+
+          ## Venue Options
+
+          ### Option 1: [Venue Name]
+
+          - **Address**: [full address]
+          - **Capacity**: [number]
+          - **Estimated Cost**: [price range]
+          - **Amenities**: [what's included]
+          - **Pros**: [advantages]
+          - **Cons**: [disadvantages]
+          - **Source**: [URL or reference]
+
+          ### Option 2: [Venue Name]
+
+          [same structure]
+
+          ### Option 3: [Venue Name]
+
+          [same structure]
+
+          ## Catering Options
+
+          ### Option 1: [Caterer/Service Name]
+
+          - **Cuisine**: [type]
+          - **Per-Person Cost**: [estimate]
+          - **Dietary Accommodations**: [what they handle]
+          - **Notes**: [minimum headcount, lead time, etc.]
+
+          [Repeat for 2-3 options]
+
+          ## Logistics
+
+          ### Transportation
+
+          [Options and costs]
+
+          ### Accommodation
+
+          [Options if needed]
+
+          ### Equipment Rental
+
+          [AV or special equipment if not included with venue]
+
+          ## Budget Summary
+
+          | Category  | Low Estimate | High Estimate |
+          | --------- | ------------ | ------------- |
+          | Venue     | $X           | $Y            |
+          | Catering  | $X           | $Y            |
+          | Logistics | $X           | $Y            |
+          | **Total** | **$X**       | **$Y**        |
+          ```
+
+          ## Quality Criteria
+
+          - All options fall within the stated budget and date range
+          - Each option includes enough detail (name, cost estimate, capacity) to make a decision
+          - At least 3 venue options are presented
+          - Pros and cons are specific, not generic
+          - Budget summary table shows total cost range
+          - Sources are provided for key claims
+
+          ## Context
+
+          This research step converts abstract requirements into concrete, comparable options. The quality of this research directly impacts the event plan — incomplete or inaccurate options waste the user's decision-making time.
+        inputs:
+          event_requirements_file: { required: true }
+        outputs:
+          event_options_file: { required: true }
+
+      - name: event_draft_plan
+        instructions: |
+          # Draft Event Plan
+
+          ## Objective
+
+          Create a comprehensive event plan that selects the best options, builds an agenda, and prepares draft invitations — ready for the user to review and approve.
+
+          ## Task
+
+          Synthesize the requirements and researched options into a cohesive event plan. Make clear recommendations (not just options) while noting alternatives. Include an actionable timeline and draft invitation text.
+
+          ### Process
+
+          1. **Review inputs**
+             - Read event_requirements.md for constraints and preferences
+             - Read event_options.md for researched venues, catering, and logistics
+
+          2. **Make recommendations**
+             - Select the best venue option with rationale
+             - Select catering approach with rationale
+             - Propose logistics plan (transportation, accommodation, equipment)
+
+          3. **Build the agenda**
+             - Create a time-blocked agenda for the event
+             - Include setup and teardown time
+             - Account for meals, breaks, and transitions
+
+          4. **Draft invitation text**
+             - Write invitation email/message text appropriate for the event formality
+             - Include: what, when, where, RSVP instructions, dress code, logistics info
+             - Keep tone appropriate to the event type
+
+          5. **Create execution timeline**
+             - List all tasks needed before the event with deadlines
+             - Include booking deadlines, payment milestones, communication touchpoints
+
+          ## Output Format
+
+          ### event_plan.md
+
+          The complete draft event plan.
+
+          **Structure**:
+
+          ```markdown
+          # Event Plan: [Event Name]
+
+          ## Recommendation Summary
+
+          [2-3 sentences summarizing the recommended approach]
+
+          ## Venue
+
+          - **Selected**: [venue name]
+          - **Why**: [rationale for this choice]
+          - **Alternative**: [backup option if first choice falls through]
+          - **Booking Details**: [what needs to happen to secure it]
+
+          ## Catering
+
+          - **Selected**: [caterer/approach]
+          - **Menu Concept**: [overview]
+          - **Per-Person Cost**: [estimate]
+          - **Dietary Accommodations**: [how restrictions are handled]
+
+          ## Agenda
+
+          | Time   | Activity   | Notes     |
+          | ------ | ---------- | --------- |
+          | [time] | [activity] | [details] |
+
+          ## Logistics
+
+          - **Transportation**: [plan]
+          - **Accommodation**: [plan if applicable]
+          - **Equipment**: [AV and special needs]
+
+          ## Budget Estimate
+
+          | Category          | Estimated Cost |
+          | ----------------- | -------------- |
+          | Venue             | $X             |
+          | Catering          | $X             |
+          | Logistics         | $X             |
+          | Contingency (10%) | $X             |
+          | **Total**         | **$X**         |
+
+          ## Draft Invitation
+
+          ---
+
+          [Full draft invitation text, ready to customize and send]
+
+          ---
+
+          ## Execution Timeline
+
+          | Deadline | Task   | Owner |
+          | -------- | ------ | ----- |
+          | [date]   | [task] | [who] |
+
+          ## Open Questions
+
+          [Any decisions that still need user input]
+          ```
+
+          ## Quality Criteria
+
+          - The plan covers venue, agenda, catering, and logistics
+          - A clear timeline of tasks and deadlines is present
+          - Draft invitation text is included and ready to customize
+          - Budget estimate is within the stated range
+          - Recommendations have clear rationale, not just listings
+          - Open questions are flagged rather than silently assumed
+
+          ## Context
+
+          This is the main deliverable of the event planning workflow. It should be comprehensive enough that the user can approve it with minimal changes, or provide targeted feedback for the finalization step.
+        inputs:
+          event_requirements_file: { required: true }
+          event_options_file: { required: true }
+        outputs:
+          event_plan_file: { required: true }
+
+      - name: event_finalize_plan
+        instructions: |
+          # Finalize Event Plan
+
+          ## Objective
+
+          Review the draft event plan with the user, incorporate their feedback, and produce the final approved plan ready for execution.
+
+          ## Task
+
+          Present the draft plan to the user, gather feedback on each section, and produce a final version with all decisions locked in and no remaining open questions.
+
+          ### Process
+
+          1. **Present the draft**
+             - Read event_plan.md from the previous step
+             - Summarize key decisions and ask the user to review
+
+          2. **Gather feedback**
+             - Ask structured questions about each major section:
+               - Is the venue selection acceptable?
+               - Any changes to the agenda?
+               - Catering adjustments?
+               - Invitation text revisions?
+               - Budget concerns?
+             - Use the AskUserQuestion tool for clear, structured feedback collection
+
+          3. **Incorporate changes**
+             - Update all sections based on feedback
+             - Resolve any open questions from the draft
+             - Ensure all decisions are final (no "Option A or B" — pick one)
+
+          4. **Add execution checklist**
+             - Convert the timeline into a concrete checklist with checkboxes
+             - Assign owners where possible
+             - Add dates as absolute dates (not relative)
+
+          ## Output Format
+
+          ### final_event_plan.md
+
+          The finalized, approved event plan.
+
+          **Structure**:
+
+          ```markdown
+          # Final Event Plan: [Event Name]
+
+          **Status**: Approved
+          **Approved Date**: [date]
+
+          ## Event Summary
+
+          - **What**: [event description]
+          - **When**: [confirmed date and time]
+          - **Where**: [confirmed venue with address]
+          - **Who**: [attendee count and key attendees]
+          - **Budget**: [confirmed total budget]
+
+          ## Venue
+
+          [Final venue details — no alternatives, just the decision]
+
+          ## Catering
+
+          [Final catering plan]
+
+          ## Agenda
+
+          [Final time-blocked agenda]
+
+          ## Logistics
+
+          [Final logistics plan]
+
+          ## Budget
+
+          | Category  | Amount |
+          | --------- | ------ |
+          | [item]    | $X     |
+          | **Total** | **$X** |
+
+          ## Invitation
+
+          [Final invitation text]
+
+          ## Execution Checklist
+
+          - [ ] [Task] — by [date] — [owner]
+          - [ ] [Task] — by [date] — [owner]
+          ```
+
+          ## Quality Criteria
+
+          - The plan contains clear decisions (not options) for every logistics item
+          - A checklist of next actions with owners and deadlines is included
+          - All open questions from the draft are resolved
+          - Budget total is confirmed and within range
+          - Invitation text is finalized and ready to send
+
+          ## Context
+
+          This is the final deliverable of the event planning workflow. After this step, the plan transitions from planning to execution. Every item should be actionable with no ambiguity.
+        inputs:
+          event_plan_file: { required: true }
+        outputs:
+          final_event_plan_file: { required: true }
+
+  manage_calendar:
+    summary: "Review calendar, resolve conflicts, update entries, and send invitations"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. These workflows handle
+      common administrative and strategic tasks that support the CEO's productivity.
+
+      Tools available:
+      - Email: Use the himalaya CLI for reading, sending, and managing email
+      - Calendar: Check for calendar tools or integrations available in the environment
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Draft communications for review before sending — never send without confirmation
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+      - Reference specific dates, times, and contacts where possible
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+    steps:
+      - name: calendar_review
+        instructions: |
+          # Review Calendar
+
+          ## Objective
+
+          Fetch and document all calendar entries for the specified time range, producing a clear snapshot of the current schedule.
+
+          ## Task
+
+          Access the specified calendar source and retrieve all entries within the requested time range. Produce a structured snapshot that can be analyzed for conflicts and optimization.
+
+          ### Process
+
+          1. **Understand the request**
+             - Read the time range and calendar source inputs
+             - If the calendar source is unclear, ask structured questions to clarify which calendar account or tool to use (e.g., Google Calendar via API, local calendar file, etc.)
+
+          2. **Fetch calendar entries**
+             - Use available calendar tools or APIs to retrieve entries in the time range
+             - For each entry capture: title, date/time, duration, location, attendees, status
+             - Note recurring events vs. one-time events
+
+          3. **Organize the snapshot**
+             - Sort entries chronologically
+             - Group by day for readability
+             - Flag entries that appear problematic (no title, very long blocks, etc.)
+
+          4. **Document gaps and availability**
+             - Note blocks of free time
+             - Identify the overall utilization level for the period
+
+          ## Output Format
+
+          ### calendar_snapshot.md
+
+          A complete snapshot of the calendar for the specified period.
+
+          **Structure**:
+
+          ```markdown
+          # Calendar Snapshot
+
+          - **Account**: [calendar source]
+          - **Period**: [start date] to [end date]
+          - **Total Entries**: [count]
+          - **Generated**: [timestamp]
+
+          ## Schedule
+
+          ### [Day, Date]
+
+          | Time     | Duration | Event        | Location | Attendees  |
+          | -------- | -------- | ------------ | -------- | ---------- |
+          | 9:00 AM  | 1h       | Team Standup | Zoom     | Alice, Bob |
+          | 11:00 AM | 30m      | 1:1 with CEO | Office   | Nicholas   |
+
+          **Free blocks**: 10:00-11:00, 11:30-1:00, 3:00-5:00
+
+          ### [Next Day, Date]
+
+          [same structure]
+
+          ## Summary
+
+          - **Busiest day**: [day]
+          - **Most free time**: [day]
+          - **Recurring events**: [list]
+          - **Observations**: [anything notable]
+          ```
+
+          ## Quality Criteria
+
+          - All entries in the time range are captured
+          - Each entry has complete details (time, duration, title, attendees where available)
+          - Entries are sorted chronologically and grouped by day
+          - Free time blocks are identified
+          - The snapshot is accurate — entries match the actual calendar
+
+          ## Context
+
+          This snapshot is the foundation for calendar analysis. Accurate, complete data here ensures the conflict identification step can make reliable recommendations. Missing or incomplete entries lead to missed conflicts.
+        inputs:
+          time_range: { required: true }
+          calendar_source: { required: true }
+        outputs:
+          calendar_snapshot_file: { required: true }
+
+      - name: calendar_identify_conflicts
+        instructions: |
+          # Identify Conflicts
+
+          ## Objective
+
+          Analyze the calendar snapshot to find conflicts, double-bookings, scheduling inefficiencies, and suggest specific resolutions.
+
+          ## Task
+
+          Review the calendar snapshot systematically for issues and optimization opportunities. Produce actionable suggestions, not just a list of problems.
+
+          ### Process
+
+          1. **Read the calendar snapshot**
+             - Parse all entries from calendar_snapshot.md
+             - Build a mental model of the schedule
+
+          2. **Identify conflicts**
+             - Double-bookings: two events at the same time
+             - Tight transitions: back-to-back meetings with no buffer
+             - Overloaded days: too many meetings leaving no focus time
+             - Location conflicts: physically impossible transitions (e.g., two in-person meetings across town 15 minutes apart)
+
+          3. **Identify optimization opportunities**
+             - Meetings that could be consolidated or shortened
+             - Days that could benefit from meeting-free blocks
+             - Recurring meetings that could be rescheduled for better flow
+
+          4. **Propose specific resolutions**
+             - For each conflict, suggest a concrete fix: reschedule, cancel, combine, add buffer
+             - Provide alternative time slots when suggesting reschedules
+             - Prioritize: which conflicts are urgent vs. nice-to-fix
+
+          ## Output Format
+
+          ### calendar_analysis.md
+
+          Analysis of conflicts and suggested changes.
+
+          **Structure**:
+
+          ```markdown
+          # Calendar Analysis
+
+          - **Period Analyzed**: [date range]
+          - **Conflicts Found**: [count]
+          - **Optimizations Suggested**: [count]
+
+          ## Conflicts
+
+          ### Conflict 1: [Brief Description]
+
+          - **Type**: [double-booking / tight transition / overload / location conflict]
+          - **Events**: [event A] vs. [event B]
+          - **When**: [date and time]
+          - **Severity**: [high / medium / low]
+          - **Suggested Resolution**: [specific action to take]
+          - **Alternative Slot**: [proposed new time if rescheduling]
+
+          ### Conflict 2: [Brief Description]
+
+          [same structure]
+
+          ## Optimization Suggestions
+
+          ### Suggestion 1: [Brief Description]
+
+          - **Current State**: [what it looks like now]
+          - **Proposed Change**: [what to do]
+          - **Benefit**: [why this helps]
+
+          ## Proposed Changes Summary
+
+          | #   | Action     | Event   | Current Time | New Time   | Status  |
+          | --- | ---------- | ------- | ------------ | ---------- | ------- |
+          | 1   | Reschedule | [event] | [old time]   | [new time] | Pending |
+          | 2   | Cancel     | [event] | [time]       | —          | Pending |
+          | 3   | Add buffer | [event] | [time]       | [adjusted] | Pending |
+          ```
+
+          ## Quality Criteria
+
+          - All identified conflicts correspond to actual overlapping entries in the snapshot
+          - Suggested resolutions are specific and actionable (not "consider rescheduling" but "move to Tuesday 2pm")
+          - Severity levels are reasonable — double-bookings are high, nice-to-haves are low
+          - The proposed changes summary table provides a clear action plan
+
+          ## Context
+
+          This analysis feeds directly into the update step, where changes will be applied. Clear, specific recommendations reduce back-and-forth and ensure the right changes are made.
+        inputs:
+          calendar_snapshot_file: { required: true }
+        outputs:
+          calendar_analysis_file: { required: true }
+
+      - name: calendar_update_and_invite
+        instructions: |
+          # Update and Invite
+
+          ## Objective
+
+          Apply the approved calendar changes and send meeting invitations, logging every action taken.
+
+          ## Task
+
+          Execute the changes proposed in the calendar analysis. This step involves side effects (modifying calendar entries, sending invitations), so proceed carefully and log everything.
+
+          ### Process
+
+          1. **Review proposed changes**
+             - Read calendar_analysis.md for the list of changes to make
+             - Confirm each change is still valid and desired
+
+          2. **Present changes for approval**
+             - Before making any changes, present the full list of proposed actions to the user
+             - Ask structured questions if any changes need user confirmation
+             - Do NOT proceed with changes the user has not approved
+
+          3. **Apply calendar changes**
+             - For each approved change:
+               - Execute the change (reschedule, cancel, add buffer)
+               - Log the result (success/failure)
+               - Note any issues or warnings
+             - Use available calendar tools or APIs
+
+          4. **Send invitations**
+             - For new or rescheduled meetings, draft and send invitations
+             - Include: event title, date/time, location, agenda/notes
+             - Use himalaya or appropriate email tool for email-based invitations
+             - Log each invitation sent with recipient and status
+
+          5. **Document all actions**
+             - Create a complete log of every action taken
+             - Include before/after state for each change
+
+          ## Output Format
+
+          ### calendar_changes.md
+
+          A log of all changes made and invitations sent.
+
+          **Structure**:
+
+          ```markdown
+          # Calendar Changes Log
+
+          - **Date**: [when changes were applied]
+          - **Changes Applied**: [count]
+          - **Invitations Sent**: [count]
+
+          ## Changes Applied
+
+          ### Change 1: [Brief Description]
+
+          - **Action**: [reschedule / cancel / create / modify]
+          - **Event**: [event name]
+          - **Before**: [original time/details]
+          - **After**: [new time/details]
+          - **Status**: [success / failed / skipped]
+          - **Notes**: [any issues or comments]
+
+          ### Change 2: [Brief Description]
+
+          [same structure]
+
+          ## Invitations Sent
+
+          | Recipient | Event   | Date/Time | Method           | Status        |
+          | --------- | ------- | --------- | ---------------- | ------------- |
+          | [email]   | [event] | [when]    | [email/calendar] | [sent/failed] |
+
+          ## Summary
+
+          - **Successful changes**: [count]
+          - **Failed changes**: [count with reasons]
+          - **Pending items**: [anything that still needs attention]
+          ```
+
+          ## Quality Criteria
+
+          - Every change logged corresponds to a suggestion from the calendar analysis
+          - All invitations sent are logged with recipient and confirmation status
+          - No calendar entries were modified or deleted beyond what was planned
+          - Failed actions are clearly documented with reasons
+          - User approval was obtained before executing changes
+
+          ## Context
+
+          This is the action step of the calendar workflow. Changes here are real and potentially irreversible (invitations sent, meetings canceled). Accuracy and user confirmation are critical.
+        inputs:
+          calendar_analysis_file: { required: true }
+        outputs:
+          calendar_changes_file: { required: true }
+
+      - name: calendar_confirm
+        instructions: |
+          # Confirm Calendar
+
+          ## Objective
+
+          Verify that all planned calendar changes were applied correctly and produce a final summary of the calendar's state.
+
+          ## Task
+
+          Cross-reference the changes log against the actual calendar to confirm everything is in order. Produce a clean summary of the final calendar state.
+
+          ### Process
+
+          1. **Read the changes log**
+             - Parse calendar_changes.md for all changes that were applied
+             - Note any that failed or were skipped
+
+          2. **Verify changes**
+             - Re-check the calendar to confirm each change took effect
+             - Verify invitation delivery where possible
+             - Flag any discrepancies between planned and actual state
+
+          3. **Produce final summary**
+             - Show the updated calendar for the period
+             - Highlight what changed from the original snapshot
+             - Note any remaining issues or follow-up items
+
+          ## Output Format
+
+          ### calendar_summary.md
+
+          Final calendar summary confirming all changes are in place.
+
+          **Structure**:
+
+          ```markdown
+          # Calendar Summary
+
+          - **Period**: [date range]
+          - **Changes Verified**: [count of count]
+          - **Status**: [all clear / issues remaining]
+
+          ## Verification Results
+
+          | #   | Change        | Expected         | Actual         | Verified |
+          | --- | ------------- | ---------------- | -------------- | -------- |
+          | 1   | [description] | [expected state] | [actual state] | [yes/no] |
+
+          ## Updated Schedule
+
+          ### [Day, Date]
+
+          | Time    | Duration | Event        | Status          |
+          | ------- | -------- | ------------ | --------------- |
+          | 9:00 AM | 1h       | Team Standup | unchanged       |
+          | 2:00 PM | 30m      | 1:1 with CEO | **rescheduled** |
+
+          [Repeat for each day in the period]
+
+          ## Remaining Items
+
+          - [Any follow-up actions needed]
+          - [Any failed changes that need manual attention]
+
+          ## Summary
+
+          [1-2 sentences confirming the calendar is in order or noting issues]
+          ```
+
+          ## Quality Criteria
+
+          - All planned changes from the analysis are accounted for in verification
+          - The summary gives a clear picture of the calendar's final state
+          - Discrepancies are flagged with explanations
+          - Changed entries are visually distinguished from unchanged ones
+
+          ## Context
+
+          This confirmation step closes the loop on the calendar management workflow. It ensures no changes were lost and gives the user confidence that their calendar is accurate.
+        inputs:
+          calendar_changes_file: { required: true }
+        outputs:
+          calendar_summary_file: { required: true }
+
+  clean_inbox:
+    summary: "Review inbox, categorize messages, draft replies, and archive clutter"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. These workflows handle
+      common administrative and strategic tasks that support the CEO's productivity.
+
+      Tools available:
+      - Email: Use the himalaya CLI for reading, sending, and managing email
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Draft communications for review before sending — never send without confirmation
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+    steps:
+      - name: inbox_fetch_messages
+        instructions: |
+          # Fetch Messages
+
+          ## Objective
+
+          Retrieve messages from the specified inbox and produce a structured snapshot for categorization and action.
+
+          ## Task
+
+          Use the himalaya CLI to fetch messages from the user's inbox. Produce a clean, parseable snapshot of all messages in the specified time range.
+
+          ### Process
+
+          1. **Understand the request**
+             - Read the inbox account, time range, and priority rules inputs
+             - Determine which himalaya account and folder to query
+
+          2. **Fetch messages**
+             - Use `himalaya envelope list` to retrieve message envelopes for the time range
+             - For each message, capture: ID, sender, subject, date, flags (read/unread/flagged)
+             - For messages that look important based on priority rules, fetch a brief preview using `himalaya message read`
+
+          3. **Produce the snapshot**
+             - List all messages with metadata
+             - Note the total count, unread count, and flagged count
+             - Include the user's priority rules in the snapshot for the next step
+
+          ## Output Format
+
+          ### inbox_snapshot.md
+
+          A structured list of all messages in the inbox for the period.
+
+          **Structure**:
+
+          ```markdown
+          # Inbox Snapshot
+
+          - **Account**: [email account]
+          - **Period**: [time range]
+          - **Total Messages**: [count]
+          - **Unread**: [count]
+          - **Flagged**: [count]
+          - **Fetched**: [timestamp]
+
+          ## Priority Rules
+
+          [Copy of user's priority rules for reference by categorization step]
+
+          ## Messages
+
+          ### [ID]: [Subject]
+
+          - **From**: [sender name <email>]
+          - **Date**: [date and time]
+          - **Status**: [unread/read/flagged]
+          - **Preview**: [first 1-2 sentences if available]
+
+          ### [ID]: [Subject]
+
+          [same structure, repeat for all messages]
+
+          ## Quick Stats
+
+          - **Top senders**: [list of most frequent senders]
+          - **Threads**: [any notable multi-message threads]
+          ```
+
+          ## Quality Criteria
+
+          - All messages in the time range are captured
+          - Each message has complete metadata (ID, sender, subject, date, status)
+          - Priority rules are preserved for the categorization step
+          - Messages are sorted by date (newest first)
+          - Counts are accurate
+
+          ## Context
+
+          This snapshot feeds the categorization step. Complete, accurate metadata ensures messages are correctly prioritized. The himalaya CLI is the primary tool for email access.
+        inputs:
+          inbox_account: { required: true }
+          time_range: { required: true }
+          priority_rules: { required: true }
+        outputs:
+          inbox_snapshot_file: { required: true }
+
+      - name: inbox_categorize_messages
+        instructions: |
+          # Categorize Messages
+
+          ## Objective
+
+          Sort all inbox messages into actionable categories based on the user's priority rules, producing a clear action plan for each message.
+
+          ## Task
+
+          Review every message in the inbox snapshot and assign it to a category. Apply the user's priority rules first, then use judgment for remaining messages.
+
+          ### Process
+
+          1. **Read inputs**
+             - Parse inbox_snapshot.md for all messages and priority rules
+             - Understand the user's priority framework
+
+          2. **Apply priority rules first**
+             - Match messages against the user's explicit rules (e.g., "flag anything from investors")
+             - These rules take precedence over general categorization
+
+          3. **Categorize remaining messages**
+             - **Urgent**: Time-sensitive, requires immediate response (deadlines, escalations)
+             - **Needs Reply**: Requires a response but not time-critical
+             - **FYI**: Informational, no action needed but worth reading
+             - **Archive**: Read/processed, can be archived for reference
+             - **Delete**: Spam, promotions, or irrelevant messages
+
+          4. **Add action notes**
+             - For "Needs Reply" messages, note what the reply should address
+             - For "Urgent" messages, note the deadline or urgency reason
+             - For "Archive" and "Delete", note the rationale
+
+          ## Output Format
+
+          ### categorized_inbox.md
+
+          Messages organized by category with action notes.
+
+          **Structure**:
+
+          ```markdown
+          # Categorized Inbox
+
+          - **Account**: [email account]
+          - **Total Messages**: [count]
+          - **Categorization Date**: [timestamp]
+
+          ## Priority Rules Applied
+
+          [Copy of rules and how they were applied]
+
+          ## Urgent ([count])
+
+          ### [ID]: [Subject]
+
+          - **From**: [sender]
+          - **Date**: [date]
+          - **Why Urgent**: [reason]
+          - **Action Needed**: [what to do]
+          - **Deadline**: [if applicable]
+
+          ## Needs Reply ([count])
+
+          ### [ID]: [Subject]
+
+          - **From**: [sender]
+          - **Date**: [date]
+          - **Reply Should Address**: [key points to cover]
+
+          ## FYI ([count])
+
+          ### [ID]: [Subject]
+
+          - **From**: [sender]
+          - **Date**: [date]
+          - **Summary**: [1 sentence]
+
+          ## Archive ([count])
+
+          | ID   | Subject   | From     | Reason        |
+          | ---- | --------- | -------- | ------------- |
+          | [id] | [subject] | [sender] | [why archive] |
+
+          ## Delete ([count])
+
+          | ID   | Subject   | From     | Reason       |
+          | ---- | --------- | -------- | ------------ |
+          | [id] | [subject] | [sender] | [why delete] |
+          ```
+
+          ## Quality Criteria
+
+          - Every message from the snapshot is categorized (no messages dropped)
+          - The user's priority rules are reflected in the categorization
+          - "Urgent" and "Needs Reply" messages have clear action notes
+          - Categories are reasonable — important messages are not buried in Archive/Delete
+          - Counts in section headers match actual message counts
+
+          ## Context
+
+          This categorization drives the next two steps: drafting responses for "Needs Reply" and "Urgent" messages, and applying bulk actions (archive/delete) for the rest. Miscategorization means missed responses or deleted important messages.
+        inputs:
+          inbox_snapshot_file: { required: true }
+        outputs:
+          categorized_inbox_file: { required: true }
+
+      - name: inbox_draft_responses
+        instructions: |
+          # Draft Responses
+
+          ## Objective
+
+          Draft professional replies for all messages categorized as "Urgent" or "Needs Reply," ready for the user to review and approve before sending.
+
+          ## Task
+
+          For each message that needs a response, read the full message content and draft an appropriate reply. All drafts are for review only — nothing is sent in this step.
+
+          ### Process
+
+          1. **Read categorized inbox**
+             - Parse categorized_inbox.md for messages in "Urgent" and "Needs Reply" categories
+             - Note the action guidance for each message
+
+          2. **Read full message content**
+             - For each message needing a reply, use `himalaya message read [ID]` to get the full content
+             - Understand the context, question, or request
+
+          3. **Draft replies**
+             - Write a professional, concise reply for each message
+             - Address the specific points raised in the original message
+             - Match the tone to the relationship (formal for external contacts, casual for close colleagues)
+             - Include clear next steps or answers
+             - Keep replies short — aim for 3-5 sentences unless the topic requires more
+
+          4. **Flag uncertain drafts**
+             - If you're unsure about the right response, note it and suggest the user write this one manually
+             - If the message requires information you don't have, note what's needed
+
+          ## Output Format
+
+          ### draft_replies.md
+
+          All draft replies, organized by urgency.
+
+          **Structure**:
+
+          ```markdown
+          # Draft Replies
+
+          - **Total Drafts**: [count]
+          - **Drafts Needing Review**: [count — all of them, since none should be sent without review]
+
+          ## Urgent Replies
+
+          ### Reply to: [Subject] (ID: [id])
+
+          - **To**: [recipient email]
+          - **Original From**: [sender]
+          - **Original Date**: [date]
+          - **Context**: [1-sentence summary of what they asked/said]
+
+          **Draft**:
+
+          > [Full draft reply text]
+
+          **Notes**: [Any caveats, missing info, or suggestions for the user]
+
+          ---
+
+          ## Standard Replies
+
+          ### Reply to: [Subject] (ID: [id])
+
+          - **To**: [recipient email]
+          - **Context**: [1-sentence summary]
+
+          **Draft**:
+
+          > [Full draft reply text]
+
+          **Notes**: [Any caveats]
+
+          ---
+
+          ## Skipped (Manual Reply Recommended)
+
+          ### [Subject] (ID: [id])
+
+          - **Reason**: [Why this needs manual handling — e.g., requires information only the user has]
+          ```
+
+          ## Quality Criteria
+
+          - All drafts use professional, concise language appropriate for the recipient
+          - Each draft addresses the sender's question or request with a clear next step
+          - Urgent replies are prioritized at the top
+          - Messages requiring manual handling are clearly flagged with reasons
+          - No draft is sent — all are for review only
+
+          ## Context
+
+          These drafts save the user time by handling routine responses. The quality bar is "good enough to send with minor edits." Drafts that the user has to rewrite from scratch defeat the purpose.
+        inputs:
+          categorized_inbox_file: { required: true }
+        outputs:
+          draft_replies_file: { required: true }
+
+      - name: inbox_apply_actions
+        instructions: |
+          # Apply Inbox Actions
+
+          ## Objective
+
+          Execute all inbox actions: send approved replies, archive messages, delete spam, and flag important items. Log every action taken.
+
+          ## Task
+
+          Using the categorized inbox and draft replies, apply all planned actions. This step has side effects (sending emails, deleting messages), so confirm with the user before proceeding.
+
+          ### Process
+
+          1. **Read inputs**
+             - Parse categorized_inbox.md for archive/delete lists
+             - Parse draft_replies.md for approved reply drafts
+
+          2. **Present action plan for approval**
+             - Show the user a summary of all actions about to be taken:
+               - Number of replies to send
+               - Number of messages to archive
+               - Number of messages to delete
+             - Ask structured questions to confirm:
+               - Are all reply drafts approved? Any edits needed?
+               - Approve archive list?
+               - Approve delete list?
+             - Do NOT proceed without explicit user approval
+
+          3. **Send approved replies**
+             - Use `himalaya message send` or `himalaya message reply` for each approved draft
+             - Log each send with recipient and status
+
+          4. **Archive messages**
+             - Use `himalaya message move` to move messages to archive folder
+             - Log each archive action
+
+          5. **Delete messages**
+             - Use `himalaya message delete` to remove spam/irrelevant messages
+             - Log each deletion
+
+          6. **Flag important messages**
+             - Use `himalaya flag add` for messages that need follow-up
+             - Log flagging actions
+
+          ## Output Format
+
+          ### inbox_actions_log.md
+
+          Complete log of all actions taken.
+
+          **Structure**:
+
+          ```markdown
+          # Inbox Actions Log
+
+          - **Date**: [timestamp]
+          - **Replies Sent**: [count]
+          - **Messages Archived**: [count]
+          - **Messages Deleted**: [count]
+          - **Messages Flagged**: [count]
+
+          ## Replies Sent
+
+          | ID   | To      | Subject   | Status        |
+          | ---- | ------- | --------- | ------------- |
+          | [id] | [email] | [subject] | [sent/failed] |
+
+          ## Messages Archived
+
+          | ID   | Subject   | From     | Reason     |
+          | ---- | --------- | -------- | ---------- |
+          | [id] | [subject] | [sender] | [category] |
+
+          ## Messages Deleted
+
+          | ID   | Subject   | From     | Reason            |
+          | ---- | --------- | -------- | ----------------- |
+          | [id] | [subject] | [sender] | [spam/irrelevant] |
+
+          ## Messages Flagged
+
+          | ID   | Subject   | Flag Reason        |
+          | ---- | --------- | ------------------ |
+          | [id] | [subject] | [follow-up needed] |
+
+          ## Errors
+
+          [Any failed actions with details]
+
+          ## Summary
+
+          - **Inbox before**: [count] messages
+          - **Inbox after**: [estimated count]
+          - **Time saved**: [rough estimate]
+          ```
+
+          ## Quality Criteria
+
+          - Every action taken is logged with message ID and result
+          - Only messages categorized as delete were deleted; important messages were preserved
+          - User approval was obtained before executing any actions
+          - Failed actions are documented with error details
+          - The summary provides a clear before/after picture
+
+          ## Context
+
+          This is the action step of the inbox workflow. Sending emails and deleting messages are irreversible, so user confirmation is essential. The log ensures accountability and allows the user to verify what happened.
+        inputs:
+          categorized_inbox_file: { required: true }
+          draft_replies_file: { required: true }
+        outputs:
+          inbox_actions_log_file: { required: true }
+
+  discover_events:
+    summary: "Find events relevant to the human's projects and interests"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. These workflows handle
+      common administrative and strategic tasks that support the CEO's productivity.
+
+      Tools available:
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+      - Reference specific dates, times, and contacts where possible
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+    steps:
+      - name: discover_gather_interests
+        instructions: |
+          # Gather Interests
+
+          ## Objective
+
+          Build a structured profile of the human's interests, current projects, and event preferences to guide event discovery.
+
+          ## Task
+
+          Combine the user-provided interest areas with context from the project environment to create a comprehensive interest profile. Ask structured questions to fill gaps.
+
+          ### Process
+
+          1. **Review provided inputs**
+             - Read interest_areas, location, and date_range inputs
+             - Parse interest areas into distinct topics
+
+          2. **Enrich from project context**
+             - Check PROJECTS.yaml or project files for active projects and their domains
+             - Review SOUL.md and TEAM.md for role context and professional focus areas
+             - Identify technologies, industries, and communities relevant to current work
+
+          3. **Ask structured questions to refine**
+             - Use the AskUserQuestion tool to clarify preferences:
+               - Event types: conferences, meetups, workshops, hackathons, networking dinners?
+               - Size preference: intimate (< 50) vs. large-scale (500+)?
+               - Willingness to travel vs. local-only vs. remote?
+               - Budget for event attendance (free only, or paid events OK)?
+               - Networking goals: hiring, partnerships, learning, speaking?
+
+          4. **Build the interest profile**
+             - Organize interests by category
+             - Weight by relevance to current projects and stated priorities
+
+          ## Output Format
+
+          ### interest_profile.md
+
+          A structured profile to guide event search.
+
+          **Structure**:
+
+          ```markdown
+          # Interest Profile
+
+          - **Location**: [base location]
+          - **Travel Radius**: [local only / regional / national / international]
+          - **Date Range**: [search period]
+          - **Budget**: [free only / up to $X / no limit]
+
+          ## Interest Areas
+
+          ### 1. [Interest Area] (Priority: high/medium/low)
+
+          - **Keywords**: [search terms]
+          - **Related Projects**: [current projects in this area]
+          - **Event Types**: [conferences, meetups, workshops, etc.]
+
+          ### 2. [Interest Area] (Priority: high/medium/low)
+
+          [same structure]
+
+          ## Event Preferences
+
+          - **Preferred Size**: [range]
+          - **Format**: [in-person / remote / hybrid]
+          - **Networking Goals**: [what the user wants from events]
+          - **Speaking Interest**: [yes/no — open to CFPs?]
+
+          ## Active Projects Context
+
+          [Brief summary of current projects that might influence event relevance]
+          ```
+
+          ## Quality Criteria
+
+          - All user-provided interest areas are captured
+          - Interests are enriched with project context, not just echoed back
+          - Priority levels reflect the user's current focus
+          - Preferences are specific enough to filter events effectively
+          - The profile is useful as a search guide, not just a list
+
+          ## Context
+
+          This profile drives the event search. A well-constructed profile with weighted interests and clear preferences produces better, more relevant event recommendations.
+        inputs:
+          interest_areas: { required: true }
+          location: { required: true }
+          date_range: { required: true }
+        outputs:
+          interest_profile_file: { required: true }
+
+      - name: discover_search_events
+        instructions: |
+          # Search Events
+
+          ## Objective
+
+          Search for events matching the interest profile, producing a comprehensive list of candidates with full details.
+
+          ## Task
+
+          Use web search to find events across multiple platforms and sources. Cast a wide net — filtering happens in the next step.
+
+          ### Process
+
+          1. **Read the interest profile**
+             - Parse interest_profile.md for all interest areas, keywords, location, and date range
+             - Note priority levels to guide search effort allocation
+
+          2. **Search across multiple sources**
+             - Use WebSearch to query event platforms:
+               - Eventbrite, Meetup, Luma for general events
+               - Conference-specific sites for tech events
+               - Industry-specific event calendars
+               - Local tech community calendars
+             - Search for each high-priority interest area first, then medium and low
+             - Use location and date filters where possible
+
+          3. **Gather event details**
+             - For each event found, capture:
+               - Event name
+               - Date and time
+               - Location (physical address or "remote")
+               - URL (registration or info page)
+               - Brief description
+               - Cost (free / ticket price)
+               - Expected attendance size (if available)
+               - Organizer
+
+          4. **Deduplicate**
+             - Remove duplicate listings from different sources
+             - Merge information from multiple sources for the same event
+
+          ## Output Format
+
+          ### event_candidates.md
+
+          Raw list of all discovered events.
+
+          **Structure**:
+
+          ```markdown
+          # Event Candidates
+
+          - **Search Date**: [timestamp]
+          - **Interest Profile**: [summary of what was searched for]
+          - **Events Found**: [total count]
+
+          ## Events
+
+          ### 1. [Event Name]
+
+          - **Date**: [date and time]
+          - **Location**: [venue, city, state OR "Remote"]
+          - **URL**: [registration/info link]
+          - **Cost**: [free / $X]
+          - **Size**: [expected attendance if known]
+          - **Organizer**: [who's hosting]
+          - **Description**: [2-3 sentence summary]
+          - **Matched Interest**: [which interest area this relates to]
+
+          ### 2. [Event Name]
+
+          [same structure]
+
+          [Continue for all discovered events]
+
+          ## Search Coverage
+
+          - **Sources Searched**: [list of platforms/sites checked]
+          - **Interest Areas Covered**: [which interests had results, which didn't]
+          - **Gaps**: [any interest areas with no events found]
+          ```
+
+          ## Quality Criteria
+
+          - All listed events are plausibly relevant to at least one stated interest area
+          - Each event includes name, date, location, URL, and brief description
+          - Multiple sources were searched (not just one platform)
+          - High-priority interest areas have more search coverage
+          - No obviously duplicate entries
+
+          ## Context
+
+          This is the raw discovery step. Quantity and coverage matter here — the ranking step will filter and prioritize. It's better to include a borderline-relevant event than to miss a great one.
+        inputs:
+          interest_profile_file: { required: true }
+        outputs:
+          event_candidates_file: { required: true }
+
+      - name: discover_rank_and_filter
+        instructions: |
+          # Rank and Filter
+
+          ## Objective
+
+          Score and rank discovered events by relevance to the user's interests, filter out low-value options, and produce a prioritized shortlist.
+
+          ## Task
+
+          Apply a structured scoring system to evaluate each event candidate against the interest profile. Remove low-relevance events and rank the rest.
+
+          ### Process
+
+          1. **Read inputs**
+             - Parse interest_profile.md for interests, priorities, and preferences
+             - Parse event_candidates.md for all discovered events
+
+          2. **Define scoring criteria**
+             - Interest match (0-3): How well does the event match a stated interest area? Weight by interest priority.
+             - Logistics fit (0-2): Does the location, date, cost, and format match preferences?
+             - Networking value (0-2): Does the event offer relevant networking opportunities?
+             - Quality signals (0-1): Known organizer, past editions, speaker quality
+
+          3. **Score each event**
+             - Apply the scoring criteria to each event
+             - Calculate a total score (max 8)
+             - Note the rationale for each score
+
+          4. **Filter and rank**
+             - Remove events scoring below 3 (clearly irrelevant)
+             - Rank remaining events by total score, highest first
+             - For ties, prefer events that match higher-priority interests
+
+          5. **Note filtered-out events**
+             - Briefly explain why low-scoring events were cut
+
+          ## Output Format
+
+          ### ranked_events.md
+
+          Events ranked by relevance with scores and rationale.
+
+          **Structure**:
+
+          ```markdown
+          # Ranked Events
+
+          - **Total Candidates**: [count from search]
+          - **After Filtering**: [count remaining]
+          - **Filtered Out**: [count removed]
+
+          ## Top Events
+
+          ### Rank 1: [Event Name] — Score: [X/8]
+
+          - **Date**: [date]
+          - **Location**: [location]
+          - **Cost**: [cost]
+          - **URL**: [link]
+          - **Scores**:
+            - Interest Match: [0-3] — [rationale]
+            - Logistics Fit: [0-2] — [rationale]
+            - Networking Value: [0-2] — [rationale]
+            - Quality Signals: [0-1] — [rationale]
+          - **Best For**: [which interest area / goal]
+
+          ### Rank 2: [Event Name] — Score: [X/8]
+
+          [same structure]
+
+          [Continue for all ranked events]
+
+          ## Filtered Out
+
+          | Event  | Score   | Reason                                                                |
+          | ------ | ------- | --------------------------------------------------------------------- |
+          | [name] | [score] | [why it was cut — e.g., wrong location, too expensive, low relevance] |
+          ```
+
+          ## Quality Criteria
+
+          - Each event has a clear score and rationale tied to specific interest areas
+          - Low-relevance events are excluded with brief justification
+          - Scoring is consistent — similar events get similar scores
+          - The ranking prioritizes the user's highest-priority interests
+          - The filtered-out table gives transparency into what was removed
+
+          ## Context
+
+          This ranking step bridges raw discovery and final recommendations. A clear, justified scoring system helps the user trust the recommendations and makes it easy to override if they disagree with a ranking.
+        inputs:
+          interest_profile_file: { required: true }
+          event_candidates_file: { required: true }
+        outputs:
+          ranked_events_file: { required: true }
+
+      - name: discover_present_recommendations
+        instructions: |
+          # Present Recommendations
+
+          ## Objective
+
+          Create a polished, decision-ready recommendations document with the top events, including everything the user needs to decide whether to attend.
+
+          ## Task
+
+          Transform the ranked event list into an executive-ready recommendations document. Focus on actionability — the user should be able to register directly from this document.
+
+          ### Process
+
+          1. **Read ranked events**
+             - Parse ranked_events.md for the top-ranked events
+             - Select the top 5-8 events for the final recommendations (or fewer if the list is short)
+
+          2. **Enrich each recommendation**
+             - For each top event, use WebFetch to get additional details from the event page:
+               - Speaker lineup or agenda highlights
+               - Registration deadline
+               - Early bird pricing if available
+               - Any discount codes or group rates
+             - Note if CFP (Call for Papers) is open, if the user expressed speaking interest
+
+          3. **Write recommendation blurbs**
+             - For each event, write a concise recommendation explaining:
+               - Why this event matters for the user's goals
+               - What they'll get out of attending
+               - Any urgency (early bird deadline, limited capacity)
+
+          4. **Create the final document**
+             - Lead with a brief executive summary
+             - Present events in recommended order
+             - Include a quick-reference comparison table
+             - End with clear next steps
+
+          ## Output Format
+
+          ### event_recommendations.md
+
+          The final curated recommendations document.
+
+          **Structure**:
+
+          ```markdown
+          # Event Recommendations
+
+          - **Prepared**: [date]
+          - **Period**: [date range searched]
+          - **Location**: [base location]
+          - **Top Picks**: [count]
+
+          ## Executive Summary
+
+          [2-3 sentences: what was searched, how many events found, top highlight]
+
+          ## Quick Comparison
+
+          | Event  | Date   | Location | Cost   | Match              |
+          | ------ | ------ | -------- | ------ | ------------------ |
+          | [name] | [date] | [city]   | [cost] | [primary interest] |
+
+          ## Recommendations
+
+          ### 1. [Event Name]
+
+          **Date**: [date] | **Location**: [location] | **Cost**: [cost]
+          **Registration**: [URL]
+
+          **Why Attend**: [2-3 sentences on why this matters for the user's goals]
+
+          **Highlights**:
+
+          - [Speaker or session highlight]
+          - [Networking opportunity]
+          - [Other notable feature]
+
+          **Action Items**:
+
+          - [ ] Register by [deadline] for early bird pricing
+          - [ ] Submit talk proposal by [CFP deadline] (if applicable)
+          - [ ] Book travel by [date] for best rates
+
+          ---
+
+          ### 2. [Event Name]
+
+          [same structure]
+
+          ---
+
+          ## Next Steps
+
+          1. Review recommendations and select events to attend
+          2. [Specific action for the top-priority event]
+          3. [Calendar blocking suggestion]
+          ```
+
+          ## Quality Criteria
+
+          - Each recommendation includes enough information to decide whether to attend
+          - For each event, the reason it matters to the human's goals is stated
+          - Registration links or next steps are included for each recommended event
+          - The executive summary gives a quick overview without needing to read details
+          - Action items have specific deadlines where available
+          - The document is polished and ready for executive review
+
+          ## Context
+
+          This is the final deliverable of the event discovery workflow. The user should be able to scan this document in 2 minutes and make attendance decisions. Clarity and actionability matter more than thoroughness.
+        inputs:
+          ranked_events_file: { required: true }
+        outputs:
+          event_recommendations_file: { required: true }
+
+  task_loop:
+    summary: "Review calendar, active work, agent assignments, and milestone state; update zk notes; publish next actions"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. These workflows handle
+      common administrative and strategic tasks that support the CEO's productivity.
+
+      Tools available:
+      - Email: Use the himalaya CLI for reading, sending, and managing email
+      - Calendar: Check for calendar tools or integrations available in the environment
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+      - zk notes: Use `zk --notebook-dir <path>` for note discovery, creation, linking, and indexing
+      - Zellij fleet survey: Use `zellij list-sessions` and `zellij --session <name> action dump-screen <path>` to inspect live agent activity. See task_loop_collect_agent_activity step for the full pattern.
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Draft communications for review before sending — never send without confirmation
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+      - Reference specific dates, times, and contacts where possible
+      - Prefer active project hub notes in `index/` as the source of truth for project scope
+      - For task coordination, create and update zk notes in notes repos instead of writing to legacy TASKS.yaml ledgers
+      - Keep tags within approved namespaces (`project/*`, `repo/*`, `status/*`, `source/*`); store milestone, issue, PR, assignee, and owner references in frontmatter
+
+      Task note frontmatter contract (see steps/shared/task_note_frontmatter.md for full examples):
+      - Required baseline fields: `id`, `title`, `type`, `created`, `author`, `tags`
+      - Coordination fields (add when known): `project`, `owner`, `status`, `assigned_agent`,
+        `milestone_ref`, `issue_ref`, `pr_ref`, `repo_ref`, `source_ref`, `next_review`, `coordination_note`
+      - Use the same `source_ref` for deduplication across the human note and all owner mirrors
+      - Do not invent tag namespaces for milestone, issue, PR, or assignee identity
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+
+      ## Portfolio review
+
+      The portfolio_review workflow performs a holistic review of the user's entire project portfolio.
+      It replaces per-project status.md files with a single comprehensive report covering all active projects.
+
+      Data sources per project:
+      - GitHub/Forgejo milestones — open milestones, issue counts, completion percentages
+      - Git log — recent commit activity to gauge momentum (last 30 days)
+      - Existing project profiles — charter.md, README.yaml, status.md from notes repo's `projects/{slug}/`
+
+      Projects are discovered from `projects/README.md` (primary) or `PROJECTS.yaml` at the notes repo root.
+
+      Platform tools:
+      - GitHub repos: `gh` CLI for milestones, issues, PRs, and activity
+      - Forgejo repos: `fj` or `tea` CLI, or `curl` with Forgejo API
+      - Git activity: `git log --oneline --since="30 days ago"` on local clones in `~/code/ncrmro/`
+
+      The final report is delivered as a pull request into the notes repo at:
+      `projects/portfolio/reviews/YYYY-MM.md` (dated, accumulates over time).
+      Branch naming: `portfolio-review/YYYY-MM`. PRs are created with `gh pr merge --auto --squash`
+      enabled (72-hour review window before auto-merge).
+
+      Status indicators: 🟢 On Track, 🟡 At Risk, 🔴 Behind, ⚪ Not Started/Deferred
+    steps:
+      - name: task_loop_discover_notes_repos
+        instructions: |
+          # Discover Notes Repos
+
+          ## Objective
+
+          Find the human and agent notes repos under the keystone owner layout, establish
+          the working date, and identify which repos participate in this task-loop run.
+
+          ## Task
+
+          Resolve notes repos from `~/.keystone/repos/{owner}/notes` and produce a clean
+          inventory. This workflow coordinates work across notes repos, so repo discovery
+          must be explicit before any task-note or daily-note updates happen.
+
+          ### Process
+
+          1. **Establish the working date**
+             - Use the `target_date` input when provided.
+             - Otherwise use the local current date in ISO 8601 format.
+             - Record the human owner. Default to `ncrmro` when `human_owner` is omitted.
+
+          2. **Resolve the repo root**
+             - Use `notes_root` when provided.
+             - Otherwise assume `~/.keystone/repos`.
+             - Resolve it to an absolute path before writing the inventory.
+
+          3. **Discover owner repos**
+             - If `owner_filter` is provided, treat it as the authoritative owner list.
+             - Otherwise inspect one level under the repo root and look for `notes/`
+               repos.
+             - For each owner:
+               - record the expected notes path
+               - note whether the repo exists
+               - note whether it is a git repo
+               - note whether `.zk/config.toml` exists
+
+          4. **Classify owners**
+             - Mark exactly one owner as the human coordination repo.
+             - Mark every other discovered notes repo as an agent-owner repo unless the
+               environment makes a different role obvious.
+             - Missing repos should remain in the report as `missing`, not silently
+               dropped.
+
+          5. **Flag prerequisites**
+             - Note any repos that are missing, not initialized as zk notebooks, or not
+               clean git repos.
+             - Do not fail the run solely because an agent repo is missing; this workflow
+               should degrade gracefully.
+
+          ## Output Format
+
+          ### notes_repo_inventory.md
+
+          ```markdown
+          # Notes Repo Inventory
+
+          - **Working Date**: 2026-03-28
+          - **Repo Root**: /home/ncrmro/.keystone/repos
+          - **Human Owner**: ncrmro
+
+          ## Owners
+
+          | Owner | Role | Notes Path | Exists | Git Repo | zk Ready | Status |
+          | ----- | ---- | ---------- | ------ | -------- | -------- | ------ |
+          | ncrmro | human | /abs/path/to/notes | yes | yes | yes | active |
+          | drago | agent | /abs/path/to/notes | yes | yes | yes | active |
+          | luce | agent | /abs/path/to/notes | no | no | no | missing |
+
+          ## Constraints
+
+          - [Any missing repos or notebook issues]
+
+          ## Guidance
+
+          - The human notes repo is the coordination source of truth for this run.
+          - Missing owner repos will be skipped during sync unless they appear later.
+          ```
+
+          ## Quality Criteria
+
+          - The report records one working date and one human owner.
+          - Every owner considered by the run appears in the inventory.
+          - Absolute notes paths are recorded for existing repos.
+          - Missing or invalid repos are called out explicitly.
+
+          ## Context
+
+          This step anchors the rest of the workflow. Later steps must not guess where
+          notes live or which repo is canonical.
+        inputs:
+          notes_root: { required: false }
+          human_owner: { required: false }
+          owner_filter: { required: false }
+          target_date: { required: false }
+        outputs:
+          notes_repo_inventory_file: { required: true }
+
+      - name: task_loop_review_calendar_context
+        instructions: |
+          # Review Calendar Context
+
+          ## Objective
+
+          Gather the near-term calendar events that should influence task prioritization
+          for the current run.
+
+          ## Task
+
+          Inspect the requested calendar source and translate events into priority
+          signals. This workflow is calendar-first: if a meeting, deadline, or time-bound
+          commitment is imminent, related work should move to the top.
+
+          ### Process
+
+          1. **Read the repo inventory**
+             - Use `notes_repo_inventory.md` to confirm the working date and human owner.
+             - Use `focus_window` when provided. Default to `today plus the next 48 hours`
+               when it is omitted.
+
+          2. **Fetch calendar data**
+             - Use the available calendar tooling for `calendar_source`.
+             - Capture event title, start time, end time, attendees, location, and any
+               notes that imply preparation work.
+             - Use absolute dates and times in the output.
+
+          3. **Interpret task impact**
+             - For each event, decide whether it:
+               - creates urgent preparation work
+               - requires follow-up on delegated work
+               - creates a blocking dependency
+               - is informative only
+             - When an event obviously maps to a project or repo, record that link.
+
+          4. **Identify hard priority signals**
+             - Elevate items such as:
+               - events happening today
+               - deadlines within the focus window
+               - calendar entries that require a deliverable, agenda, review, or decision
+             - Note free windows that could absorb focused work.
+
+          5. **Do not mutate the calendar**
+             - This step is read-only. It informs prioritization but does not reschedule
+               anything.
+
+          ## Output Format
+
+          ### calendar_context.md
+
+          ```markdown
+          # Calendar Context
+
+          - **Working Date**: 2026-03-28
+          - **Calendar Source**: primary
+          - **Focus Window**: 2026-03-28 through 2026-03-30
+
+          ## Priority Signals
+
+          ### 1. Investor update review
+
+          - **When**: 2026-03-28 14:00-14:30
+          - **Project**: catalyst
+          - **Priority Impact**: promote
+          - **Why**: Requires updated milestone status and assigned-agent follow-up before the meeting.
+
+          ### 2. Weekly planning block
+
+          - **When**: 2026-03-29 09:00-10:00
+          - **Priority Impact**: monitor
+          - **Why**: Good slot for backlog review if urgent prep work is already done.
+
+          ## Free Windows
+
+          - 2026-03-28 10:30-12:00
+          - 2026-03-28 15:00-17:00
+
+          ## Summary
+
+          - Today's strongest driver is the investor update review at 2026-03-28 14:00.
+          - No other event should outrank preparation for that meeting.
+          ```
+
+          ## Quality Criteria
+
+          - Every cited event uses an absolute date and time.
+          - The report explains how each important event changes work priority.
+          - Informational events are distinguished from urgent preparation items.
+
+          ## Context
+
+          This step provides the calendar-first weighting used by the priority synthesis
+          step. It should stay concise and operational.
+        inputs:
+          notes_repo_inventory_file: { required: true }
+          calendar_source: { required: false }
+          focus_window: { required: false }
+        outputs:
+          calendar_context_file: { required: true }
+
+      - name: task_loop_collect_active_task_notes
+        instructions: |
+          # Collect Active Task Notes
+
+          ## Objective
+
+          Discover the active zk task notes and the project context they belong to across
+          the participating notes repos.
+
+          Use the shared frontmatter contract in `shared/task_note_frontmatter.md` when
+          deciding which fields to read and normalize.
+
+          ## Task
+
+          Search the notes repos for active task-like notes, project hubs, and linked
+          shared-surface references. The result should describe what work already exists
+          before the workflow creates or updates anything.
+
+          ### Process
+
+          1. **Read prior context**
+             - Use `notes_repo_inventory.md` for repo locations.
+             - Use `calendar_context.md` to look for projects or work items that deserve
+               extra attention.
+
+          2. **Discover project hubs**
+             - In each existing repo, use `zk --notebook-dir <path> list index/ --tag "status/active" --format json`.
+             - Record project slugs, hub paths, and repo URLs when present.
+             - If the canonical query returns zero hubs but `index/` notes clearly carry
+               `project:` frontmatter, record that as a notebook-structure mismatch rather
+               than pretending no hubs exist.
+             - In that fallback case, inspect the project-frontmatter notes, use them as
+               provisional hubs for the report, and call out that they need
+               `status/active` normalization for future runs.
+
+          3. **Pull project stats and recent PRs**
+
+             For each project with a known repo (e.g., `gh:ncrmro/catalyst`), run:
+
+             ```bash
+             # Open issues count + milestone summary
+             gh issue list --repo <owner/repo> --state open --json number,title,milestone \
+               --jq 'length as $count | {open_issues: $count, items: .}'
+
+             # Open PRs
+             gh pr list --repo <owner/repo> --state open \
+               --json number,title,author,reviewDecision
+
+             # Recently merged PRs (last 5)
+             gh pr list --repo <owner/repo> --state merged --limit 5 \
+               --json number,title,mergedAt
+
+             # Active milestones
+             gh api repos/<owner/repo>/milestones \
+               --jq '.[] | {title, open_issues, state}'
+             ```
+
+             Record a compact stats block per project in the output. This data feeds the
+             Eisenhower matrix in the next step — a project with no recent merges and no
+             active milestone is likely a candidate for icebox or delegation.
+
+          4. **Discover active task notes**
+             - Search `notes/`, `reports/`, and other notebook groups as needed for notes
+               that appear to represent active work.
+             - Use frontmatter and links first. Useful fields include:
+               - `project`
+               - `owner`
+               - `status`
+               - `assigned_agent`
+               - `milestone_ref`
+               - `issue_ref`
+               - `pr_ref`
+               - `repo_ref`
+               - `source_ref`
+               - `next_review`
+             - Treat notes with completed or archived status as history, not active work.
+
+          5. **Normalize shared-surface refs**
+             - Keep tags within the approved namespaces only.
+             - If a note encodes milestone, issue, PR, or repo identity in tags or body
+               text, record that in the report and recommend frontmatter normalization in
+               later updates.
+
+          6. **Avoid legacy TASKS.yaml**
+             - Do not use legacy task ledgers as the source of truth for this workflow.
+             - If you notice them, list them under legacy context only.
+
+          7. **Group by project and urgency**
+             - Organize the inventory by project when possible.
+             - Highlight notes that directly support calendar-critical work.
+             - If no active task notes yet use the executive-assistant frontmatter
+               contract, say so explicitly. That is a valid smoke-test outcome.
+
+          ## Output Format
+
+          ### active_task_notes.md
+
+          ```markdown
+          # Active Task Notes
+
+          - **Human Repo**: /abs/path/to/ncrmro/notes
+          - **Repos Scanned**: 3
+
+          ## Projects
+
+          ### catalyst
+
+          - **Hub**: /abs/path/to/index/202603101200 catalyst.md
+          - **Repo**: gh:ncrmro/catalyst
+          - **Stats**: 12 open issues · 2 open PRs · last merge 2026-03-25 · milestone: Cloud Platform (#5, 2 open)
+
+          #### Tasks
+
+          1. **Prepare investor update**
+             - **Note**: /abs/path/to/notes/202603271030 prepare-investor-update.md
+             - **Owner**: ncrmro
+             - **Status**: active
+             - **Assigned Agent**: drago
+             - **Milestone Ref**: gh:ncrmro/catalyst#12
+             - **Issue Ref**: gh:ncrmro/catalyst#88
+             - **PR Ref**: none
+             - **Source Ref**: calendar-investor-update-2026-03-28
+             - **Calendar Alignment**: supports event on 2026-03-28 14:00
+
+          #### Recent Merged PRs
+
+          | PR | Title | Merged |
+          |----|-------|--------|
+          | #91 | fix: billing webhook retry logic | 2026-03-25 |
+          | #90 | feat: cloud account onboarding UI | 2026-03-22 |
+
+          ## Legacy Context
+
+          - Legacy YAML task ledgers found:
+            - /path/to/legacy/TASKS.yaml
+          - These files were not used for task discovery in this run.
+          ```
+
+          ## Quality Criteria
+
+          - Project hubs and active task notes are grounded in zk discovery.
+          - Each active task note includes available project and shared-surface metadata.
+          - Calendar-relevant tasks are explicitly called out.
+          - Legacy task ledgers are not treated as authoritative.
+
+          ## Context
+
+          This is the core state-discovery step for the zk-backed task loop. It should
+          make the existing work visible without mutating it.
+        inputs:
+          notes_repo_inventory_file: { required: true }
+          calendar_context_file: { required: true }
+        outputs:
+          active_task_notes_file: { required: true }
+
+      - name: task_loop_collect_agent_activity
+        instructions: |
+          # Collect Agent Activity
+
+          ## Objective
+
+          Summarize what each participating agent owner is actively working on and how
+          that maps back to task notes in the notes repos.
+
+          Use `shared/task_note_frontmatter.md` as the reference shape for owner mirrors
+          and shared-surface fields.
+
+          ## Task
+
+          Inspect owner notes repos and live zellij session state to build a single view
+          of delegated work, stale assignments, blockers, and missing mirrors.
+
+          ### Process
+
+          1. **Read prior context**
+             - Use `notes_repo_inventory.md` for owner roles and paths.
+             - Use `active_task_notes.md` for the current task inventory.
+
+          2. **Run the zellij fleet survey**
+
+             This is the fastest way to see what agents are actually doing right now.
+             Run it first — it takes seconds and often reveals activity not yet in notes.
+
+             ```bash
+             # Step 1 — list active (non-EXITED) sessions
+             zellij list-sessions 2>/dev/null | grep -v EXITED
+
+             # Step 2 — dump every active session's focused pane in parallel
+             for session in <active_session_names>; do
+               zellij --session "$session" action dump-screen /tmp/zellij-dump-${session}.txt
+             done
+
+             # Step 3 — read each dump to see what the pane contains
+             ```
+
+             **Interpreting the output:**
+             - A Claude Code prompt (`>`) with no running tool -> agent is idle
+             - An active tool call or `Embellishing...` line -> agent is working
+             - A shell prompt -> no agent running in that pane
+             - DeepWork MCP tool call JSON -> identifies exactly which job/step/workflow
+             - `agentctl <owner> claude` line -> you can see which agent was launched
+
+             **Limitations:**
+             - `dump-screen` captures only the **focused pane** of each session.
+             - For multi-pane sessions, use `zellij --session <name> action dump-layout`
+               first to understand the pane structure, then target accordingly.
+             - Session names are often named after the project being worked on
+               (e.g., `keystone-tui`, `catalyst`, `plant-caravan`), which gives context
+               before you even read the dump.
+
+          3. **Check owner-specific task mirrors**
+             - For each agent owner repo that exists:
+               - search for notes assigned to that owner
+               - identify mirrored task notes that correspond to the human repo's task set
+               - note whether the mirror is current, missing, or stale
+             - Cross-reference with zellij session names — an idle agent whose session
+               name matches a project repo is a strong signal the agent is waiting for work.
+
+          4. **Classify delegated work**
+             - For each active assignment, record:
+               - task note path
+               - assigned owner
+               - last visible progress signal (from notes git log or zellij dump)
+               - blocker status
+               - whether follow-up is needed today
+
+          5. **Flag missing mirrors or drift**
+             - Note tasks assigned to an owner that do not yet have a mirror note in that
+               owner's repo.
+             - Note owner repos that have local task notes with no human coordination
+               backlink.
+
+          ## Output Format
+
+          ### agent_activity.md
+
+          ```markdown
+          # Agent Activity
+
+          ## Fleet Survey
+
+          | Session | Status | Summary |
+          |---------|--------|---------|
+          | keystone-tui | idle | drago at Claude Code prompt (Opus 4.6), no active task |
+          | catalyst | idle | empty pane |
+          | unsupervised-deepwork-frontend | active | agent running deepwork/learn on mech_engineer job, step 3m 28s |
+
+          ## Owner Status
+
+          ### drago
+
+          - **Notes Repo**: /abs/path/to/drago/notes
+          - **Active Session**: keystone-tui (idle at prompt)
+          - **Assigned Tasks**: 2
+          - **Needs Follow-Up Today**: yes
+
+          #### Active Items
+
+          1. **Prepare investor update**
+             - **Human Note**: /abs/path/to/ncrmro/notes/...
+             - **Owner Mirror**: /abs/path/to/drago/notes/...
+             - **Last Signal**: Updated 2026-03-28 08:10 with milestone status draft.
+             - **Status**: in progress
+             - **Blocker**: none
+
+          ### luce
+
+          - **Notes Repo**: /abs/path/to/luce/notes
+          - **Active Session**: none found
+          - **Assigned Tasks**: 0
+          - **Needs Follow-Up Today**: no
+
+          ## Drift
+
+          - Task `prepare-investor-update` has a human note but no mirror in luce's repo.
+          ```
+
+          ## Quality Criteria
+
+          - Every participating agent owner gets an explicit status.
+          - Delegated tasks map back to concrete note paths when available.
+          - Missing mirrors and stale assignments are called out directly.
+
+          ## Context
+
+          The daily priority step needs a clear view of delegated work so it can decide
+          whether to follow up, reassign, or leave the task alone.
+        inputs:
+          notes_repo_inventory_file: { required: true }
+          active_task_notes_file: { required: true }
+        outputs:
+          agent_activity_file: { required: true }
+
+      - name: task_loop_synthesize_daily_priorities
+        instructions: |
+          # Synthesize Daily Priorities
+
+          ## Objective
+
+          Turn calendar pressure, active task notes, and agent activity into a single
+          ranked plan for the working day.
+
+          ## Task
+
+          Produce a calendar-first priority list. Upcoming meetings, deadlines, and time-
+          bound commitments outrank nominal project ordering when they conflict.
+
+          ### Process
+
+          1. **Read all inputs**
+             - `calendar_context.md`
+             - `active_task_notes.md`
+             - `agent_activity.md`
+
+          2. **Build the Eisenhower matrix**
+
+             Map every active project and open work item across the four quadrants:
+
+             | | **Urgent** | **Not Urgent** |
+             |---|---|---|
+             | **Important** | Q1 — Do Now | Q2 — Schedule |
+             | **Not Important** | Q3 — Delegate | Q4 — Icebox |
+
+             - **Urgent**: has a calendar event, an imminent deadline, or is blocking an
+               agent or human today
+             - **Important**: directly advances a milestone, unblocks downstream work, or
+               is aligned with the CEO's stated goals
+             - Use project stats (open issues, last merge date, milestone state) from
+               `active_task_notes.md` to inform the judgment — a project with no recent
+               activity and no milestone may belong in Q4
+
+          3. **Apply the ranking policy**
+             - Rank work in this order:
+               1. Q1 (Do Now): calendar events + milestone-critical blockers
+               2. Q2 (Schedule): important work with no immediate deadline — assign a date
+               3. Q3 (Delegate): urgent but not important — assign to drago or luce now
+               4. Q4 (Icebox): everything else — dispose gracefully (see step 5)
+
+          4. **Choose actions, not just status**
+             - For each ranked item, specify:
+               - owner
+               - next action
+               - why it is ranked here
+               - whether it should be carried into the daily note
+
+          5. **Handle Q4 and low-priority work explicitly**
+
+             Do not leave Q4 items as silent backlog. For each one, pick a disposal path:
+
+             - **Defer** (Q2 boundary): important but genuinely not ready — add to a
+               future milestone with a target date. Close any open issues and reopen under
+               the future milestone.
+             - **Delegate** (Q3 boundary): someone should do it, but not the CEO — assign
+               to drago (engineering execution) or luce (product/scoping). Create a task
+               note with `assigned_agent`.
+             - **Icebox**: not ready and not worth scheduling — apply an `icebox` label on
+               GitHub (create it if absent), unassign, remove from milestone, and leave a
+               comment explaining why. Record the icebox action in the daily note.
+             - **Delete**: truly irrelevant — close the issue as "not planned" with a
+               brief explanation. No need to track further.
+
+             The goal is a clean active surface. Every item that remains open should have
+             a clear owner and a reason to exist today.
+
+          6. **Separate blocked and waiting work**
+             - Items waiting on another person, another agent, or an external event should
+               remain visible but should not crowd out immediate execution items.
+
+          7. **Decide carry-forward set**
+             - Identify unfinished items from prior context that should remain active today.
+             - Identify items that should stay linked for context but not be actively
+               carried forward.
+
+          ## Output Format
+
+          ### daily_priorities.md
+
+          ```markdown
+          # Daily Priorities
+
+          - **Working Date**: 2026-03-28
+
+          ## Eisenhower Matrix
+
+          | | Urgent | Not Urgent |
+          |---|---|---|
+          | **Important** | Q1 — Do Now: investor update prep, keystone#175 review | Q2 — Schedule: meze milestone planning (2026-04-07) |
+          | **Not Important** | Q3 — Delegate: plant-caravan#44 -> drago | Q4 — Icebox: trading research spike |
+
+          ## Ranked Priorities
+
+          ### Q1 — Do Now
+
+          1. **Prepare investor update**
+             - **Owner**: ncrmro
+             - **Next Action**: Review drago's milestone draft and finalize talking points by 2026-03-28 12:00.
+             - **Why Now**: Supports calendar event at 2026-03-28 14:00.
+             - **Carry Forward**: yes
+
+          ### Q2 — Schedule
+
+          2. **Meze milestone planning**
+             - **Owner**: ncrmro
+             - **Next Action**: Create first milestone after meze#643 merges. Target: 2026-04-07.
+             - **Why Now**: No milestone exists; last merge was 5 weeks ago.
+             - **Carry Forward**: yes
+
+          ### Q3 — Delegate
+
+          3. **Plant Caravan Phase 2 start (plant-caravan#44)**
+             - **Owner** -> drago
+             - **Next Action**: Assign drago on GitHub; create task note with assigned_agent: drago.
+             - **Why Now**: Work is defined; CEO doesn't need to execute this.
+
+          ### Q4 — Icebox
+
+          4. **Trading research spike**
+             - **Disposal**: icebox
+             - **Action**: Apply `icebox` label on GitHub, remove from milestone, comment "parking until Q3 2026".
+
+          ## Waiting / Blocked
+
+          - **Update legal review note**
+            - **Status**: waiting
+            - **Reason**: Waiting on external counsel response expected 2026-03-29.
+          ```
+
+          ## Quality Criteria
+
+          - Calendar-critical work is ranked above lower-urgency backlog.
+          - Every ranked item has an owner and a concrete next action.
+          - Blocked and waiting work stays visible but separate from immediate execution.
+          - An Eisenhower matrix is present and maps all active projects to quadrants.
+          - Every Q4 item has an explicit disposal action (defer, delegate, icebox, or delete).
+
+          ## Context
+
+          This file becomes the decision engine for the daily note and the sync step. It
+          must be concise, concrete, and operator-ready.
+        inputs:
+          calendar_context_file: { required: true }
+          active_task_notes_file: { required: true }
+          agent_activity_file: { required: true }
+        outputs:
+          daily_priorities_file: { required: true }
+
+      - name: task_loop_rollover_daily_note
+        instructions: |
+          # Rollover Daily Note
+
+          ## Objective
+
+          Create or update the executive-assistant daily note for the working date and
+          carry unfinished work forward by linking existing task notes.
+
+          When this step creates or updates task notes as part of rollover, follow the
+          shared frontmatter contract in `shared/task_note_frontmatter.md`.
+
+          ## Task
+
+          Write the daily coordination artifact into the human notes repo. If a note
+          already exists for the working date, update it in place. If it does not exist,
+          create it and link it to the prior daily note when one exists.
+
+          ### Process
+
+          1. **Read prior context**
+             - Use `notes_repo_inventory.md` to locate the human notes repo.
+             - Use `daily_priorities.md` for the items that belong in today's note.
+
+          2. **Find today's note**
+             - Search the human repo for an executive-assistant daily note matching the
+               working date.
+             - If one exists, update it.
+             - If not, create a new dated note with `zk new`.
+             - Run `zk new` from inside the notebook workdir when creating the note. Do
+               not assume `zk --notebook-dir <path> new reports/ ...` will resolve the
+               relative note group correctly from an arbitrary shell cwd.
+
+          3. **Find yesterday's note**
+             - Search for the most recent prior executive-assistant daily note.
+             - If it exists, capture its path or note ID for linkage.
+
+          4. **Populate the note**
+             - Include:
+               - working date
+               - calendar-critical items
+               - ranked priorities
+               - delegated work by agent owner
+               - waiting or blocked items
+               - carry-forward links to unfinished task notes
+             - Carry unfinished work forward by linking existing task notes. Do not copy
+               and paste full task descriptions into a new note body.
+
+          5. **Use explicit metadata**
+             - Set frontmatter that keeps the note discoverable, including:
+               - `type: report` or another notebook-native type already used for this repo
+               - `author`
+               - `tags` using approved namespaces only
+               - `source_ref` tied to the working date
+               - `previous_report` or an equivalent backlink field when the repo pattern
+                 supports it
+
+          6. **Index and verify**
+             - Run `zk index` if note creation or linking changed the notebook.
+             - If `zk new` fails with a path-outside-the-notebook error, retry from the
+               notebook root and record that behavior as an environment note rather than
+               silently dropping the failure.
+
+          ## Output Format
+
+          ### executive_assistant_daily.md
+
+          Provide the absolute path to the updated daily note, followed by a concise
+          summary:
+
+          ```markdown
+          # Executive Assistant Daily Note
+
+          - **Path**: /abs/path/to/notes/202603281000 executive-assistant-daily-2026-03-28.md
+          - **Working Date**: 2026-03-28
+          - **Previous Note**: /abs/path/to/notes/202603271000 executive-assistant-daily-2026-03-27.md
+
+          ## Included
+
+          - 2 calendar-critical priorities
+          - 3 delegated items
+          - 1 blocked item
+          - 4 carry-forward task-note links
+          ```
+
+          ## Quality Criteria
+
+          - Exactly one daily note is used for the working date.
+          - Unfinished work is carried forward by link, not by duplicating task bodies.
+          - The note records delegated work, blockers, and ranked priorities.
+
+          ## Context
+
+          This note is the main coordination artifact for the workflow. Later sync steps
+          must backlink to it from mirrored owner notes.
+        inputs:
+          notes_repo_inventory_file: { required: true }
+          daily_priorities_file: { required: true }
+        outputs:
+          executive_assistant_daily_file: { required: true }
+
+      - name: task_loop_sync_owner_notes
+        instructions: |
+          # Sync Owner Notes
+
+          ## Objective
+
+          Mirror assigned task state into owner notes repos while keeping the human daily
+          note as the canonical coordination record.
+
+          Use `shared/task_note_frontmatter.md` as the source of truth for mirrored note
+          frontmatter.
+
+          ## Task
+
+          Update or create owner-local mirror notes only for tasks assigned to that owner.
+          Each mirror should point back to the human daily note and preserve the shared-
+          surface references needed for continuity.
+
+          ### Process
+
+          1. **Read prior context**
+             - `notes_repo_inventory.md`
+             - `daily_priorities.md`
+             - `executive_assistant_daily.md`
+
+          2. **Determine mirror set**
+             - For each ranked or carry-forward task assigned to an owner other than the
+               human:
+               - decide whether a mirror already exists
+               - decide whether it needs creation, update, or no change
+
+          3. **Create or update owner mirrors**
+             - Mirror only the assigned work for that owner.
+             - Keep shared-surface fields aligned:
+               - `project`
+               - `assigned_agent`
+               - `milestone_ref`
+               - `issue_ref`
+               - `pr_ref`
+               - `repo_ref`
+               - `source_ref`
+             - Add a backlink to the human daily note.
+
+          4. **Preserve local context**
+             - If the owner repo already has owner-specific notes or status comments,
+               preserve them unless they conflict with the shared state.
+
+          5. **Handle missing repos cleanly**
+             - If an owner repo is missing or not zk-ready, record the skipped sync in the
+               log and continue.
+
+          6. **Index changed repos**
+             - Run `zk index` in repos that changed.
+
+          ## Output Format
+
+          ### owner_sync_log.md
+
+          ```markdown
+          # Owner Sync Log
+
+          - **Human Daily Note**: /abs/path/to/human/daily-note.md
+
+          ## Sync Actions
+
+          ### drago
+
+          - **Repo**: /abs/path/to/drago/notes
+          - **Changed**: yes
+          - **Updated Mirrors**:
+            - /abs/path/to/drago/notes/202603280930 prepare-investor-update.md
+          - **Backlink Added**: yes
+
+          ### luce
+
+          - **Repo**: missing
+          - **Changed**: no
+          - **Reason**: owner notes repo not found
+          ```
+
+          ## Quality Criteria
+
+          - The human daily note remains the coordination source of truth.
+          - Agent repos receive only assigned-work mirrors.
+          - Each created or updated mirror backlinks to the human daily note.
+          - Missing repos are logged without aborting the whole run.
+
+          ## Context
+
+          This step makes the workflow async across notes repos. The human sees the full
+          ledger, while each owner gets only the work relevant to them.
+        inputs:
+          notes_repo_inventory_file: { required: true }
+          daily_priorities_file: { required: true }
+          executive_assistant_daily_file: { required: true }
+        outputs:
+          owner_sync_log_file: { required: true }
+
+      - name: task_loop_publish_next_actions
+        instructions: |
+          # Publish Next Actions
+
+          ## Objective
+
+          Produce the final operator-facing summary for the run, including the updated
+          note paths and the concrete next actions for today.
+
+          ## Task
+
+          Summarize the state after note rollover and sync. The operator should be able to
+          read this file and immediately know what to do now, what is delegated, and what
+          remains blocked.
+
+          ### Process
+
+          1. **Read prior outputs**
+             - `daily_priorities.md`
+             - `executive_assistant_daily.md`
+             - `owner_sync_log.md`
+
+          2. **Compress to operator view**
+             - Keep the summary short.
+             - Highlight:
+               - the top 1-3 things the human should do now
+               - the delegated tasks that are already in motion
+               - any blockers or missing owner repos
+
+          3. **Include updated paths**
+             - Name the daily note path.
+             - List mirrored owner notes that were created or changed.
+
+          4. **State what the workflow did not do**
+             - If a legacy TASKS.yaml ledger exists, note that this workflow did not read
+               or update it.
+
+          ## Output Format
+
+          ### task_loop_summary.md
+
+          ```markdown
+          # Task Loop Summary
+
+          - **Working Date**: 2026-03-28
+          - **Daily Note**: /abs/path/to/human/daily-note.md
+
+          ## Do Now
+
+          1. Review the investor update talking points by 2026-03-28 12:00.
+          2. Follow up with drago on milestone status before the 2026-03-28 14:00 meeting.
+
+          ## Delegated
+
+          - drago: investor update draft mirrored at /abs/path/to/drago/notes/...
+
+          ## Blockers
+
+          - luce repo missing; assigned task could not be mirrored.
+
+          ## Workflow Notes
+
+          - Mirrored 1 owner note.
+          - Did not read or update any legacy TASKS.yaml task ledger.
+          ```
+
+          ## Quality Criteria
+
+          - The summary is short and decision-ready.
+          - The updated daily note path is included.
+          - Delegated work and blockers are explicit.
+          - Each Do Now item names an explicit owner and a specific deadline or time reference.
+
+          ## Context
+
+          This is the final deliverable the operator reads after the run. Optimize for
+          clarity and actionability, not exhaustiveness.
+        inputs:
+          daily_priorities_file: { required: true }
+          executive_assistant_daily_file: { required: true }
+          owner_sync_log_file: { required: true }
+        outputs:
+          task_loop_summary_file: { required: true }
+
+  portfolio_review:
+    summary: "Full portfolio review across all active projects with synthesized health report and Eisenhower matrix"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. These workflows handle
+      common administrative and strategic tasks that support the CEO's productivity.
+
+      Tools available:
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+      - zk notes: Use `zk --notebook-dir <path>` for note discovery, creation, linking, and indexing
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+
+      Platform tools:
+      - GitHub repos: `gh` CLI for milestones, issues, PRs, and activity
+      - Forgejo repos: `fj` or `tea` CLI, or `curl` with Forgejo API
+      - Git activity: `git log --oneline --since="30 days ago"` on local clones
+
+      The final report is delivered as a pull request into the notes repo at:
+      `projects/portfolio/reviews/YYYY-MM.md` (dated, accumulates over time).
+      Branch naming: `portfolio-review/YYYY-MM`. PRs are created with `gh pr merge --auto --squash`
+      enabled (72-hour review window before auto-merge).
+
+      Status indicators: On Track, At Risk, Behind, Not Started/Deferred
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+    steps:
+      - name: portfolio_discover_projects
+        instructions: |
+          # Discover Projects
+
+          ## Objective
+
+          Scan the user's notes repo to build a complete list of all active projects with their
+          associated repositories, platforms, and local clone paths.
+
+          ## Task
+
+          Read project data from the notes repo to produce a structured project list. This list
+          drives the rest of the portfolio review — every project in it will be reviewed.
+
+          ### Process
+
+          1. **Prepare the notes repo — always start from a clean main**
+
+             The portfolio review MUST run against the latest `main` branch in a dedicated
+             worktree so it doesn't interfere with any in-progress notes work.
+
+             Per `process.git-repos`, worktrees MUST live at `$WORKTREE_DIR/{owner}/{repo}/{branch}/`
+             — never inside the repo itself.
+
+             ```bash
+             NOTES_PATH="${NOTES_DIR:-$HOME/notes}"
+             BRANCH="portfolio-review/$(date +%Y-%m)"
+             # Resolve owner/repo from the notes remote, defaulting to ncrmro/notes
+             NOTES_OWNER_REPO=$(git -C "$NOTES_PATH" remote get-url origin \
+               | sed 's|.*[:/]\([^/]*/[^/]*\)\.git|\1|')
+             WORKTREE_PATH="${WORKTREE_DIR:-$HOME/.worktrees}/${NOTES_OWNER_REPO}/${BRANCH}"
+             ```
+
+             a. **Switch the primary checkout to `main` and pull**:
+                ```bash
+                git -C "$NOTES_PATH" stash            # stash any uncommitted changes
+                git -C "$NOTES_PATH" checkout main
+                git -C "$NOTES_PATH" pull --ff-only   # fast-forward only — stop on divergence
+                ```
+                If `pull --ff-only` fails (diverged), stop and report the blocker. Do not
+                proceed with a stale repo.
+
+             b. **Create (or reuse) a worktree for this review**:
+                ```bash
+                if git -C "$NOTES_PATH" worktree list | grep -q "$WORKTREE_PATH"; then
+                  # Worktree already exists — reuse it
+                  echo "Reusing existing worktree at $WORKTREE_PATH"
+                else
+                  mkdir -p "$(dirname "$WORKTREE_PATH")"
+                  git -C "$NOTES_PATH" worktree add -b "$BRANCH" "$WORKTREE_PATH" main
+                fi
+                ```
+
+             c. **All subsequent work uses `$WORKTREE_PATH`**, not `$NOTES_PATH`.
+                Pass `$WORKTREE_PATH` forward as the working notes directory for this run.
+
+          2. **Determine the notes repo path**
+             - The `notes_path` input specifies where the notes repo lives
+             - If `notes_path` was not provided, ask structured questions to determine it:
+               offer common paths like `~/code/ncrmro/obsidian`, `~/notes`, or let the user
+               specify a custom path
+             - Verify the path exists before proceeding
+
+          2. **Read the notes repo project index**
+             - Check for `PROJECTS.yaml` at the notes repo root — if it exists, use it as the
+               primary source (it has priority ordering)
+             - Check for `projects/README.md` — this has the full project listing with repos
+             - If neither exists, scan `projects/*/` directories for project slugs
+
+          3. **For each active project, extract**
+             - Project name and slug
+             - Repository list (owner/repo format)
+             - Platform for each repo (github or forgejo)
+             - Any status or priority info from the source file
+
+          4. **Detect local clones**
+             - For each repo, check if a local clone exists at `~/code/{owner}/{repo}/`
+             - Note the local path if present (used by `gather_data` step for git log)
+
+          5. **Filter out archived/inactive projects**
+             - Projects marked as archived, inactive, or in an `_archive/` directory are excluded
+             - Note excluded projects at the bottom for transparency
+
+          6. **Determine platform**
+             - Repos on `github.com` -> platform: github
+             - Repos on `git.ncrmro.com` or other Forgejo instances -> platform: forgejo
+             - If the platform is unclear from the URL, default to github for `github.com` URLs
+               and forgejo for everything else
+
+          ## Output Format
+
+          ### project_list.md
+
+          A structured list of all active projects ready for parallel review.
+
+          **Structure**:
+
+          ```markdown
+          # Portfolio Project List
+
+          **Generated**: [YYYY-MM-DD]
+          **Source**: [path to notes repo]
+          **Active Projects**: [count]
+
+          ## Projects
+
+          ### keystone
+
+          - **Repos**: ncrmro/keystone:github
+          - **Local**: ~/code/ncrmro/keystone
+          - **Priority**: 1
+          - **Notes**: Self-sovereign NixOS infrastructure platform
+
+          ### catalyst
+
+          - **Repos**: ncrmro/catalyst:github
+          - **Local**: ~/code/ncrmro/catalyst
+          - **Priority**: 2
+          - **Notes**: Business project
+
+          ### meze
+
+          - **Repos**: ncrmro/meze:github, ncrmro/meze-rails:github
+          - **Local**: ~/code/ncrmro/meze, ~/code/ncrmro/meze-rails
+          - **Priority**: 3
+          - **Notes**: Meal planning app
+
+          [... one section per active project ...]
+
+          ## Excluded (Archived/Inactive)
+
+          - broadscape — archived
+          - runsum — archived
+          ```
+
+          ## Quality Criteria
+
+          - Every active project from the notes repo is included with at least one repo reference
+          - Each repo entry specifies the platform (github or forgejo)
+          - Archived or inactive projects are excluded from the active list and noted separately
+          - Local clone paths are checked and recorded when present
+          - The list is ordered by priority if PROJECTS.yaml provides ordering
+
+          ## Context
+
+          This step is the foundation for the entire portfolio review. The project list it produces
+          determines which projects get reviewed in the parallel `review_one` sub-workflows. Missing
+          a project here means it won't appear in the final portfolio report.
+        inputs:
+          notes_path: { required: true }
+        outputs:
+          project_list_file: { required: true }
+
+      - name: portfolio_review_all_projects
+        instructions: |
+          # Review All Projects
+
+          ## Objective
+
+          Launch the `portfolio_review_one` sub-workflow for each active project in parallel via sub-agents,
+          then collect all per-project summaries into a single combined output.
+
+          ## Task
+
+          Read the project list from the previous step and orchestrate parallel reviews of every
+          project using the `executive_assistant/portfolio_review_one` sub-workflow.
+
+          ### Process
+
+          1. **Read the project list**
+             - Parse `project_list.md` from the `discover_projects` step
+             - Extract each project's slug, repos (with platforms), local clone paths, and notes path
+
+          2. **Launch sub-workflows in parallel**
+             - For each project, launch the `executive_assistant/portfolio_review_one` workflow as
+               a sub-agent using the Agent tool (Task tool)
+             - Pass these inputs to each sub-workflow:
+               - `project_slug`: the project's slug (e.g., "keystone")
+               - `project_repos`: comma-separated repo list as `owner/repo:platform`
+                 (e.g., "ncrmro/keystone:github")
+               - `notes_path`: the notes repo path from the discover step
+             - Launch ALL projects concurrently — do not wait for one to finish before starting
+               the next
+             - Use the `mcp__deepwork__start_workflow` tool with:
+               - `job_name`: "executive_assistant"
+               - `workflow_name`: "portfolio_review_one"
+               - `goal`: "Review project {slug} for portfolio status"
+
+          3. **Collect results**
+             - As each sub-workflow completes, read the `project_summary.md` it produced
+             - If a sub-workflow fails (e.g., repo not accessible, no milestones found), note the
+               failure with the project slug and error — do not block other projects
+
+          4. **Combine all summaries**
+             - Concatenate all per-project summaries into `all_summaries.md`
+             - Preserve the original project ordering from the project list
+             - Add a header with completion stats (N of M projects reviewed successfully)
+
+          ### Error Handling
+
+          - If a project's repos are unreachable (e.g., private repo without access), include a
+            stub entry noting the access failure
+          - If git log fails (no local clone), the summary should still include milestone data
+          - If no milestones exist, the summary should note "No milestones" rather than failing
+
+          ## Output Format
+
+          ### all_summaries.md
+
+          Combined per-project status summaries from all sub-workflow runs.
+
+          **Structure**:
+
+          ```markdown
+          # Per-Project Status Summaries
+
+          **Generated**: [YYYY-MM-DD]
+          **Projects Reviewed**: [N] of [M] active projects
+          **Failed**: [count, if any]
+
+          ---
+
+          ## keystone
+
+          **Status**: At Risk
+
+          ### Milestones
+
+          | Milestone           | Progress   | Target Date |
+          | ------------------- | ---------- | ----------- |
+          | Desktop Integration | 8/12 (67%) | 2026-04-01  |
+
+          ### Recent Activity (30 days)
+
+          - 23 commits across 3 PRs
+          - Last commit: 2026-03-19
+
+          ### Blockers
+
+          - Installer TUI broken (PR #50)
+
+          ### Next Actions
+
+          1. Complete desktop integration milestone
+          2. Fix installer TUI
+
+          ---
+
+          ## catalyst
+
+          **Status**: On Track
+
+          [... repeat for each project ...]
+
+          ---
+
+          ## Failed Reviews
+
+          ### some-project
+
+          **Error**: Repository ncrmro/some-project not accessible via gh CLI
+          ```
+
+          ## Quality Criteria
+
+          - Every active project from `project_list.md` has a corresponding summary or failure note
+          - All per-project summaries follow the same structure
+          - Projects are in the same order as the project list
+          - Completion stats in the header are accurate
+
+          ## Context
+
+          This is the orchestration step that enables parallelism. Each project review runs
+          independently, so a slow or failing review for one project does not block others.
+          The combined output feeds directly into the final synthesis step.
+        inputs:
+          project_list_file: { required: true }
+        outputs:
+          all_summaries_file: { required: true }
+
+      - name: portfolio_synthesize_report
+        instructions: |
+          # Synthesize Portfolio Report
+
+          ## Objective
+
+          Combine all per-project summaries into a single portfolio health report with cross-project
+          analysis, an overall health assessment, and priority recommendations.
+
+          ## Task
+
+          Read the combined per-project summaries and the project list, then produce a portfolio
+          report that gives the user a complete picture of where everything stands.
+
+          **CRITICAL**: The report MUST only contain data that appears in `all_summaries.md` and
+          `project_list.md`. Do not include projects, commit counts, dates, or metrics from any
+          other source. Every number in the report must trace back to the input files.
+
+          ### Process
+
+          1. **Calculate portfolio-level metrics**
+
+             From the per-project summaries, compute:
+             - Total active projects
+             - Projects by status: On Track, At Risk, Behind, Deferred
+             - Total open milestones across all projects
+             - Overall activity trend (how many projects have high/medium/low/stagnant activity)
+
+          2. **Build the project status table**
+
+             Create a summary table with one row per project showing:
+             - Project name
+             - Status indicator
+             - Active milestone (most important one) with progress
+             - Activity level
+             - Top blocker (if any)
+
+             Order by priority (from the project list), or by status severity if no priority exists.
+
+          3. **Detail all in-flight milestones**
+
+             Aggregate all open milestones across projects into one table:
+             - Project, milestone title, progress, due date, health
+             - Highlight overdue milestones
+             - Show recently completed milestones as wins
+
+          4. **Create the activity heatmap**
+
+             A visual summary of which projects are active vs. stagnant:
+             - Rank projects by commit count in last 30 days
+             - Flag projects with zero activity that have open milestones (these are at risk)
+
+          5. **Build portfolio Eisenhower matrix**
+
+             Classify each active project into the Eisenhower quadrants:
+             - **Urgent**: Has overdue milestones, approaching deadlines, critical blockers,
+               or time-sensitive external dependencies (e.g., a client deadline)
+             - **Important**: Core to the user's mission, revenue-generating, has active
+               milestones with momentum, or is a dependency for other projects
+             - Projects with no milestones and no activity typically fall in Q4 (eliminate/archive)
+             - Projects with high activity and near-complete milestones are Q1 (do first)
+
+             Render the matrix as one HTML 2x2 chart embedded directly in the markdown. Use
+             bullet lists inside the quadrants so the output stays scannable in both markdown
+             and print. The chart MUST use this exact structure so `ks print` can style it:
+             - one `<table class="eisenhower-matrix">`
+             - one `<colgroup>` with `axis-col` then two `quadrant-col` columns
+             - a header row for `Urgent` / `Not urgent`
+             - a left column for compact axis labels such as `Imp.` / `Not imp.`
+             - one `<td class="quadrant quadrant-qN">` per quadrant
+             - one `<div class="quadrant-heading">` per quadrant
+             - one `<ul>` with project bullets per quadrant
+
+          6. **Identify cross-project concerns**
+
+             Look for patterns across projects:
+             - Are multiple projects blocked on the same thing?
+             - Is attention too scattered (many projects, low activity each)?
+             - Are there resource conflicts (same person/agent needed across projects)?
+             - Are any projects drifting without clear direction (no milestones, no charter)?
+
+          7. **Write priority recommendations**
+
+             Based on the data, recommend where to focus:
+             - Which projects need immediate attention (Behind or overdue milestones)?
+             - Which projects should be explicitly paused/archived to reduce cognitive load?
+             - Which milestones are closest to completion and should be finished first?
+             - What new milestones or reviews should be initiated?
+
+             Recommendations must be specific and actionable. Each should reference a DeepWork
+             workflow to run if applicable (e.g., "Run `project/success` for catalyst to update
+             the charter").
+
+          8. **Write the report and open a PR from the worktree branch**
+
+             The report is delivered as a pull request from the `portfolio-review/YYYY-MM`
+             worktree branch set up in `discover_projects`. Use `$WORKTREE_PATH` (not the
+             primary `notes_path` checkout).
+
+             ```bash
+             NOTES_OWNER_REPO=$(git -C "$NOTES_PATH" remote get-url origin \
+               | sed 's|.*[:/]\([^/]*/[^/]*\)\.git|\1|')
+             WORKTREE_PATH="${WORKTREE_DIR:-$HOME/.worktrees}/${NOTES_OWNER_REPO}/portfolio-review/$(date +%Y-%m)"
+             mkdir -p "${WORKTREE_PATH}/projects/portfolio/reviews/"
+             ```
+
+             Write the report to `projects/portfolio/reviews/YYYY-MM.md` inside the worktree.
+
+             Then commit and push:
+
+             ```bash
+             git -C "$WORKTREE_PATH" add projects/portfolio/reviews/YYYY-MM.md
+             git -C "$WORKTREE_PATH" commit -m "docs(portfolio): add YYYY-MM portfolio review"
+             git -C "$WORKTREE_PATH" push -u origin portfolio-review/YYYY-MM
+             ```
+
+             Open a PR using the appropriate platform CLI. Detect the platform from the
+             remote URL:
+             - `github.com` -> use `gh pr create`
+             - `git.ncrmro.com` or other Forgejo -> use `tea pr create`
+
+             **GitHub**:
+
+             ```bash
+             gh pr create --title "docs(portfolio): YYYY-MM portfolio review" \
+               --body "$(cat <<'PREOF'
+             ## Portfolio Review — YYYY-MM
+
+             [Portfolio Summary section from report]
+
+             > This PR will auto-merge in 72 hours. Comment or request changes before then.
+             PREOF
+             )"
+             gh pr merge --auto --squash
+             ```
+
+             **Forgejo** (tea CLI):
+
+             ```bash
+             tea pr create --repo ncrmro/notes \
+               --title "docs(portfolio): YYYY-MM portfolio review" \
+               --description "$(cat <<'PREOF'
+             ## Portfolio Review — YYYY-MM
+
+             [Portfolio Summary section from report]
+
+             > This PR will auto-merge in 72 hours. Comment or request changes before then.
+             PREOF
+             )"
+             ```
+
+             The PR allows the user to comment on specific sections, request changes,
+             and refine the report before it lands on main.
+
+             **Auto-merge convention**: If the platform supports auto-merge, enable it so the
+             PR merges automatically after a 72-hour review window. This gives the user time
+             to comment but prevents stale PRs.
+
+          9. **Output the PR URL**
+
+             After creating the PR, output the PR URL prominently so the user can navigate
+             directly to it for review. This is the primary deliverable of the workflow — the
+             user needs this link.
+
+          ## Output Format
+
+          ### portfolio_report.md
+
+          The final portfolio review report. See the common_job_info for full structural
+          requirements including the HTML Eisenhower matrix format and note-box divs.
+
+          ## Quality Criteria
+
+          - The report opens with an overall portfolio health assessment and project count
+          - A summary table lists every project with status indicator, milestone, and activity
+          - All open milestones across projects are listed with completion percentages and dates
+          - Cross-project concerns are identified (resource conflicts, scattered attention, stagnation)
+          - Recommendations are specific, actionable, and ordered by impact
+          - All status indicators and assessments cite specific data, not vague assertions
+          - The report is written to the correct path in the notes repo
+
+          ## Context
+
+          This is the capstone step of the portfolio review. The user reads this report to decide
+          where to allocate their time and energy. It should be scannable (tables, not paragraphs)
+          and opinionated (clear recommendations, not just data dumps). Keep the matrix HTML
+          shape consistent so the document prints as a real four-quadrant chart. The report replaces the
+          old per-project `status.md` files with a single portfolio-level view.
+        inputs:
+          all_summaries_file: { required: true }
+          project_list_file: { required: true }
+        outputs:
+          portfolio_report_file: { required: true }
+
+  portfolio_review_one:
+    summary: "Status review for a single project: milestones, activity, and health assessment"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Executive assistant workflows for the human operator. This sub-workflow reviews
+      a single project as part of the portfolio review.
+
+      Tools available:
+      - Web search: Use WebSearch and WebFetch for research tasks
+      - File management: Standard file tools for creating reports and plans
+
+      Platform tools:
+      - GitHub repos: `gh` CLI for milestones, issues, PRs, and activity
+      - Forgejo repos: `fj` or `tea` CLI, or `curl` with Forgejo API
+      - Git activity: `git log --oneline --since="30 days ago"` on local clones
+
+      Status indicators: On Track, At Risk, Behind, Not Started/Deferred
+
+      Output audience: The human operator (CEO). Keep outputs concise and decision-ready.
+    steps:
+      - name: portfolio_gather_data
+        instructions: |
+          # Gather Project Data
+
+          ## Objective
+
+          Fetch milestones, git activity, and existing profile/charter data for a single project
+          to provide raw material for the status summary.
+
+          ## Task
+
+          Collect data from three sources for the specified project: platform milestones, git
+          history, and existing notes repo files.
+
+          ### Process
+
+          1. **Receive project parameters**
+             - This step runs as part of the `review_one` sub-workflow, launched by the
+               `review_all_projects` orchestration step
+             - Inputs (`project_slug`, `project_repos`, `notes_path`) are provided by the
+               parent workflow — do not ask the user for them
+             - If any input is missing or malformed, ask structured questions to clarify
+               (e.g., "Which repos belong to this project?")
+             - Parse `project_repos` as comma-separated `owner/repo:platform` entries
+
+          2. **Fetch milestones from the platform**
+
+             For each repo in `project_repos`:
+
+             **GitHub repos** (platform: github):
+
+             ```bash
+             gh api repos/{owner}/{repo}/milestones --jq '.[] | {title, open_issues, closed_issues, due_on, state, description}'
+             ```
+
+             Also fetch open issues and PRs:
+
+             ```bash
+             gh issue list --repo {owner}/{repo} --state open --limit 20
+             gh pr list --repo {owner}/{repo} --state open --limit 10
+             ```
+
+             **Forgejo repos** (platform: forgejo):
+
+             ```bash
+             # Use tea or curl with the Forgejo API
+             tea milestones list --repo {owner}/{repo}
+             tea issues list --repo {owner}/{repo} --state open --limit 20
+             ```
+
+             Record for each milestone:
+             - Title
+             - Open vs closed issue count -> completion percentage
+             - Due date (if set)
+             - State (open/closed)
+
+          3. **Fetch git activity (last 30 days)**
+
+             If a local clone exists (check `~/code/{owner}/{repo}/`):
+
+             ```bash
+             git -C ~/code/{owner}/{repo} log --oneline --since="30 days ago" | head -30
+             git -C ~/code/{owner}/{repo} log --oneline --since="30 days ago" | wc -l
+             git -C ~/code/{owner}/{repo} log -1 --format="%ci" 2>/dev/null
+             ```
+
+             If no local clone, try:
+
+             ```bash
+             gh api repos/{owner}/{repo}/commits --jq '.[0:20] | .[] | {date: .commit.author.date, message: .commit.message}' 2>/dev/null
+             ```
+
+             Record:
+             - Total commits in last 30 days
+             - Last commit date
+             - Summary of recent commit messages (top 5-10)
+
+             **Automated commit detection**: Notes repos and config repos often have high commit
+             counts from automated sync (repo-sync, agenix relocking). If most recent commits
+             follow a repetitive pattern (e.g., "chore: relock", "Auto-sync"), note this in the
+             data so the summary step can distinguish human activity from automation.
+
+          4. **Read existing project files from notes repo**
+
+             Check `{notes_path}/projects/{project_slug}/` for:
+             - `charter.md` — extract mission, KPIs, goals
+             - `README.yaml` — extract structured profile data
+             - `status.md` — extract most recent status and blockers
+             - `README.md` — extract description and goals
+
+             If the project directory doesn't exist, note "No existing profile in notes repo."
+
+          5. **Record everything as raw data**
+
+             Combine all collected data into a single raw data file. Include actual CLI output
+             and file contents — do not summarize or interpret at this stage.
+
+          ### Error Handling
+
+          - If a repo is not accessible, record the error and continue with other repos
+          - If git log fails, note "No local clone available" and use API data instead
+          - If notes repo has no project directory, note this and rely on milestone/git data
+
+          ## Output Format
+
+          ### project_data.md
+
+          Raw collected data for one project.
+
+          **Structure**:
+
+          ```markdown
+          # Project Data: [project_slug]
+
+          **Collected**: [YYYY-MM-DD HH:MM]
+          **Repos**: [list of repos checked]
+
+          ## Milestones
+
+          ### [repo: owner/repo (platform)]
+
+          | Milestone           | Open | Closed | Total | % Complete | Due Date   |
+          | ------------------- | ---- | ------ | ----- | ---------- | ---------- |
+          | Desktop Integration | 4    | 8      | 12    | 67%        | 2026-04-01 |
+          | v2.0 Release        | 10   | 2      | 12    | 17%        | —          |
+
+          ### Open Issues (top 20)
+
+          - #123: Fix boot sequence on AMD hardware (bug, open 5 days)
+          - #120: Add LUKS2 support (enhancement, open 12 days)
+
+          ### Open PRs
+
+          - PR #125: feat(desktop): add hyprland bindings (draft, 3 days old)
+
+          ## Git Activity (Last 30 Days)
+
+          ### [repo: owner/repo]
+
+          - **Total commits**: 23
+          - **Last commit**: 2026-03-19
+          - **Recent commits**:
+            - bfb55a5 Merge branch 'worktree-keystone-desktop-integration'
+            - 2f3a9d4 fix(deepwork): add PR Demo section update to engineering review step
+            - 5ce7401 fix(desktop): quote parameter expansions in prefix stripping
+              [...]
+
+          ## Existing Profile (from notes repo)
+
+          ### charter.md
+
+          [Full content or "Not found"]
+
+          ### status.md
+
+          [Full content or "Not found"]
+
+          ### README.yaml / README.md
+
+          [Full content or "Not found"]
+          ```
+
+          ## Quality Criteria
+
+          - All repos listed in `project_repos` are queried for milestones (or errors are recorded)
+          - Git activity includes commit count and last commit date
+          - Existing notes repo files are read when available
+          - Raw data is preserved without interpretation — the next step does the analysis
+
+          ## Context
+
+          This step is the data collection workhorse of the `review_one` sub-workflow. It runs
+          once per project (in parallel with other projects). The raw data it produces feeds
+          directly into `write_summary` which interprets and formats it.
+        inputs:
+          project_slug: { required: true }
+          project_repos: { required: true }
+          notes_path: { required: true }
+        outputs:
+          project_data_file: { required: true }
+
+      - name: portfolio_write_summary
+        instructions: |
+          # Write Project Summary
+
+          ## Objective
+
+          Synthesize the raw data collected in the previous step into a formatted per-project
+          status summary with a health assessment, milestone progress, activity level, blockers,
+          and next actions.
+
+          ## Task
+
+          Read the raw project data and produce a concise, opinionated status summary that can
+          be aggregated into the portfolio report.
+
+          ### Process
+
+          1. **Assess overall project health**
+
+             Determine the status indicator based on the data:
+             - **On Track** — Active milestones progressing, recent commits, no critical blockers
+             - **At Risk** — Milestones behind schedule, activity declining, or non-critical blockers
+             - **Behind** — Milestones significantly overdue, minimal recent activity, critical blockers
+             - **Not Started / Deferred** — No milestones, no recent activity, or explicitly paused
+
+             The status MUST be justified by citing specific data points (e.g., "At Risk because
+             milestone 'Desktop Integration' is at 67% with 12 days until due date and 4 open issues").
+
+          2. **Summarize milestones**
+
+             For each open milestone:
+             - Title, completion percentage, and due date
+             - Highlight any that are overdue or at risk (>80% of time elapsed, <50% complete)
+             - Note recently closed milestones (last 30 days) as wins
+
+          3. **Assess activity level**
+
+             Based on git log data:
+             - **High**: 10+ commits in 30 days
+             - **Medium**: 3-9 commits in 30 days
+             - **Low**: 1-2 commits in 30 days
+             - **Stagnant**: 0 commits in 30 days
+
+             Note the last commit date and any notable recent changes.
+
+          4. **Identify blockers**
+
+             From milestones, open issues, and existing status files:
+             - List anything blocking progress
+             - Note stale PRs (open > 30 days without activity)
+             - Flag missing prerequisites
+
+          5. **Build milestone Eisenhower matrix** (if project has 2+ milestones)
+
+             Classify each open milestone into the Eisenhower quadrants:
+             - **Urgent**: Has a due date approaching (within 30 days), is overdue, or has blockers
+               that are time-sensitive
+             - **Important**: Core to the project's mission/charter, high user impact, or is a
+               dependency for other work
+             - Use milestone progress, due dates, and charter alignment to make the classification
+
+             Render the matrix as one HTML 2x2 chart embedded directly in the markdown. Use
+             bullet lists inside the quadrants, not plain paragraphs or comma-separated text.
+             The chart MUST use this exact structure so print CSS can style it consistently:
+             - one `<table class="eisenhower-matrix eisenhower-matrix-compact">`
+             - one `<colgroup>` with `axis-col` then two `quadrant-col` columns
+             - a header row for `Urgent` / `Not urgent`
+             - a left column for compact axis labels such as `Imp.` / `Not imp.`
+             - one `<td class="quadrant quadrant-qN">` per quadrant
+             - one `<div class="quadrant-heading">` per quadrant
+             - one `<ul>` with milestone bullets per quadrant
+
+          6. **Recommend next actions**
+
+             Based on the data, list 2-4 concrete next actions ordered by priority.
+             Actions should be specific (e.g., "Close milestone X" or "Review and merge PR #45")
+             not vague (e.g., "Make progress on the project").
+
+          7. **Incorporate existing charter/status context**
+
+             If a charter.md or status.md exists, reference it:
+             - Are the charter goals still being pursued?
+             - Has the status changed since the last review?
+             - Any goals that should be added/removed?
+
+          ## Output Format
+
+          ### project_summary.md
+
+          Formatted status summary for one project. See the common_job_info for full structural
+          requirements including the HTML Eisenhower matrix format and note-box divs.
+
+          ## Quality Criteria
+
+          - The status indicator is justified by specific data points, not gut feeling
+          - All open milestones are listed with completion percentage and due date
+          - Recent activity is summarized with commit count and last commit date
+          - Next actions are concrete and specific, not vague aspirations
+          - The summary is concise — one screenful per project, not a wall of text
+
+          ## Context
+
+          This step produces the per-project building block of the portfolio report. The format
+          must be consistent across all projects so the synthesis step can aggregate them into
+          a coherent portfolio view. Keep summaries tight and keep the HTML chart structure
+          consistent so `ks print` can render the matrix as an actual four-quadrant layout.
+          The portfolio report reader wants to scan, not read essays.
+        inputs:
+          project_data_file: { required: true }
+        outputs:
+          project_summary_file: { required: true }

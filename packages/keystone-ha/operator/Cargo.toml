@@ -1,0 +1,10 @@
+[package]
+name = "keystone-ha-operator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+kube = { version = "0.96", features = ["runtime", "client", "derive"] }
+futures = "0.3"
+keystone-ha-defs = { path = "../common" }

@@ -1,0 +1,244 @@
+{
+  "uid": "keystone-agent-overview",
+  "title": "Keystone Agent Overview",
+  "tags": ["keystone", "agent"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 0,
+  "editable": true,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "agent",
+        "label": "Agent",
+        "type": "query",
+        "refresh": 1,
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(agent)",
+        "current": { "selected": true, "text": "", "value": "" }
+      },
+      {
+        "name": "log_event",
+        "label": "Log Event",
+        "type": "custom",
+        "query": ".*,run_start,task_start,stage_start,stage_finish,run_finish",
+        "current": { "selected": true, "text": ".*", "value": ".*" }
+      },
+      {
+        "name": "log_task",
+        "label": "Log Task",
+        "type": "query",
+        "refresh": 2,
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".*",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(task_name, {agent=~\"$agent\", task_name!=\"\"})",
+        "current": { "selected": true, "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "log_search",
+        "label": "Log Search",
+        "type": "textbox",
+        "query": "",
+        "current": { "selected": true, "text": "", "value": "" }
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "System index",
+      "url": "/d/keystone-system-index/keystone-system-index"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Successful Runs",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({agent=~\"$agent\"} | logfmt | event=\"run_finish\" | status=\"success\" [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Errored Runs",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({agent=~\"$agent\"} | logfmt | event=\"run_finish\" | status=~\"error|failed\" [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Blocked Tasks",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(sum_over_time({agent=~\"$agent\"} | logfmt | event=\"run_finish\" | unwrap tasks_blocked [$__range]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Run Durations",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "avg_over_time({agent=~\"$agent\"} | logfmt | event=\"run_finish\" | unwrap duration_seconds [$__interval])"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Log Volume",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 6 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum(count_over_time({agent=~\"$agent\"} [$__interval]))",
+          "legendFormat": "Log lines"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Run Completion Table",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{agent=~\"$agent\"} | logfmt | event=\"run_finish\" | line_format \"{\\\"agent\\\":\\\"{{ .agent }}\\\",\\\"host\\\":\\\"{{ .host }}\\\",\\\"unit\\\":\\\"{{ .unit }}\\\",\\\"status\\\":\\\"{{ .status }}\\\",\\\"duration_seconds\\\":\\\"{{ .duration_seconds }}\\\",\\\"tasks_completed\\\":\\\"{{ .tasks_completed }}\\\",\\\"tasks_failed\\\":\\\"{{ .tasks_failed }}\\\",\\\"tasks_blocked\\\":\\\"{{ .tasks_blocked }}\\\",\\\"tasks_created\\\":\\\"{{ .tasks_created }}\\\",\\\"run_id\\\":\\\"{{ .run_id }}\\\",\\\"message\\\":\\\"{{ .msg }}\\\"}\""
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line",
+            "format": "json",
+            "replace": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Line": true,
+              "labelTypes": true,
+              "type": true,
+              "id": true,
+              "labels": true,
+              "labels agent": true,
+              "labels agent_step": true,
+              "labels event": true,
+              "labels host": true,
+              "labels job": true,
+              "labels level": true,
+              "labels service_name": true,
+              "labels status": true,
+              "labels task_name": true,
+              "labels unit": true,
+              "labels user_unit": true,
+              "tsNs": true,
+              "host": true,
+              "Host": true,
+              "unit": true,
+              "Unit": true,
+              "tasks_completed": true,
+              "Tasks Completed": true,
+              "tasks_failed": true,
+              "Tasks Failed": true,
+              "tasks_blocked": true,
+              "Tasks Blocked": true,
+              "tasks_created": true,
+              "Tasks Created": true,
+              "run_id": true,
+              "Run ID": true
+            },
+            "renameByName": {
+              "agent": "Agent",
+              "status": "Status",
+              "duration_seconds": "Duration (s)",
+              "message": "Message"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Filterable Logs",
+      "type": "logs",
+      "gridPos": { "h": 22, "w": 24, "x": 0, "y": 26 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{agent=~\"$agent\"} | logfmt | event=~\"$log_event\" | task_name=~\"$log_task\" |= \"$log_search\" | line_format \"{{ if .task_name }}[{{ .task_name }}] {{ end }}{{ .msg }}{{ if .source_ref }} :: {{ .source_ref }}{{ end }}\""
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{agent=~\"$agent\"} |= \"$log_search\" | json | result!=\"\" | line_format \"{{ .result }}\""
+        }
+      ],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": true,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 8,
+      "title": "Stage Activity",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 48 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum by(step) (count_over_time({agent=~\"$agent\"} | logfmt | event=\"stage_finish\" [$__interval]))"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2852 @@
+name: agent_builder
+summary: "Bootstrap agent-space repos, create conventions, onboard agents, and diagnose health issues"
+
+step_arguments:
+  # === bootstrap workflow arguments ===
+  - name: agent_name
+    description: "The agent's name (e.g., 'drago', 'luce')"
+    type: string
+
+  - name: owner
+    description: "Git owner/org for the repo (e.g., 'drago', 'luce', 'ncrmro')"
+    type: string
+
+  - name: repo
+    description: "Git repo name (e.g., 'agent-space')"
+    type: string
+
+  - name: soul_draft
+    description: "Draft SOUL.md with agent identity, accounts, and personality"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify that SOUL.md contains name, email, and at least one account entry.
+        All bracketed placeholders must be replaced with real or brainstormed values.
+
+  - name: manifest
+    description: "modes.yaml manifest mapping agent modes to shared roles and conventions"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read the roles/ and conventions/ directories in the ncrmro/agents repo to verify referenced files exist.
+        All role and convention filenames in the manifest must correspond to existing files in ncrmro/agents.
+        The manifest must declare defaults.shared with rfc2119-preamble.md and output-format-rules.md.
+        At least one mode must be defined with at least one role.
+
+  - name: new_content_recommendations
+    description: "Recommendations for new roles or conventions not yet in the shared library"
+    type: file_path
+
+  - name: agent_space_files
+    description: "All created files in the agent-space repo"
+    type: file_path
+
+  - name: bootstrap_summary
+    description: "Summary of the created agent-space and any refinements made"
+    type: file_path
+
+  # === create workflow arguments ===
+  - name: convention_topic
+    description: "The tool, language, or process to write a convention for (e.g., 'Docker', 'Go', 'Slack')"
+    type: string
+
+  - name: requirements_md
+    description: "Summary of convention domain, topic, display name, dotted name, and rules to codify"
+    type: file_path
+
+  - name: convention_file
+    description: "The convention markdown file at its final path (e.g., .agents/conventions/ops.docker.md)"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read the requirements.md from the gather_requirements step to verify all requested rules are covered.
+        Also read 2-3 existing conventions in .agents/conventions/ to check format consistency.
+        The file must begin with the RFC 2119 comment, have the correct H1 title format, and use numbered rules with RFC 2119 keywords.
+        All rules identified in requirements.md must be addressed in the convention.
+        Agent-specific values (names, emails, credentials) must reference SOUL.md rather than being hardcoded.
+
+  - name: review_report_md
+    description: "Report on conflicts, duplication, or issues found — or confirmation that the convention is clean"
+    type: file_path
+
+  - name: updated_modes_yaml
+    description: "The updated manifests/modes.yaml with the new convention added to the appropriate mode(s)"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        The convention must be added to the mode(s) that logically match its domain and topic.
+        The modes.yaml file must remain valid YAML with correct indentation.
+
+  # === onboard workflow arguments ===
+  - name: onboarding_plan_md
+    description: "Inventory of accounts, services, and CLIs to set up with current status"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read SOUL.md and SERVICES.md to verify the plan covers all listed accounts and services.
+        Every account in SOUL.md and every service in SERVICES.md must be listed in the plan.
+        Each item must have a clear action (sign in, configure CLI, create account, etc.).
+
+  - name: vault_status_md
+    description: "Confirmation that vault is unlocked and lists which credentials were found vs missing"
+    type: file_path
+
+  - name: google_status_md
+    description: "Confirmation of successful Google sign-in with account details"
+    type: file_path
+
+  - name: github_status_md
+    description: "Confirmation of GitHub sign-in and gh CLI configuration with username"
+    type: file_path
+
+  - name: forgejo_status_md
+    description: "Confirmation of Forgejo sign-in and fj CLI configuration"
+    type: file_path
+
+  - name: verification_report_md
+    description: "Pass/fail status for each service and CLI with error details if any"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Every service from the onboarding plan must have a pass/fail result.
+        Any failures must include error details and suggested remediation.
+
+  - name: changelog_md
+    description: "Summary of changes made to SOUL.md and credentials saved to rbw"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read SOUL.md to verify the accounts table is accurate and complete.
+        The accounts table in SOUL.md must match the actual state of all configured services.
+        All new or updated credentials must have been saved to rbw.
+
+  # === doctor workflow arguments ===
+  - name: health_snapshot_md
+    description: "Status snapshot of all timers, services, and prerequisites with pass/fail for each"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        The snapshot must include status for all three timers: notes-sync, task-loop, and scheduler.
+        The snapshot must include pass/fail for all prerequisites: git repo, SSH agent, rbw vault,
+        direnv, flake, gh CLI, fj CLI, TASKS.yaml, SCHEDULES.yaml, SOUL.md.
+
+  - name: log_analysis_md
+    description: "Extracted errors, warnings, and patterns from recent logs grouped by service"
+    type: file_path
+
+  - name: diagnosis_md
+    description: "Root cause analysis for each identified issue with severity and affected components"
+    type: file_path
+
+  - name: prescription_md
+    description: "Ordered list of fix actions with exact commands, expected outcomes, and verification steps"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read diagnosis.md to verify every diagnosed issue has a corresponding fix action.
+        Each fix must include exact shell commands that can be executed directly.
+        Destructive actions must be flagged with warnings and have rollback instructions.
+        Each fix must include a command to verify the fix worked.
+
+  # === issue workflow arguments ===
+  - name: issue_description
+    description: "Description of the infrastructure problem (e.g., 'scheduler permission denied', 'missing flake.nix for agent-luce')"
+    type: string
+
+  - name: issue_draft_md
+    description: "Draft issue with title, body, labels, and assignee ready for filing"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        The issue title must clearly state the problem and affected agent/component.
+        The issue body must include the agent name, affected service, error evidence, and expected vs actual behavior.
+        The draft must specify the admin as assignee.
+
+  - name: issue_url_md
+    description: "Confirmation with the created issue number and URL"
+    type: file_path
+
+workflows:
+  bootstrap:
+    summary: "Create a new agent-space repo from scratch with identity, roles, and shared context"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job handles three aspects of agent lifecycle management:
+
+      1. **Bootstrap** — Create agent-space repos with identity, roles, shared context, and task loop files
+      2. **Create** — Write RFC 2119 convention documents and wire them into mode manifests
+      3. **Onboard** — Sign into all configured services and set up local CLIs
+      4. **Doctor** — Diagnose agent health: check timers, analyze logs, identify failures, recommend fixes
+      5. **Issue** — File infrastructure issues on the admin's nixos-config repo (ncrmro/keystone)
+
+      ## Agent-Space Structure
+
+      Each agent-space is a self-contained git repo containing identity (SOUL.md), task queue
+      (TASKS.yaml), project registry (PROJECTS.yaml), operational rules (AGENTS.md), and a
+      manifest mapping modes to shared roles and conventions from ncrmro/agents.
+
+      Directory structure produced (the repo root IS the agent's working directory):
+
+        .repos/{owner}/{repo}/           # Git repo root (gitignored in obsidian, pushed to Forgejo)
+          .agents/                       # Git submodule (ncrmro/agents)
+          .deepwork -> .agents/.deepwork  # Symlink through submodule
+          flake.nix                          # Copied from shared agents (Nix dev shell)
+          flake.lock                         # Copied from shared agents
+          .envrc                         # direnv integration (use flake)
+          SOUL.md                        # Agent identity, accounts, personality
+          AGENTS.md -> .agents/ncrmro/agents/AGENTS_TEMPLATE.md  # Symlink to shared template
+          CLAUDE.md -> AGENTS.md         # Symlink for Claude Code compatibility
+          PROJECTS.yaml                  # Priority-ordered project registry with source commands
+          TASKS.yaml                     # Work queue (pending/in_progress/completed/blocked)
+          SCHEDULES.yaml                 # Recurring task definitions
+          ISSUES.yaml                    # Blockers discovered during execution
+          REQUIREMENTS.md                # Task loop requirements (RFC 2119)
+          ARCHITECTURE.md                # System architecture diagrams
+          SERVICES.md                    # Available services and endpoints
+          HUMAN.md                       # Human operator contact info
+          manifests/
+            modes.yaml                   # Maps agent modes to shared roles + conventions
+
+      The shared agents library (ncrmro/agents) provides:
+        - Role templates: architect, software-engineer, code-reviewer, business-analyst, project-lead, uiux-designer, mechanical-engineer, electrical-engineer, etc.
+        - Convention docs: code.typescript, ops.vcs, biz.press-release, etc.
+        - compose.sh: assembles system prompts from manifest + mode
+        - Shared fragments: RFC 2119 preamble, output format rules
+
+      Existing agent reference: Drago (engineering agent) at /home/agent-drago/notes/
+      uses PROJECTS.yaml for priority-ordered project list, TASKS.yaml for work queue,
+      SCHEDULES.yaml for recurring tasks, and SOUL.md for identity.
+
+      ## Convention Format Rules
+
+      - File begins with: <!-- RFC 2119: MUST, MUST NOT, SHOULD, SHOULD NOT, MAY -->
+      - H1 title: # Convention: {Display Name} ({dotted.name})
+      - Naming: {domain}.{topic}.md — domains are ops, code, biz
+      - Rules are numbered consecutively across all sections
+      - Use RFC 2119 keywords (MUST, SHOULD, MAY, etc.) for each rule
+      - Reference SOUL.md for agent-specific values — never hardcode names, emails, credentials
+      - Conventions MAY include a "## Golden Example" section at the end
+
+      File location:
+      - If the working directory IS the agents repo (contains compose.sh, roles/, conventions/):
+        write to conventions/{domain}.{topic}.md
+      - Otherwise: write to .agents/conventions/{domain}.{topic}.md
+
+      Manifest location:
+      - modes.yaml lives at manifests/modes.yaml in the agent-space repo
+      - Each mode lists conventions by dotted name (e.g., ops.bitwarden, code.typescript)
+
+      ## Onboarding Context
+
+      Key files:
+      - SOUL.md: Agent identity, account table (service, host, username, auth method, credentials)
+      - SERVICES.md: Available intranet services (Forgejo, Stalwart, Vaultwarden)
+      - .agents/conventions/ops.bitwarden.md: rbw/Vaultwarden usage conventions
+
+      Credentials are stored in Vaultwarden and accessed via the `rbw` CLI.
+      Browser-based sign-ins use Chrome DevTools MCP tools.
+      Google OAuth is used as the auth method for services that support it (e.g., GitHub).
+
+      At the end of onboarding, SOUL.md must reflect any new accounts or updated credentials,
+      and new credentials must be saved to rbw.
+
+      ## Doctor Context
+
+      Agents run as systemd user services on NixOS. Three timers per agent:
+      - `agent-{name}-notes-sync` — git fetch/commit/push every 5 min
+      - `agent-{name}-task-loop` — autonomous work cycle every 5 min (1h timeout, flock)
+      - `agent-{name}-scheduler` — reads SCHEDULES.yaml daily at 5 AM, creates due tasks
+
+      Monitoring commands (run as root or via agentctl):
+      - `agentctl {name} status agent-{name}-{timer}` — check timer/service status
+      - `agentctl {name} journalctl -u agent-{name}-{timer} -n 50` — view logs
+      - `agentctl {name} start agent-{name}-task-loop` — manually trigger
+
+      Log locations:
+      - Notes sync: `~/.local/state/notes-sync/logs/`
+      - Task loop: `~/.local/state/agent-task-loop/logs/`
+      - Per-task logs: `~/.local/state/agent-task-loop/logs/tasks/`
+      - Scheduler: `~/.local/state/agent-scheduler/logs/`
+
+      Task loop phases: pre-fetch → ingest → prioritize → execute → commit
+      Structured log tags: `[step=X]`, `[task=Y]`
+
+      Common failure modes:
+      - Auth expired (gh/fj token, rbw locked)
+      - Merge conflict in notes-sync (rebase fails)
+      - Task loop flock contention (previous run still active)
+      - Missing dev shell (direnv not allowed, flake eval error)
+      - Scheduler YAML parse error (malformed SCHEDULES.yaml)
+
+      ## Issue Context
+
+      When agents discover infrastructure problems they cannot fix themselves (NixOS config
+      changes, secret provisioning, service restarts requiring root), they file issues on
+      the admin's nixos-config repo.
+
+      - **Repo:** ncrmro/keystone (on GitHub)
+      - **Admin GitHub username:** ncrmro (from TEAM.md)
+      - **CLI:** `gh issue create --repo ncrmro/keystone`
+      - Issues MUST be assigned to the admin (`--assignee ncrmro`)
+      - Issues SHOULD include the agent name, affected service, and exact error/evidence
+      - Issues MAY reference doctor workflow output (diagnosis, prescription) for context
+    steps:
+      - name: gather_identity
+        instructions: |
+          # Gather Agent Identity
+
+          ## Objective
+
+          Interview the user to define a new agent's identity, purpose, accounts, and personality.
+          Produce a draft SOUL.md that captures who this agent is.
+
+          ## Task
+
+          Ask structured questions to build the agent's identity profile, then generate a SOUL.md
+          file. Use existing agents as reference — Drago (engineering) and Luce (business) — to
+          show the user what a complete identity looks like.
+
+          ### Process
+
+          1. **Confirm inputs**
+
+             The user provides `agent_name`, `owner`, and `repo` as step inputs. Confirm these
+             values and derive defaults:
+             - Email: `{agent_name}@ncrmro.com` (confirm with user)
+             - Git identity: `{agent_name}` on Forgejo at `git.ncrmro.com`
+
+          2. **Ask structured questions about purpose**
+
+             Use the AskUserQuestion tool to gather:
+             - What domain does this agent operate in? (engineering, business, design, ops, research)
+             - What is the agent's primary responsibility in one sentence?
+             - Should this agent have access to GitHub, Forgejo, or both?
+
+          3. **Ask structured questions about personality**
+
+             Use the AskUserQuestion tool to gather:
+             - Communication style: terse/technical, friendly/conversational, formal/professional
+             - Any hard constraints (things the agent must NEVER do)?
+             - Any personality traits or quirks the user wants?
+
+          4. **Brainstorm name and identity**
+
+             Offer creative suggestions based on the agent's domain:
+             - For engineering agents: names evoking precision, building, crafting
+             - For business agents: names evoking clarity, strategy, light
+             - For research agents: names evoking curiosity, exploration, depth
+
+             The user already provided `agent_name`, so this is about fleshing out the "goes by"
+             name and any personality flavor. If the user is happy with just the name, move on.
+
+          5. **Generate SOUL.md**
+
+             Write the draft to `.repos/{owner}/{repo}/SOUL.md` (create parent dirs as needed).
+
+          ## Output Format
+
+          ### SOUL.md
+
+          ```markdown
+          # Soul
+
+          **Name:** {Full Name}
+          **Goes by:** {Short Name}
+          **Email:** {email}
+
+          ## Purpose
+
+          {One-sentence description of what this agent does}
+
+          ## Accounts
+
+          | Service | Host           | Username          | Auth Method       | Credentials              |
+          | ------- | -------------- | ----------------- | ----------------- | ------------------------ |
+          | Forgejo | git.ncrmro.com | {agent_name}      | API token         | fj keyfile               |
+          | GitHub  | github.com     | {github_username} | OAuth device flow | `~/.config/gh/hosts.yml` |
+
+          ## Personality
+
+          - {Communication style trait}
+          - {Domain expertise trait}
+          - {Any quirk or constraint}
+
+          ## Hard Constraints
+
+          - {Things this agent must NEVER do}
+          ```
+
+          **Concrete example** (Drago):
+
+          ```markdown
+          # Soul
+
+          **Name:** Kumquat Drago
+          **Goes by:** Drago
+          **Email:** drago@ncrmro.com
+
+          ## Accounts
+
+          | Service   | Host                   | Username         | Auth Method       | Credentials                                  |
+          | --------- | ---------------------- | ---------------- | ----------------- | -------------------------------------------- |
+          | GitHub    | github.com             | kdrgo            | OAuth device flow | `~/.config/gh/hosts.yml`                     |
+          | Forgejo   | git.ncrmro.com         | drago            | API token         | fj keyfile                                   |
+          | Bitwarden | vaultwarden.ncrmro.com | drago@ncrmro.com | Password file     | `/run/agenix/agent-drago-bitwarden-password` |
+          ```
+
+          ## Quality Criteria
+
+          - SOUL.md contains name, email, and at least one account entry
+          - All bracketed placeholders have been replaced with real or brainstormed values
+          - Purpose section exists and is one clear sentence
+          - Hard constraints section exists (even if minimal)
+
+          ## Context
+
+          The SOUL.md is the agent's identity file — it's prepended to every system prompt the
+          agent receives. It must be concise (under 50 lines) because it consumes context window
+          on every invocation. This file is the first thing created because all subsequent steps
+          (role selection, AGENTS.md generation) depend on knowing who the agent is.
+        inputs:
+          agent_name: { required: true }
+          owner: { required: true }
+          repo: { required: true }
+        outputs:
+          soul_draft: { required: true }
+
+      - name: select_roles
+        instructions: |
+          # Select Roles and Conventions
+
+          ## Objective
+
+          Present the available roles and conventions from the shared agents library (ncrmro/agents)
+          and help the user select which ones apply to this agent. Produce a manifest (modes.yaml)
+          mapping agent modes to shared roles and conventions.
+
+          ## Task
+
+          Read the shared library's roles and conventions, present them to the user, and build
+          a manifest file. If the user needs roles or conventions that don't exist yet, capture
+          those as recommendations.
+
+          ### Process
+
+          1. **Read available roles**
+
+             Scan `roles/*.md` in the ncrmro/agents repo. For each role, extract:
+             - Filename (without `.md`)
+             - The H1 title
+             - The description paragraph after the title
+
+             Present these as a list to the user.
+
+          2. **Read available conventions**
+
+             Scan `conventions/*.md` in the ncrmro/agents repo. For each convention, extract:
+             - Filename (without `.md`)
+             - The H1 title (which includes the dotted name)
+
+             Group by domain prefix (`biz.`, `code.`, `ops.`).
+
+          3. **Ask structured questions about modes**
+
+             Based on the agent's purpose from SOUL.md, suggest relevant modes. Use the
+             AskUserQuestion tool with multiSelect to let the user pick roles per mode.
+
+             Example for an engineering agent:
+             - `architecture` mode → roles: architect; conventions: tool.typescript, tool.nix
+             - `implementation` mode → roles: software-engineer; conventions: tool.typescript, process.version-control
+             - `code-review` mode → roles: code-reviewer; conventions: tool.typescript, process.pull-request
+
+             Example for a business agent:
+             - `business-analysis` mode → roles: business-analyst; conventions: process.competitive-analysis
+             - `project-planning` mode → roles: project-lead, task-decomposer; conventions: []
+
+          4. **Check for gaps**
+
+             Ask: "Are there any capabilities this agent needs that aren't covered by the
+             existing roles or conventions?" If yes, document these as recommendations for
+             new content to add to the shared library.
+
+          5. **Generate manifest**
+
+             Write the manifest to `.repos/{owner}/{repo}/manifests/modes.yaml`.
+
+          ## Output Format
+
+          ### manifests/modes.yaml
+
+          ```yaml
+          agents_repo: ../.agents
+
+          defaults:
+            shared:
+              - rfc2119-preamble.md
+              - output-format-rules.md
+
+          modes:
+            architecture:
+              roles:
+                - architect
+              conventions:
+                - tool.typescript
+                - tool.nix
+            implementation:
+              roles:
+                - software-engineer
+              conventions:
+                - tool.typescript
+                - process.version-control
+            code-review:
+              roles:
+                - code-reviewer
+              conventions:
+                - tool.typescript
+                - process.pull-request
+          ```
+
+          ### new_content_recommendations.md (optional)
+
+          ```markdown
+          # Recommended New Content for ncrmro/agents
+
+          ## New Roles Needed
+
+          - **{role_name}**: {description of what this role would do}
+
+          ## New Conventions Needed
+
+          - **{domain}.{topic}**: {description of what this convention would cover}
+
+          ## Rationale
+
+          {Why existing roles/conventions don't cover this agent's needs}
+          ```
+
+          ## Quality Criteria
+
+          - All role and convention filenames in the manifest correspond to existing files in ncrmro/agents
+          - The manifest declares `defaults.shared` with `rfc2119-preamble.md` and `output-format-rules.md`
+          - At least one mode is defined with at least one role
+          - `agents_repo` path is `../.agents` (relative from manifests/ to .agents/)
+          - If the user identified gaps, a recommendations file is created
+
+          ## Context
+
+          The manifest is how the agent's system prompt gets composed at runtime. `compose.sh`
+          reads this file and assembles: shared fragments → role templates → convention docs.
+          The `agents_repo` path must be relative from the manifest's location to the submodule
+          directory. Getting this path wrong means `compose.sh` can't find the shared content.
+        inputs:
+          soul_draft: { required: true }
+        outputs:
+          manifest: { required: true }
+          new_content_recommendations: { required: false }
+
+      - name: scaffold
+        instructions: |
+          # Scaffold Agent-Space
+
+          ## Objective
+
+          Create the complete agent-space directory structure including git repo initialization,
+          git submodule for the shared agents library, symlinks, and all operational files.
+
+          ## Task
+
+          Using the SOUL.md and manifest from prior steps, build out the full agent-space repo
+          with all files needed for the autonomous task loop. All files go at the repo root —
+          the agent-space repo root IS the agent's working directory.
+
+          ### Process
+
+          1. **Create directory structure**
+
+             Under `.repos/{owner}/{repo}/`:
+
+             ```
+             .agents/                   # Will be git submodule (ncrmro/agents)
+             manifests/                 # Already has modes.yaml from prior step
+             SOUL.md                    # Already exists from prior step
+             ```
+
+          2. **Initialize git repo (if needed)**
+
+             Check whether `.repos/{owner}/{repo}/.git` already exists. If it does, skip
+             initialization — the user may have already created the repo with a remote
+             configured (e.g., Forgejo).
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             # Only if .git does NOT exist:
+             git init
+             ```
+
+          3. **Add shared agents as git submodule**
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             git submodule add ../../ncrmro/agents .agents
+             ```
+
+             The relative path `../../ncrmro/agents` resolves from `.repos/{owner}/{repo}/`
+             to `.repos/ncrmro/agents/` — the already-cloned shared library. This ensures
+             the submodule works regardless of where obsidian is checked out.
+
+             If the submodule command fails because the path isn't a bare git URL, use the
+             full Forgejo SSH URL instead:
+
+             ```bash
+             git submodule add ssh://forgejo@git.ncrmro.com:2222/ncrmro/agents.git .agents
+             ```
+
+          4. **Create .deepwork symlink**
+
+             The `.deepwork` directory is committed to the ncrmro/agents repo, so the git
+             submodule clone will contain it. The symlink is at the repo root:
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             ln -s .agents/.deepwork .deepwork
+             ```
+
+             No `../` needed — both `.agents/` and `.deepwork` are at the repo root.
+
+             Verify the symlink resolves: `ls .deepwork/job.schema.json` should succeed.
+
+          5. **Create TEAM.md and conventions symlinks**
+
+             Symlink `TEAM.md` and the `conventions/` folder from the `.agents` submodule
+             to the repo root. This allows for shorter, cleaner paths in `AGENTS.md`.
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             ln -s .agents/TEAM.md TEAM.md
+             ln -s .agents/conventions conventions
+             ```
+
+          6. **Copy Nix dev shell**
+
+             The shared agents repo provides a `flake.nix` with the dev shell (deepwork, yq,
+             etc.). **Copy** (not symlink) both `flake.nix` and `flake.lock` — Nix flakes
+             require all paths to be tracked in the repo's git tree and cannot follow
+             symlinks into submodules. Also create `.envrc` for direnv integration.
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             cp .agents/flake.nix flake.nix
+             cp .agents/flake.lock flake.lock
+             echo "use flake" > .envrc
+             direnv allow
+             ```
+
+             Running `direnv allow` authorizes the `.envrc` so the dev shell activates
+             automatically when entering the directory — no manual step needed.
+
+             **Note:** When the shared agents repo updates its flake, agent-spaces need
+             their copies updated too. Run from the agent-space root:
+
+             ```bash
+             cp .agents/flake.nix flake.nix
+             cp .agents/flake.lock flake.lock
+             ```
+
+          7. **Generate AGENTS.md**
+
+             `AGENTS.md` is generated by `.agents/compose.sh` using the `archetype` defined
+             in the manifest. This allows for role-specific core tool selections (e.g.,
+             engineering vs. product) while keeping common includes dynamic.
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             .agents/compose.sh manifests/modes.yaml --agent-md > AGENTS.md
+             ```
+
+             The generated file uses `@` includes (`@SOUL.md`, `@HUMAN.md`,
+             `@SERVICES.md`, etc.) which Claude Code resolves relative to the repo root.
+
+          8. **Create CLAUDE.md symlink**
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             ln -s AGENTS.md CLAUDE.md
+             ```
+
+             Symlink: `CLAUDE.md → AGENTS.md` (where AGENTS.md is a regular file)
+
+          9. **Generate PROJECTS.yaml**
+
+             Write `PROJECTS.yaml` with the project priority list. Pull from the
+             obsidian `projects/` directory to pre-populate. Include the `sources` section
+             with declarative commands for email and GitHub activity fetching.
+
+             ```yaml
+             projects:
+               - name: "{project_name}"
+                 description: "{from obsidian project README frontmatter}"
+                 status: active
+                 priority: 1
+                 updated: "{today}"
+
+             sources:
+               - name: "email"
+                 command: "himalaya envelope list --account {agent_name} -o json"
+             ```
+
+          10. **Generate TASKS.yaml**
+
+              Write `TASKS.yaml` with an empty task queue:
+
+              ```yaml
+              tasks: []
+              ```
+
+          11. **Generate SCHEDULES.yaml**
+
+          Write `SCHEDULES.yaml` with sensible defaults based on the agent's role:
+
+          ```yaml
+          schedules:
+            - name: "daily-priorities"
+              description: "Send daily status digest email with priorities and blockers"
+              schedule: "daily"
+              workflow: "daily_status/send"
+          ```
+
+          11. **Generate ISSUES.yaml**
+
+              Write `ISSUES.yaml` with an empty issues list:
+
+              ```yaml
+              issues: []
+              ```
+
+          12. **Generate supporting files**
+
+              Create minimal versions of:
+              - `REQUIREMENTS.md` — Link to the shared agents REQUIREMENTS.md or copy
+                the task loop requirements template
+              - `ARCHITECTURE.md` — Task loop architecture diagram (use Drago's as template)
+              - `SERVICES.md` — List available services (Forgejo, email, etc.)
+              - `HUMAN.md` — Human operator contact info
+
+          13. **Create .mcp.json**
+
+              Write `.repos/{owner}/{repo}/.mcp.json` with the MCP servers every agent needs:
+
+              ```json
+              {
+                "mcpServers": {
+                  "deepwork": {
+                    "command": "deepwork",
+                    "args": [
+                      "serve",
+                      "--path",
+                      ".",
+                      "--external-runner",
+                      "claude",
+                      "--platform",
+                      "claude"
+                    ]
+                  },
+                  "chrome-devtools": {
+                    "command": "npx",
+                    "args": [
+                      "-y",
+                      "chrome-devtools-mcp@latest",
+                      "--browserUrl",
+                      "http://localhost:9222"
+                    ]
+                  }
+                }
+              }
+              ```
+
+              See convention `tool.chrome-devtools` for Chrome DevTools requirements.
+
+          14. **Create .gitignore**
+
+              Write `.repos/{owner}/{repo}/.gitignore`:
+
+              ```
+              .direnv/
+              result
+              ```
+
+          15. **Verify structure**
+
+              Run `find .repos/{owner}/{repo} -type f | sort` and confirm all expected files exist.
+              Verify symlinks resolve correctly with `ls -la`.
+
+          ## Output Format
+
+          Report all created files as the `agent_space_files` output. The complete file tree
+          should look like:
+
+          ```
+          .repos/{owner}/{repo}/
+            .gitignore
+            .envrc
+            .mcp.json
+            .agents/                         # git submodule (ncrmro/agents)
+            .deepwork -> .agents/.deepwork
+            flake.nix                        # copied from .agents/
+            flake.lock                       # copied from .agents/
+            SOUL.md
+            AGENTS.md -> .agents/AGENTS_TEMPLATE.md
+            CLAUDE.md -> AGENTS.md
+            PROJECTS.yaml
+            TASKS.yaml
+            SCHEDULES.yaml
+            ISSUES.yaml
+            REQUIREMENTS.md
+            ARCHITECTURE.md
+            SERVICES.md
+            HUMAN.md
+            manifests/
+              modes.yaml
+          ```
+
+          ## Quality Criteria
+
+          - All operational files (SOUL.md, AGENTS.md, etc.) are at the repo root, NOT in a notes/ subdirectory
+          - A .agents git submodule exists and points to the shared agents repo (ncrmro/agents)
+          - .deepwork is a relative symlink at the repo root pointing to .agents/.deepwork
+          - .mcp.json contains both `deepwork` and `chrome-devtools` MCP server entries
+          - AGENTS.md is generated by .agents/compose.sh (NOT a symlink)
+          - CLAUDE.md is a symlink to AGENTS.md
+          - PROJECTS.yaml, TASKS.yaml, SCHEDULES.yaml, and ISSUES.yaml contain valid YAML with correct top-level keys
+          - All symlinks resolve correctly (test with `ls -la`)
+          - Git repo exists (either pre-existing or freshly initialized)
+
+          ## Context
+
+          This step does the heavy lifting of creating the actual files. The directory layout
+          mirrors Drago's proven structure at `.repos/drago/agent-space/`. The repo root IS the
+          agent's working directory — there is no `notes/` subdirectory. The git submodule
+          approach means each agent-space pins a specific version of the shared library and can
+          update independently. The .deepwork symlink gives the agent access to shared DeepWork
+          jobs without duplicating them.
+        inputs:
+          soul_draft: { required: true }
+          manifest: { required: true }
+        outputs:
+          agent_space_files: { required: true }
+
+      - name: review_and_refine
+        instructions: |
+          # Review and Refine
+
+          ## Objective
+
+          Present the complete agent-space to the user for review. Offer to refine any files,
+          add missing content, or create new roles/conventions in the shared library.
+
+          ## Task
+
+          Walk the user through what was created, verify everything works, and make adjustments.
+
+          ### Process
+
+          1. **Present the file tree**
+
+             Show the user the complete directory listing of the new agent-space. For each
+             file, give a one-line summary of what it contains.
+
+          2. **Verify compose.sh works**
+
+             Run `compose.sh` with the new manifest to confirm the system prompt assembles
+             correctly:
+
+             ```bash
+             cd .repos/{owner}/{repo}
+             .agents/compose.sh manifests/modes.yaml {first_mode}
+             ```
+
+             If this fails, debug the `agents_repo` path in the manifest.
+
+          3. **Verify symlinks**
+
+             Confirm both symlinks resolve:
+             - `ls -la CLAUDE.md` → should point to AGENTS.md
+             - `ls -la .deepwork` → should point to .agents/.deepwork
+             - `ls .deepwork/job.schema.json` → should succeed
+
+          4. **Offer refinements**
+
+             Ask structured questions using the AskUserQuestion tool to determine which
+             refinements the user wants. Present options such as:
+             - Edit SOUL.md (adjust personality, add accounts)
+             - Modify the manifest (add/remove modes, change role assignments)
+             - Update PROJECTS.yaml (add/remove projects, change priorities)
+             - Edit AGENTS.md (add tool conventions, update operational rules)
+             - Create new roles or conventions in the shared library
+             - No changes needed
+
+             Use multiSelect so the user can pick multiple refinements at once.
+
+             If the user wants new roles or conventions, guide them through creating the
+             files in the ncrmro/agents repo following the conventions in CLAUDE.md:
+             - Roles: H1 title → description → `## Behavior` → `## Output Format`
+             - Conventions: RFC 2119 preamble comment → `# Convention: {Name} ({dotted.name})` → numbered rules
+
+          5. **Generate summary**
+
+             Write a summary file documenting what was created and any next steps.
+
+          ## Output Format
+
+          ### summary.md
+
+          ```markdown
+          # Agent-Space Created: {Agent Name}
+
+          ## Files Created
+
+          | File                 | Purpose                                        |
+          | -------------------- | ---------------------------------------------- |
+          | SOUL.md              | Agent identity and accounts                    |
+          | AGENTS.md            | Operational rules and tool conventions         |
+          | CLAUDE.md            | Symlink to AGENTS.md                           |
+          | PROJECTS.yaml        | {N} projects, priority-ordered                 |
+          | TASKS.yaml           | Empty task queue                               |
+          | SCHEDULES.yaml       | {N} scheduled tasks                            |
+          | ISSUES.yaml          | Empty issues list                              |
+          | manifests/modes.yaml | {N} modes mapped to shared roles               |
+          | .agents/             | Git submodule (ncrmro/agents shared library)   |
+          | .mcp.json            | MCP server config (deepwork + chrome-devtools) |
+          | .deepwork            | Symlink to shared DeepWork config              |
+
+          ## Modes Available
+
+          | Mode   | Roles   | Conventions   |
+          | ------ | ------- | ------------- |
+          | {mode} | {roles} | {conventions} |
+
+          ## Compose.sh Verification
+
+          {Pass/fail result of running compose.sh}
+
+          ## Next Steps
+
+          - [ ] Push to Forgejo: `cd .repos/{owner}/{repo} && git add -A && git commit -m "feat: bootstrap agent-space" && git remote add origin ssh://forgejo@git.ncrmro.com:2222/{owner}/{repo}.git && git push -u origin main`
+          - [ ] Add NixOS agent config in keystone modules/os/agents.nix
+          - [ ] Create agenix secrets for SSH key, mail password, etc.
+          - [ ] Set up systemd task loop timer
+
+          ## Refinements Made
+
+          {List any changes made during review, or "None"}
+          ```
+
+          ## Quality Criteria
+
+          - Summary accurately lists all created files
+          - compose.sh verification was attempted and result documented
+          - Next steps are actionable and specific to this agent
+
+          ## Context
+
+          This is the final step — a chance to catch issues before the user pushes the repo.
+          The compose.sh verification is critical because a broken manifest means the agent
+          can't assemble its system prompt at runtime. The next steps checklist bridges the
+          gap between this job (agent-space files only) and the full deployment (NixOS config,
+          secrets, systemd services).
+        inputs:
+          agent_space_files: { required: true }
+        outputs:
+          bootstrap_summary: { required: true }
+
+  create:
+    summary: "Gather requirements, draft convention, review, and wire into modes"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job handles three aspects of agent lifecycle management:
+
+      1. **Bootstrap** — Create agent-space repos with identity, roles, shared context, and task loop files
+      2. **Create** — Write RFC 2119 convention documents and wire them into mode manifests
+      3. **Onboard** — Sign into all configured services and set up local CLIs
+      4. **Doctor** — Diagnose agent health: check timers, analyze logs, identify failures, recommend fixes
+      5. **Issue** — File infrastructure issues on the admin's nixos-config repo (ncrmro/keystone)
+
+      ## Convention Format Rules
+
+      - File begins with: <!-- RFC 2119: MUST, MUST NOT, SHOULD, SHOULD NOT, MAY -->
+      - H1 title: # Convention: {Display Name} ({dotted.name})
+      - Naming: {domain}.{topic}.md — domains are ops, code, biz
+      - Rules are numbered consecutively across all sections
+      - Use RFC 2119 keywords (MUST, SHOULD, MAY, etc.) for each rule
+      - Reference SOUL.md for agent-specific values — never hardcode names, emails, credentials
+      - Conventions MAY include a "## Golden Example" section at the end
+
+      File location:
+      - If the working directory IS the agents repo (contains compose.sh, roles/, conventions/):
+        write to conventions/{domain}.{topic}.md
+      - Otherwise: write to .agents/conventions/{domain}.{topic}.md
+
+      Manifest location:
+      - modes.yaml lives at manifests/modes.yaml in the agent-space repo
+      - Each mode lists conventions by dotted name (e.g., ops.bitwarden, code.typescript)
+    steps:
+      - name: gather_requirements
+        instructions: |
+          # Gather Requirements
+
+          ## Objective
+
+          Collect all the information needed to write a new convention document: the domain, topic, display name, and the specific rules to codify.
+
+          ## Task
+
+          Ask structured questions to understand what convention the user wants to create, then produce a requirements summary that the next step can use to draft the convention file.
+
+          ### Process
+
+          1. **Determine the convention identity**
+
+             The user provides a `convention_topic` input (e.g., "Docker", "Go", "Slack"). Use this as a starting point, then ask structured questions to pin down the domain, topic slug, display name, and dotted name. Refer to the convention format rules in the shared job context for naming conventions.
+
+          2. **Inventory existing conventions**
+
+             Read the list of files in `.agents/conventions/` (or `conventions/` if in the agents repo) and check whether a convention for this topic already exists. If it does, ask the user whether they want to update the existing one or create a new, more specific variant.
+
+          3. **Gather the rules**
+
+             Ask structured questions to understand what rules should be in the convention:
+             - What are the key practices or constraints for this tool/language/process?
+             - Are there things agents MUST do? MUST NOT do?
+             - Are there recommended practices (SHOULD) vs. optional ones (MAY)?
+             - Group rules into logical sections (e.g., "Authentication", "Usage", "Style")
+
+             If the user is unsure, suggest common sections based on the domain:
+             - `ops.*`: Authentication, Configuration, Usage, Error Handling
+             - `code.*`: Type Safety, Style, Imports, Error Handling, Testing
+             - `biz.*`: Process, Deliverables, Quality, Stakeholders
+
+          4. **Ask about a golden example**
+
+             If the convention covers an architectural pattern or a tool with a non-trivial usage flow, ask the user whether they want a "Golden Example" section showing the rules applied to a real file or component. This is optional but valuable for conventions like MVC controllers, API route handlers, or data model definitions.
+
+          5. **Confirm the requirements**
+
+             Summarize what you've gathered and confirm with the user before writing the output file.
+
+          ## Output Format
+
+          ### requirements.md
+
+          A markdown file summarizing the convention to be created.
+
+          **Structure**:
+
+          ```markdown
+          # Convention Requirements: {Display Name}
+
+          ## Identity
+
+          - **Domain**: {ops|code|biz}
+          - **Topic**: {topic-slug}
+          - **Dotted name**: {domain}.{topic}
+          - **Display name**: {Display Name}
+          - **Filename**: {domain}.{topic}.md
+
+          ## Sections and Rules
+
+          ### {Section 1 Name}
+
+          1. {Rule description with RFC 2119 keyword}
+          2. {Rule description with RFC 2119 keyword}
+
+          ### {Section 2 Name}
+
+          3. {Rule description with RFC 2119 keyword}
+          4. {Rule description with RFC 2119 keyword}
+
+          ## Golden Example
+
+          {yes/no — if yes, describe what the example should show}
+
+          ## Notes
+
+          {Any additional context, edge cases, or references the user mentioned}
+          ```
+
+          **Example** (filled in):
+
+          ```markdown
+          # Convention Requirements: Docker
+
+          ## Identity
+
+          - **Domain**: ops
+          - **Topic**: docker
+          - **Dotted name**: ops.docker
+          - **Display name**: Docker
+          - **Filename**: ops.docker.md
+
+          ## Sections and Rules
+
+          ### Images
+
+          1. Base images MUST use pinned versions, not `latest`.
+          2. Multi-stage builds SHOULD be used to minimize image size.
+
+          ### Compose
+
+          3. Services MUST define health checks.
+          4. Volumes SHOULD be named, not anonymous.
+
+          ## Golden Example
+
+          Yes — show a minimal Dockerfile following these rules.
+
+          ## Notes
+
+          Focus on development workflows. Production deployment conventions are out of scope.
+          ```
+
+          ## Quality Criteria
+
+          - Convention identity is fully specified (domain, topic, dotted name, display name, filename)
+          - Rules use RFC 2119 keywords (MUST, SHOULD, MAY, etc.)
+          - Rules are grouped into logical sections
+          - No overlap with existing conventions was confirmed
+          - User has confirmed the requirements before output was written
+
+          ## Context
+
+          This is the first step in the convention creation workflow. The requirements gathered here directly drive the draft in the next step. Incomplete or vague requirements will produce a weak convention, so invest the time to get specifics from the user.
+        inputs:
+          convention_topic: { required: true }
+        outputs:
+          requirements_md: { required: true }
+
+      - name: draft_convention
+        instructions: |
+          # Draft Convention
+
+          ## Objective
+
+          Write the convention file in RFC 2119 format, following the structure and rules established by the agents library.
+
+          ## Task
+
+          Read the requirements summary from the previous step and produce the convention markdown file at the correct location (see shared job context for file location logic).
+
+          ### Process
+
+          1. **Read requirements**
+
+             Read the `requirements.md` file from the gather step. Extract the identity fields and all sections with their rules.
+
+          2. **Read 2-3 existing conventions** in the same domain for style reference. Match their tone, rule density, and section structure.
+
+          3. **Write the convention file**
+
+             Follow the convention format rules from the shared job context. Additional writing guidance:
+             - Keep rules concise — one sentence per rule where possible
+             - End each rule with a period
+             - Each rule should contain exactly one RFC 2119 keyword
+             - Use `{placeholder}` syntax when referencing agent-specific values from `SOUL.md`
+
+          4. **Add golden example** (if requested in requirements.md)
+
+             Append a `## Golden Example` section at the end of the convention. Show a realistic, minimal code or config snippet that demonstrates the rules in practice. Annotate with comments pointing back to rule numbers where helpful.
+
+          5. **Self-check** before completing:
+             - All rules from requirements.md are covered
+             - Style is consistent with the existing conventions you read in step 2
+             - No hardcoded agent-specific values
+
+          ## Output Format
+
+          ### convention_file
+
+          The convention markdown file written to its final path.
+
+          **Example** (showing the expected structure):
+
+          ```markdown
+          # Convention: Docker (ops.docker)
+
+          ## Images
+
+          1. Base images MUST use pinned versions, not `latest`.
+          2. Multi-stage builds SHOULD be used to minimize image size.
+
+          ## Compose
+
+          3. Services MUST define health checks.
+          4. Volumes SHOULD be named, not anonymous.
+          ```
+
+          ## Quality Criteria
+
+          - Convention format rules from the shared job context are followed exactly
+          - All rules from requirements.md are addressed
+          - Style is consistent with existing conventions in the same domain
+          - No hardcoded agent-specific values
+
+          ## Context
+
+          This step produces the actual convention file that will live in the shared agents library. It must be format-perfect because other tools (compose.sh, mode manifests) depend on the naming and structure conventions.
+        inputs:
+          requirements_md: { required: true }
+        outputs:
+          convention_file: { required: true }
+
+      - name: review_convention
+        instructions: |
+          # Review Convention
+
+          ## Objective
+
+          Check the newly drafted convention for duplication, conflicts, or inconsistencies with existing conventions in the library.
+
+          ## Task
+
+          Read the new convention file and compare it against related existing conventions to ensure it adds value without creating confusion or contradictions.
+
+          ### Process
+
+          1. **Read the new convention file** from the draft step.
+
+          2. **Identify related conventions**
+
+             List all existing conventions in `.agents/conventions/` (or `conventions/` if in the agents repo). Identify the ones most likely to overlap:
+             - Same domain (e.g., all `ops.*` conventions if the new one is `ops.*`)
+             - Same topic area (e.g., if the new convention is about Docker, check `tool.nix-devshell` for container-related rules)
+
+          3. **Read the related conventions** (at least 2-3 of the most relevant ones).
+
+          4. **Check for issues**
+             - **Rule duplication**: Does any rule in the new convention duplicate a rule already in an existing convention? If so, note which convention and rule number.
+             - **Contradictions**: Does any rule contradict an existing rule? (e.g., new convention says "MUST use X" but existing says "MUST NOT use X")
+             - **Scope overlap**: Does the new convention cover territory that another convention already owns? If so, is the boundary clear?
+             - **Missing cross-references**: Should the new convention reference another convention for related concerns? (e.g., a `code.go` convention might reference `process.pull-request` for PR practices)
+
+          5. **Write the review report**
+
+             If issues are found, provide specific remediation for each. If no issues, confirm the convention is clean.
+
+          ## Output Format
+
+          ### review_report.md
+
+          A markdown report on the review findings.
+
+          **Structure (clean)**:
+
+          ```markdown
+          # Convention Review: {dotted.name}
+
+          ## Summary
+
+          No conflicts or duplication found. The convention is ready for use.
+
+          ## Conventions Checked
+
+          - {dotted.name.1} — no overlap
+          - {dotted.name.2} — no overlap
+
+          ## Recommendation
+
+          Proceed to wire the convention into modes.yaml.
+          ```
+
+          **Structure (issues found)**:
+
+          ```markdown
+          # Convention Review: {dotted.name}
+
+          ## Summary
+
+          Found {N} issue(s) that should be addressed before wiring.
+
+          ## Issues
+
+          ### 1. {Issue title}
+
+          - **Type**: duplication | contradiction | scope overlap | missing cross-reference
+          - **Related convention**: {dotted.name}
+          - **Details**: {Specific description}
+          - **Remediation**: {What to change}
+
+          ## Conventions Checked
+
+          - {dotted.name.1} — {overlap noted / no overlap}
+          - {dotted.name.2} — {overlap noted / no overlap}
+
+          ## Recommendation
+
+          {Fix the issues above before proceeding / Proceed with minor notes}
+          ```
+
+          ## Quality Criteria
+
+          - At least the most related existing conventions were checked (same domain + any topically related)
+          - Any issues found include specific remediation suggestions
+          - The report clearly states whether it is safe to proceed
+
+          ## Context
+
+          This review prevents the convention library from accumulating conflicting or redundant rules over time. A clean library is easier for agents to follow and for compose.sh to assemble into coherent system prompts.
+        inputs:
+          convention_file: { required: true }
+        outputs:
+          review_report_md: { required: true }
+        process_requirements:
+          thorough_check: "The review checked for rule duplication against at least the most related existing conventions."
+          actionable_feedback: "Any issues found include specific remediation suggestions."
+
+      - name: wire_mode
+        instructions: |
+          # Wire into Mode
+
+          ## Objective
+
+          Add the new convention to the appropriate mode(s) in `manifests/modes.yaml` so that agents operating in those modes will load the convention.
+
+          ## Task
+
+          Read the convention file and the current modes.yaml, determine which mode(s) the convention belongs in, and update the manifest.
+
+          ### Process
+
+          1. **Read the convention file** to confirm its dotted name (from the H1 title).
+
+          2. **Read the review report** from the previous step. If it flagged issues, verify they have been addressed (the convention file should already reflect fixes from the quality review loop). If unresolved issues remain, note them but proceed — wiring can happen independently of content fixes.
+
+          3. **Read `manifests/modes.yaml`** to understand the current mode structure.
+
+          4. **Determine placement**
+
+             Ask structured questions if the correct mode is ambiguous. Common mappings:
+             - `ops.*` conventions → modes that involve infrastructure or tool operation
+             - `code.*` conventions → modes that involve writing code in that language/framework
+             - `biz.*` conventions → modes that involve business analysis or strategy
+
+             If no existing mode is a good fit, ask the user whether to:
+             - Add it to an existing mode anyway
+             - Create a new mode for it
+             - Skip wiring for now
+
+          5. **Update modes.yaml**
+
+             Add the convention's dotted name to the `conventions` list of the selected mode(s). Maintain alphabetical order within the conventions list. Preserve all existing entries — do not remove or reorder other conventions.
+
+          6. **Validate the YAML**
+
+             Ensure the updated file is valid YAML with correct indentation (2 spaces). Read it back after writing to confirm.
+
+          ## Output Format
+
+          ### updated_modes_yaml
+
+          The updated `manifests/modes.yaml` file.
+
+          **Example change** (before/after):
+
+          ```yaml
+          # Before
+          modes:
+            ops:
+              roles:
+                - operator
+              conventions:
+                - tool.bitwarden
+                - tool.forgejo
+
+          # After
+          modes:
+            ops:
+              roles:
+                - operator
+              conventions:
+                - tool.bitwarden
+                - ops.docker        # newly added
+                - tool.forgejo
+          ```
+
+          7. **Sync to keystone repo**
+
+             Conventions are maintained in both `.agents/conventions/` (agent-space submodule) and
+             `.repos/ncrmro/keystone/conventions/` (upstream shared library). After creating a new
+             convention, copy it to the keystone repo so both locations stay in sync:
+
+             ```bash
+             cp .agents/conventions/{domain}.{topic}.md .repos/ncrmro/keystone/conventions/
+             ```
+
+             Then commit in the keystone repo with a conventional commit message:
+
+             ```bash
+             cd .repos/ncrmro/keystone
+             git add conventions/{domain}.{topic}.md
+             git commit -m "feat(conventions): add {domain}.{topic}"
+             ```
+
+             If the convention was also wired into `archetypes.yaml`, sync that file too.
+
+          ## Quality Criteria
+
+          - The convention is added to the mode(s) that logically match its domain and topic
+          - The modes.yaml file remains valid YAML with correct indentation
+          - Existing entries are preserved — no conventions removed or reordered beyond alphabetical insertion
+          - The dotted name in modes.yaml matches the convention file's H1 title exactly
+          - The convention file is synced to `.repos/ncrmro/keystone/conventions/`
+
+          ## Context
+
+          This is the final step. Without wiring, the convention exists as a file but is never loaded into any agent's system prompt. Proper wiring ensures that agents operating in the relevant mode automatically follow the new convention.
+
+          Conventions currently live in two places:
+
+          - `.agents/conventions/` — the agent-space submodule (used by compose.sh)
+          - `.repos/ncrmro/keystone/conventions/` — the upstream shared library
+
+          Both must be kept in sync. The keystone repo is the canonical upstream source.
+        inputs:
+          convention_file: { required: true }
+          review_report_md: { required: true }
+        outputs:
+          updated_modes_yaml: { required: true }
+
+  onboard:
+    summary: "Full agent onboarding — sign into all services and configure CLIs"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job handles agent onboarding — signing into all configured services and setting up local CLIs.
+
+      Key files:
+      - SOUL.md: Agent identity, account table (service, host, username, auth method, credentials)
+      - SERVICES.md: Available intranet services (Forgejo, Stalwart, Vaultwarden)
+      - .agents/conventions/ops.bitwarden.md: rbw/Vaultwarden usage conventions
+
+      Credentials are stored in Vaultwarden and accessed via the `rbw` CLI.
+      Browser-based sign-ins use Chrome DevTools MCP tools.
+      Google OAuth is used as the auth method for services that support it (e.g., GitHub).
+
+      At the end of onboarding, SOUL.md must reflect any new accounts or updated credentials,
+      and new credentials must be saved to rbw.
+    steps:
+      - name: read_config
+        instructions: |
+          # Read Configuration
+
+          ## Objective
+
+          Parse SOUL.md and SERVICES.md to build a complete inventory of accounts, services, and CLIs that need to be set up during onboarding.
+
+          ## Task
+
+          Read the agent's configuration files and produce a structured onboarding plan that covers every account and service.
+
+          ### Process
+
+          1. **Read SOUL.md**
+             - Extract the Accounts table (Service, Host, Username, Auth Method, Credentials)
+             - Note the agent's email and identity details
+             - Identify which accounts are fully configured vs. marked TBD or incomplete
+
+          2. **Read SERVICES.md**
+             - Extract the services table (Service, Host, Purpose)
+             - Cross-reference with SOUL.md accounts — flag any services without a corresponding account entry
+
+          3. **Identify CLI tools**
+             - Check which CLIs are expected: `gh` (GitHub), `fj` (Forgejo), `rbw` (Vaultwarden)
+             - For each CLI, check if it's installed: `which <tool>`
+             - Note whether each CLI is authenticated: e.g., `gh auth status`, `fj auth status`
+
+          4. **Build the onboarding plan**
+             - For each account/service, determine the required action:
+               - **Sign in**: Account exists, needs browser login
+               - **Create account**: No account exists yet, needs registration
+               - **Configure CLI**: CLI needs authentication setup
+               - **Skip**: Already fully configured
+             - Order actions by dependency (e.g., Google sign-in before GitHub OAuth)
+
+          ## Output Format
+
+          ### onboarding_plan.md
+
+          ```markdown
+          # Agent Onboarding Plan
+
+          **Agent**: [name from SOUL.md]
+          **Date**: [current date]
+
+          ## Accounts Inventory
+
+          | Service      | Host           | Username   | Auth Method  | Status        | Action Required                      |
+          | ------------ | -------------- | ---------- | ------------ | ------------- | ------------------------------------ |
+          | Google/Gmail | google.com     | [email]    | Password     | Not signed in | Sign in via browser                  |
+          | GitHub       | github.com     | [username] | Google OAuth | Not signed in | Sign in via Google, configure gh CLI |
+          | Forgejo      | git.ncrmro.com | [username] | API token    | Not signed in | Sign in, configure fj CLI            |
+
+          ## CLI Status
+
+          | Tool | Installed | Authenticated | Action Required |
+          | ---- | --------- | ------------- | --------------- |
+          | rbw  | Yes/No    | Yes/No        | [action]        |
+          | gh   | Yes/No    | Yes/No        | [action]        |
+          | fj   | Yes/No    | Yes/No        | [action]        |
+
+          ## Onboarding Order
+
+          1. Unlock vault (rbw) — prerequisite for all credential access
+          2. Sign into Google/Gmail — prerequisite for OAuth flows
+          3. Sign into GitHub via Google OAuth + configure gh CLI
+          4. Sign into Forgejo + configure fj CLI
+          5. Verify all access
+          6. Update SOUL.md with any changes
+          ```
+
+          ## Quality Criteria
+
+          - Every account in SOUL.md is listed with its current status
+          - Every service in SERVICES.md is cross-referenced
+          - Each item has a clear, specific action (sign in, create account, configure CLI, or skip)
+          - CLI installation and auth status is checked with actual commands, not assumed
+          - Dependencies between steps are identified (e.g., Google before GitHub OAuth)
+
+          ## Context
+
+          This is the first step in agent onboarding. The plan produced here drives all subsequent steps. An incomplete or inaccurate plan means services will be missed during setup.
+        inputs: {}
+        outputs:
+          onboarding_plan_md: { required: true }
+
+      - name: unlock_vault
+        instructions: |
+          # Unlock Vault
+
+          ## Objective
+
+          Ensure the Vaultwarden credential vault is unlocked via `rbw` and verify that all credentials needed for onboarding are accessible.
+
+          ## Task
+
+          Unlock the vault and check that each credential referenced in the onboarding plan is present and retrievable.
+
+          ### Process
+
+          1. **Check rbw status**
+             - Run `rbw unlocked` to check if the vault is already unlocked
+             - If locked, run `rbw unlock` to unlock it
+
+          2. **Verify required credentials**
+             - Read the onboarding plan from the previous step
+             - For each account that references rbw credentials (from SOUL.md's Credentials column), attempt to retrieve it:
+               - `rbw get <entry-name>` to verify the credential exists
+               - Do NOT log the actual password — just confirm it was found
+             - Record which credentials were found and which are missing
+
+          3. **Handle missing credentials**
+             - If a credential is missing, note it in the output
+             - Missing credentials may need to be created during later steps (e.g., when creating a new account)
+
+          ## Output Format
+
+          ### vault_status.md
+
+          ```markdown
+          # Vault Status
+
+          **Unlocked**: Yes
+          **Date**: [current date]
+
+          ## Credential Check
+
+          | Entry              | Found  | Notes                |
+          | ------------------ | ------ | -------------------- |
+          | www.google.com     | Yes    | Username: [username] |
+          | github.com         | Yes    | Username: [username] |
+          | [fj keyfile entry] | Yes/No | [notes]              |
+
+          ## Missing Credentials
+
+          - [List any credentials that could not be found, with notes on how they'll be resolved in later steps]
+
+          ## Summary
+
+          [X] of [Y] required credentials found. [Notes on any issues.]
+          ```
+
+          ## Quality Criteria
+
+          - Vault is confirmed unlocked
+          - Every credential referenced in the onboarding plan has been checked
+          - Missing credentials are clearly documented with resolution plan
+          - No actual passwords or secrets appear in the output
+
+          ## Context
+
+          This step gates all subsequent service logins. If the vault cannot be unlocked or critical credentials are missing, later steps will fail. Identifying missing credentials early allows the workflow to plan for account creation or manual credential entry.
+        inputs:
+          onboarding_plan_md: { required: true }
+        outputs:
+          vault_status_md: { required: true }
+
+      - name: setup_google
+        instructions: |
+          # Set Up Google
+
+          ## Objective
+
+          Sign into Google/Gmail via the browser using credentials from rbw. This establishes the Google session needed for OAuth flows to other services.
+
+          ## Task
+
+          Use the Chrome DevTools MCP tools to navigate to Gmail and complete the Google sign-in flow.
+
+          ### Process
+
+          1. **Retrieve credentials**
+             - Get the Google account email from SOUL.md (the Gmail entry)
+             - Get the password from rbw: `rbw get www.google.com`
+
+          2. **Navigate to Gmail**
+             - Use `navigate_page` to go to `https://accounts.google.com/AccountChooser/signinchooser?service=mail&continue=https%3A%2F%2Fmail.google.com%2Fmail%2F&flowName=GlifWebSignIn&flowEntry=AccountChooser`
+             - Take a snapshot to see the current page state
+
+          3. **Complete sign-in**
+             - Enter the email address in the email field
+             - Click "Next"
+             - If prompted for passkey, click "Try another way" then "Enter your password"
+             - Enter the password from rbw
+             - Click "Next"
+             - Handle any additional prompts (2FA, consent screens)
+
+          4. **Verify sign-in**
+             - Confirm you've reached the Gmail inbox (URL should contain `mail.google.com/mail`)
+             - Take a snapshot to confirm the inbox is visible
+
+          ### Troubleshooting
+
+          - **Passkey prompt**: Always click "Try another way" → "Enter your password" since passkeys aren't available in this environment
+          - **2FA prompt**: If a 2FA code is required, check rbw for a TOTP entry: `rbw code www.google.com`
+          - **Account recovery prompt**: Skip if possible, or follow the prompts
+
+          ## Output Format
+
+          ### google_status.md
+
+          ```markdown
+          # Google Sign-In Status
+
+          **Status**: Success / Failed
+          **Account**: [email address]
+          **Date**: [current date]
+
+          ## Details
+
+          - Signed into Gmail inbox: Yes/No
+          - Session established for OAuth: Yes/No
+
+          ## Issues
+
+          [Any issues encountered during sign-in, or "None"]
+          ```
+
+          ## Quality Criteria
+
+          - Successfully signed into Gmail (inbox page visible)
+          - Google session is active and usable for OAuth flows
+          - No credentials appear in the output file
+
+          ## Context
+
+          Google sign-in is the foundation for OAuth-based logins to other services (GitHub, GitLab, etc.). This step must succeed before the parallel GitHub and Forgejo setup steps can proceed.
+        inputs:
+          vault_status_md: { required: true }
+        outputs:
+          google_status_md: { required: true }
+
+      - name: setup_github
+        instructions: |
+          # Set Up GitHub
+
+          ## Objective
+
+          Sign into GitHub using Google OAuth, create an account if one doesn't exist, and configure the `gh` CLI for authenticated access.
+
+          ## Task
+
+          Use the browser to sign into GitHub via Google, then configure the gh CLI.
+
+          ### Process
+
+          1. **Check existing gh CLI auth**
+             - Run `gh auth status` to see if already authenticated
+             - If authenticated with the correct account, skip browser sign-in
+
+          2. **Browser sign-in via Google OAuth**
+             - Navigate to `https://github.com/login`
+             - Click "Continue with Google"
+             - If Google account chooser appears, select the agent's Gmail account
+             - If consent screen appears, click "Continue" to authorize
+             - If redirected to a sign-up page (no existing GitHub account):
+               - Choose a username (check SOUL.md for the expected username)
+               - Complete the registration form
+               - Note the new username for later SOUL.md update
+
+          3. **Configure gh CLI**
+             - Run `gh auth login` using SSH protocol and device flow:
+               ```
+               gh auth login --hostname github.com --git-protocol ssh --web
+               ```
+             - This prints a one-time device code and a URL (`https://github.com/login/device`)
+             - Use Chrome DevTools MCP to open the URL, enter the device code, and authorize
+             - If GitHub requires sudo verification (email code), check Gmail via Chrome MCP to retrieve the code
+             - After auth completes, request additional scopes for full repo management:
+               ```
+               gh auth refresh -h github.com -s delete_repo
+               ```
+               (Complete the device flow again via Chrome MCP for the scope upgrade)
+             - Verify with `gh auth status`
+             - **Important**: Always use SSH protocol, not HTTPS — SSH keys are already provisioned by Keystone
+
+          4. **Save credentials to rbw**
+             - If a new account was created or credentials changed, save to rbw:
+               ```
+               rbw add --uri https://github.com github.com [username]
+               ```
+             - If entry already exists and needs updating: `rbw edit github.com`
+
+          5. **Add SSH public key and configure signing**
+             - **Prerequisite**: Only proceed after confirming browser sign-in works (step 2 succeeded)
+             - Read the agent's SSH public key: `cat ~/.ssh/id_ed25519.pub` (or `~/.ssh/id_rsa.pub`)
+             - Check if the key is already added: `gh ssh-key list`
+             - If the key is not already present, add it via CLI:
+               - Authentication key:
+                 ```
+                 gh ssh-key add ~/.ssh/id_ed25519.pub --title "agent-$(hostname)" --type authentication
+                 ```
+               - Signing key:
+                 ```
+                 gh ssh-key add ~/.ssh/id_ed25519.pub --title "agent-$(hostname)-signing" --type signing
+                 ```
+             - **If CLI fails**, use Chrome DevTools MCP browser as fallback:
+               - Navigate to `https://github.com/settings/ssh/new`
+               - Set title to `agent-<hostname>`
+               - Set key type to "Authentication Key", paste public key, submit
+               - Repeat for "Signing Key" type
+             - Configure git to use SSH signing:
+               ```
+               git config --global gpg.format ssh
+               git config --global user.signingkey ~/.ssh/id_ed25519.pub
+               git config --global commit.gpgsign true
+               ```
+             - Verify the key appears on GitHub: `gh ssh-key list`
+
+          6. **Verify access**
+             - Run `gh api user` to confirm API access
+             - Test SSH connectivity: `ssh -T git@github.com`
+             - Note the username and account details
+
+          ## Output Format
+
+          ### github_status.md
+
+          ```markdown
+          # GitHub Sign-In Status
+
+          **Status**: Success / Failed
+          **Username**: [GitHub username]
+          **Account**: New / Existing
+          **Auth Method**: Google OAuth
+          **Date**: [current date]
+
+          ## Browser Sign-In
+
+          - Signed in via Google OAuth: Yes/No
+          - Account created: Yes/No (if new)
+
+          ## CLI Configuration
+
+          - gh CLI authenticated: Yes/No
+          - Protocol: ssh
+          - Scopes: [list of scopes, should include repo, delete_repo, gist, read:org]
+          - gh auth status output: [summary]
+
+          ## SSH Key
+
+          - Public key added: Yes/No
+          - Signing key added: Yes/No
+          - SSH test (`ssh -T git@github.com`): Success/Failed
+          - Git commit signing configured: Yes/No
+
+          ## Credentials
+
+          - Saved to rbw: Yes/No / Already existed
+
+          ## Issues
+
+          [Any issues encountered, or "None"]
+          ```
+
+          ## Quality Criteria
+
+          - Successfully signed into GitHub in the browser
+          - gh CLI is authenticated and can make API calls (`gh api user` succeeds)
+          - SSH public key is added as both authentication and signing key
+          - Git is configured to sign commits with the SSH key
+          - SSH connectivity works (`ssh -T git@github.com`)
+          - Username is recorded for SOUL.md update
+          - Credentials are saved to rbw
+
+          ## Context
+
+          GitHub access is needed for code hosting, PR workflows, and collaboration. The gh CLI enables command-line operations (creating PRs, managing issues, etc.). Google OAuth is the preferred auth method to avoid managing separate passwords.
+        inputs:
+          google_status_md: { required: true }
+        outputs:
+          github_status_md: { required: true }
+
+      - name: setup_forgejo
+        instructions: |
+          # Set Up Forgejo
+
+          ## Objective
+
+          Sign into Forgejo on `git.ncrmro.com` and configure the `fj` CLI for authenticated access using the API token from rbw.
+
+          ## Task
+
+          Authenticate with the self-hosted Forgejo instance using credentials from rbw and set up the fj CLI.
+
+          ### Process
+
+          1. **Check existing fj CLI auth**
+             - Run `fj auth status` or equivalent to see if already authenticated
+             - If authenticated with the correct account, skip to verification
+
+          2. **Retrieve credentials**
+             - Read SOUL.md for the Forgejo username and credential reference
+             - Get the API token or password from rbw using the reference in SOUL.md's Credentials column
+             - The credential entry name may be a keyfile reference — check `rbw search forgejo` or `rbw search git.ncrmro.com`
+
+          3. **Browser sign-in (if needed)**
+             - Navigate to `https://git.ncrmro.com/user/login`
+             - Enter username and password
+             - Complete sign-in
+
+          4. **Configure fj CLI**
+             - Authenticate fj with the Forgejo instance:
+               ```
+               fj auth login --host git.ncrmro.com --token <api-token>
+               ```
+             - If fj uses a different auth flow, follow its conventions (see `.agents/conventions/tool.forgejo.md` if available)
+             - Verify with `fj auth status` or `fj repo list`
+
+          5. **Add SSH public key and configure signing (via Chrome MCP browser)**
+             - **Prerequisite**: Only proceed after confirming browser sign-in works (step 3 succeeded)
+             - Read the agent's SSH public key: `cat ~/.ssh/id_ed25519.pub` (or `~/.ssh/id_rsa.pub`)
+             - Use Chrome DevTools MCP to add both keys via the Forgejo web UI:
+               - Navigate to `https://git.ncrmro.com/user/settings/keys`
+               - **Authentication key**: Click "Add Key" under "Manage SSH Keys", paste the public key, set title to `agent-<hostname>`, submit
+               - **Signing key**: In the same page, find "Manage Signing Keys" or equivalent section, click "Add Key", paste the same public key, set title to `agent-<hostname>-signing`, submit
+             - If the API is preferred as fallback:
+               - Auth key: `curl -X POST https://git.ncrmro.com/api/v1/user/keys -H "Authorization: token <token>" -H "Content-Type: application/json" -d '{"title":"agent-<hostname>","key":"<pubkey>"}'`
+             - Verify the keys appear in settings: navigate to `https://git.ncrmro.com/user/settings/keys` and take a snapshot
+             - Test SSH connectivity: `ssh -T git@git.ncrmro.com`
+
+          6. **Verify access**
+             - List repositories or user info to confirm access
+             - Run a simple API call to confirm the token works
+             - Confirm SSH clone works
+
+          ## Output Format
+
+          ### forgejo_status.md
+
+          ```markdown
+          # Forgejo Sign-In Status
+
+          **Status**: Success / Failed
+          **Host**: git.ncrmro.com
+          **Username**: [Forgejo username]
+          **Auth Method**: API token
+          **Date**: [current date]
+
+          ## Browser Sign-In
+
+          - Signed into Forgejo web UI: Yes/No
+
+          ## CLI Configuration
+
+          - fj CLI authenticated: Yes/No
+          - Host configured: git.ncrmro.com
+          - fj auth status output: [summary]
+
+          ## SSH Key
+
+          - Public key added: Yes/No
+          - Signing key added: Yes/No
+          - SSH test (`ssh -T git@git.ncrmro.com`): Success/Failed
+
+          ## Issues
+
+          [Any issues encountered, or "None"]
+          ```
+
+          ## Quality Criteria
+
+          - Successfully signed into Forgejo web UI
+          - fj CLI is authenticated and can list repos or user info
+          - API token is working and stored appropriately
+          - SSH public key is added as both authentication and signing key
+          - SSH connectivity works (`ssh -T git@git.ncrmro.com`)
+
+          ## Context
+
+          Forgejo is the primary Git hosting platform on the intranet. The fj CLI enables creating repos, issues, PRs, and managing milestones from the command line. All agent code changes flow through Forgejo PRs.
+        inputs:
+          vault_status_md: { required: true }
+          google_status_md: { required: true }
+        outputs:
+          forgejo_status_md: { required: true }
+
+      - name: verify
+        instructions: |
+          # Verify Access
+
+          ## Objective
+
+          Run verification checks on all services and CLIs to produce a consolidated pass/fail report.
+
+          ## Task
+
+          Systematically verify that every service and CLI configured during onboarding is working correctly.
+
+          ### Process
+
+          1. **Read status files from prior steps**
+             - Read `google_status.md`, `github_status.md`, and `forgejo_status.md`
+             - Note any services that reported failures
+
+          2. **Run live verification checks**
+
+             For each service, run a concrete check:
+
+             | Service         | Check Command / Action                                  | Pass Criteria                           |
+             | --------------- | ------------------------------------------------------- | --------------------------------------- |
+             | Google/Gmail    | Navigate to `https://mail.google.com` and take snapshot | Inbox page loads without sign-in prompt |
+             | GitHub          | `gh api user`                                           | Returns JSON with correct username      |
+             | GitHub (web)    | Navigate to `https://github.com` and take snapshot      | Shows authenticated user dashboard      |
+             | GitHub SSH      | `ssh -T git@github.com`                                 | Authenticated successfully              |
+             | GitHub SSH keys | `gh ssh-key list`                                       | Shows auth key and signing key          |
+             | Forgejo         | `fj auth status` or `fj repo list`                      | Returns valid response                  |
+             | Forgejo (web)   | Navigate to `https://git.ncrmro.com` and take snapshot  | Shows authenticated dashboard           |
+             | Forgejo SSH     | `ssh -T git@git.ncrmro.com`                             | Authenticated successfully              |
+             | Git signing     | `git config --global commit.gpgsign`                    | Returns `true`                          |
+             | rbw             | `rbw unlocked`                                          | Returns unlocked status                 |
+
+          3. **Record results**
+             - For each check: record pass/fail, the command run, and any error output
+             - For failures: include the error message and a suggested remediation
+
+          ## Output Format
+
+          ### verification_report.md
+
+          ```markdown
+          # Onboarding Verification Report
+
+          **Date**: [current date]
+          **Agent**: [name from SOUL.md]
+          **Overall Status**: All Passed / [N] Failures
+
+          ## Service Checks
+
+          ### Google/Gmail
+
+          - **Status**: PASS / FAIL
+          - **Check**: Navigated to mail.google.com
+          - **Result**: [what was observed]
+          - **Remediation**: [if failed, what to do]
+
+          ### GitHub
+
+          - **Status**: PASS / FAIL
+          - **Check**: `gh api user`
+          - **Result**: [username returned / error]
+          - **Remediation**: [if failed]
+
+          ### GitHub (Web)
+
+          - **Status**: PASS / FAIL
+          - **Check**: Navigated to github.com
+          - **Result**: [authenticated dashboard / sign-in page]
+
+          ### Forgejo
+
+          - **Status**: PASS / FAIL
+          - **Check**: `fj auth status`
+          - **Result**: [output summary]
+          - **Remediation**: [if failed]
+
+          ### Forgejo (Web)
+
+          - **Status**: PASS / FAIL
+          - **Check**: Navigated to git.ncrmro.com
+          - **Result**: [authenticated dashboard / sign-in page]
+
+          ### Vault (rbw)
+
+          - **Status**: PASS / FAIL
+          - **Check**: `rbw unlocked`
+          - **Result**: [unlocked / locked]
+
+          ## Summary
+
+          | Service      | Web       | CLI       | SSH       | Signing   | Overall   |
+          | ------------ | --------- | --------- | --------- | --------- | --------- |
+          | Google/Gmail | PASS/FAIL | N/A       | N/A       | N/A       | PASS/FAIL |
+          | GitHub       | PASS/FAIL | PASS/FAIL | PASS/FAIL | PASS/FAIL | PASS/FAIL |
+          | Forgejo      | PASS/FAIL | PASS/FAIL | PASS/FAIL | PASS/FAIL | PASS/FAIL |
+          | Vault        | N/A       | PASS/FAIL | N/A       | N/A       | PASS/FAIL |
+
+          **[X] / [Y] services fully operational.**
+          ```
+
+          ## Quality Criteria
+
+          - Every service from the onboarding plan has a pass/fail result
+          - Checks use actual commands or browser navigation, not assumptions from prior steps
+          - Any failures include error details and suggested remediation
+          - Summary table gives a clear at-a-glance status
+
+          ## Context
+
+          This is the validation gate before finalizing onboarding. If any services fail verification, the agent knows exactly what needs to be fixed before it can operate normally. The verification report also serves as documentation of the agent's operational readiness.
+        inputs:
+          google_status_md: { required: true }
+          github_status_md: { required: true }
+          forgejo_status_md: { required: true }
+        outputs:
+          verification_report_md: { required: true }
+
+      - name: update_soul
+        instructions: |
+          # Update SOUL.md
+
+          ## Objective
+
+          Update SOUL.md to reflect the actual state of all accounts after onboarding. Save any new or changed credentials to rbw.
+
+          ## Task
+
+          Compare the current SOUL.md accounts table against what was actually configured during onboarding, and reconcile any differences.
+
+          ### Process
+
+          1. **Read the verification report**
+             - Review `verification_report.md` for the final state of each service
+             - Note any new accounts created, usernames assigned, or auth methods changed
+
+          2. **Read current SOUL.md**
+             - Parse the existing Accounts table
+             - Identify entries that need updating (TBD usernames, changed auth methods, new services)
+
+          3. **Determine changes needed**
+             - Compare each account's expected state (from verification) with SOUL.md
+             - Build a list of changes:
+               - New accounts to add (rows)
+               - Existing entries to update (username, auth method, credentials reference)
+               - Entries to mark as failed/incomplete if verification failed
+
+          4. **Update SOUL.md**
+             - Edit the Accounts table to reflect the verified state
+             - Ensure every entry has:
+               - Correct username (not TBD)
+               - Accurate auth method
+               - Valid rbw credential reference
+             - Do NOT change non-account sections of SOUL.md
+
+          5. **Save credentials to rbw**
+             - For any new credentials not yet in rbw, add them:
+               ```
+               rbw add --uri <url> <entry-name> <username>
+               ```
+             - For changed credentials, update them:
+               ```
+               rbw edit <entry-name>
+               ```
+             - Verify saved credentials with `rbw get --full <entry-name>`
+
+          6. **Document changes**
+             - Record every change made to SOUL.md and rbw in the changelog
+
+          ## Output Format
+
+          ### changelog.md
+
+          ```markdown
+          # Onboarding Changelog
+
+          **Date**: [current date]
+          **Agent**: [name]
+
+          ## SOUL.md Changes
+
+          | Field              | Before                 | After             | Reason                            |
+          | ------------------ | ---------------------- | ----------------- | --------------------------------- |
+          | GitHub username    | TBD                    | [actual-username] | Account created during onboarding |
+          | GitHub auth method | OAuth device flow      | Google OAuth      | Signed in via Google              |
+          | GitHub credentials | ~/.config/gh/hosts.yml | rbw `github.com`  | Stored in vault                   |
+
+          ## rbw Changes
+
+          | Entry      | Action | Username   | URI                |
+          | ---------- | ------ | ---------- | ------------------ |
+          | github.com | Added  | [username] | https://github.com |
+
+          ## No Changes Needed
+
+          - [List any accounts that were already correct]
+
+          ## Failed / Incomplete
+
+          - [List any accounts that could not be set up, with reason]
+          ```
+
+          ## Quality Criteria
+
+          - The accounts table in SOUL.md matches the actual verified state of all services
+          - All new or updated credentials have been saved to rbw
+          - No TBD entries remain for services that were successfully configured
+          - Changelog accurately records every change made
+          - No credentials or secrets appear in the changelog — only entry names and usernames
+
+          ## Context
+
+          This is the final step in onboarding. SOUL.md is the agent's source of truth for its own identity and accounts. If it falls out of sync with reality, future sessions will use stale or incorrect information. Keeping rbw in sync ensures credentials are available for subsequent operations.
+        inputs:
+          verification_report_md: { required: true }
+        outputs:
+          changelog_md: { required: true }
+
+  doctor:
+    summary: "Diagnose agent health — check timers, analyze logs, and recommend fixes"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Agents run as systemd user services on NixOS. Three timers per agent:
+      - `agent-{name}-notes-sync` — git fetch/commit/push every 5 min
+      - `agent-{name}-task-loop` — autonomous work cycle every 5 min (1h timeout, flock)
+      - `agent-{name}-scheduler` — reads SCHEDULES.yaml daily at 5 AM, creates due tasks
+
+      Monitoring commands (run as root or via agentctl):
+      - `agentctl {name} status agent-{name}-{timer}` — check timer/service status
+      - `agentctl {name} journalctl -u agent-{name}-{timer} -n 50` — view logs
+      - `agentctl {name} start agent-{name}-task-loop` — manually trigger
+
+      Log locations:
+      - Notes sync: `~/.local/state/notes-sync/logs/`
+      - Task loop: `~/.local/state/agent-task-loop/logs/`
+      - Per-task logs: `~/.local/state/agent-task-loop/logs/tasks/`
+      - Scheduler: `~/.local/state/agent-scheduler/logs/`
+
+      Task loop phases: pre-fetch → ingest → prioritize → execute → commit
+      Structured log tags: `[step=X]`, `[task=Y]`
+
+      Common failure modes:
+      - Auth expired (gh/fj token, rbw locked)
+      - Merge conflict in notes-sync (rebase fails)
+      - Task loop flock contention (previous run still active)
+      - Missing dev shell (direnv not allowed, flake eval error)
+      - Scheduler YAML parse error (malformed SCHEDULES.yaml)
+    steps:
+      - name: check_health
+        instructions: |
+          # Check Health
+
+          ## Objective
+
+          Produce a comprehensive health snapshot of an agent's systemd timers, service prerequisites, and operational state.
+
+          ## Inputs
+
+          - `agent_name` — the agent to diagnose (e.g., `luce`, `drago`)
+
+          ## Task
+
+          ### 1. Determine agent home and notes path
+
+          ```bash
+          agent_home="/home/agent-${agent_name}"
+          notes_dir="${agent_home}/notes"
+          ```
+
+          Verify the notes directory exists and is a git repo.
+
+          ### 2. Check systemd timer status
+
+          Run status checks for all three timers. Detect execution context first:
+
+          - **If running as the target agent user** (i.e., `whoami` matches `agent-${agent_name}`): use `systemctl --user` and `journalctl --user` directly
+          - **If running as root or another user with sudo**: use `agentctl ${agent_name} status`
+
+          Direct (as agent user):
+
+          ```bash
+          systemctl --user status agent-${agent_name}-notes-sync.timer
+          systemctl --user status agent-${agent_name}-notes-sync.service
+          systemctl --user status agent-${agent_name}-task-loop.timer
+          systemctl --user status agent-${agent_name}-task-loop.service
+          systemctl --user status agent-${agent_name}-scheduler.timer
+          systemctl --user status agent-${agent_name}-scheduler.service
+          ```
+
+          For each timer, record:
+
+          - Active state (active/inactive/failed)
+          - Last trigger time
+          - Next trigger time
+          - Result of last run (success/failure/timeout)
+
+          ### 3. Check service prerequisites
+
+          Verify these prerequisites as the agent user:
+
+          | Check          | Command                          | Pass Criteria           |
+          | -------------- | -------------------------------- | ----------------------- |
+          | Git repo       | `ls ${notes_dir}/.git`           | Exists                  |
+          | SSH agent      | `ssh-add -l`                     | At least one key listed |
+          | rbw vault      | `rbw unlocked`                   | Exit 0                  |
+          | direnv         | `ls ${notes_dir}/.envrc`         | Exists                  |
+          | Nix flake      | `ls ${notes_dir}/flake.nix`      | Exists                  |
+          | gh CLI         | `gh auth status`                 | Authenticated           |
+          | fj CLI         | `fj whoami`                      | Returns username        |
+          | TASKS.yaml     | `ls ${notes_dir}/TASKS.yaml`     | Exists                  |
+          | SCHEDULES.yaml | `ls ${notes_dir}/SCHEDULES.yaml` | Exists                  |
+          | SOUL.md        | `ls ${notes_dir}/SOUL.md`        | Exists                  |
+
+          ### 4. Check for lock contention
+
+          ```bash
+          flock -n /tmp/agent-${agent_name}-task-loop.lock echo "free" || echo "locked"
+          ```
+
+          ### 5. Check git state
+
+          ```bash
+          cd ${notes_dir} && git status --porcelain
+          cd ${notes_dir} && git log --oneline -5
+          ```
+
+          Look for:
+
+          - Uncommitted changes (dirty working tree)
+          - Rebase in progress (`.git/rebase-merge/` or `.git/rebase-apply/`)
+          - Merge conflicts
+
+          ## Output Format
+
+          Write `health_snapshot.md` with this structure:
+
+          ```markdown
+          # Health Snapshot: agent-{name}
+
+          **Date:** {timestamp}
+          **Agent Home:** /home/agent-{name}
+          **Overall Status:** {HEALTHY | DEGRADED | UNHEALTHY}
+
+          ## Timer Status
+
+          | Timer      | State  | Last Run | Result  | Next Run |
+          | ---------- | ------ | -------- | ------- | -------- |
+          | notes-sync | active | ...      | success | ...      |
+          | task-loop  | active | ...      | failure | ...      |
+          | scheduler  | active | ...      | success | ...      |
+
+          ## Prerequisites
+
+          | Check     | Status | Detail         |
+          | --------- | ------ | -------------- |
+          | Git repo  | PASS   | ...            |
+          | SSH agent | FAIL   | No keys loaded |
+          | ...       | ...    | ...            |
+
+          ## Git State
+
+          - Working tree: clean / dirty (N files)
+          - Rebase in progress: yes / no
+          - Last 5 commits: ...
+
+          ## Lock State
+
+          - Task loop flock: free / locked (PID: ...)
+
+          ## Issues Found
+
+          1. {brief description of each issue}
+          2. ...
+          ```
+
+          Overall status rules:
+
+          - **HEALTHY** — all timers active with recent success, all prerequisites pass
+          - **DEGRADED** — some timers failed or some prerequisites missing, but agent is partially operational
+          - **UNHEALTHY** — critical failures (no SSH key, vault locked, timers inactive)
+
+          ## Quality Criteria
+
+          - The snapshot includes status for all three timers: notes-sync, task-loop, and scheduler
+          - The snapshot includes pass/fail for all prerequisites: git repo, SSH agent, rbw vault, direnv, flake, gh CLI, fj CLI, TASKS.yaml, SCHEDULES.yaml, SOUL.md
+          - Each timer entry has all columns filled (state, last run, result, next run)
+          - The overall status accurately reflects the timer and prerequisite results
+
+          ## Context
+
+          This is the first step of the doctor workflow. Its output drives all downstream analysis — if a timer or prerequisite is missed here, the later steps cannot diagnose it. Be thorough in running every check even if early checks suggest the agent is healthy.
+        inputs:
+          agent_name: { required: true }
+        outputs:
+          health_snapshot_md: { required: true }
+
+      - name: analyze_logs
+        instructions: |
+          # Analyze Logs
+
+          ## Objective
+
+          Fetch and parse recent logs from all agent services, extracting errors, warnings, and failure patterns.
+
+          ## Inputs
+
+          - `health_snapshot.md` from the `check_health` step — use this to know which agent and which services need log analysis. Focus deeper analysis on services marked as failed or degraded.
+
+          ## Task
+
+          ### 1. Read the health snapshot
+
+          Parse the agent name and identify which timers/services had failures or issues.
+
+          ### 2. Fetch journalctl logs
+
+          For each of the three services (see common job info for timer names), fetch the last 100 lines. Use `journalctl --user` when running as the agent user, or `agentctl journalctl` when running as root.
+
+          ```bash
+          # As agent user:
+          journalctl --user -u agent-${agent_name}-notes-sync -n 100 --no-pager
+          journalctl --user -u agent-${agent_name}-task-loop -n 100 --no-pager
+          journalctl --user -u agent-${agent_name}-scheduler -n 100 --no-pager
+          ```
+
+          ### 3. Fetch file-based logs
+
+          Check for recent log files in the state directories listed in common job info. Read the most recent log file from each directory that had failures in the health snapshot.
+
+          ### 4. Extract and classify log entries
+
+          For each service, extract:
+
+          - **Errors** — lines containing `error`, `Error`, `ERROR`, `FATAL`, `panic`, non-zero exit codes
+          - **Warnings** — lines containing `warn`, `Warning`, `WARN`, `timeout`, `retry`
+          - **Structured tags** — extract phase/task identifiers from structured log tags
+          - **Timestamps** — when errors first appeared and whether they're recurring
+
+          ### 5. Identify patterns
+
+          Look for:
+
+          - **Recurring errors** — same error appearing across multiple runs
+          - **Cascading failures** — one service failure causing downstream failures (e.g., notes-sync failure blocking task-loop)
+          - **Time correlation** — errors that started at a specific time (suggests external change)
+          - **Resource issues** — timeout messages, memory errors, disk space warnings
+
+          ## Output Format
+
+          Write `log_analysis.md` with this structure:
+
+          ```markdown
+          # Log Analysis: agent-{name}
+
+          **Analysis Date:** {timestamp}
+          **Log Window:** last 100 journal entries per service + recent log files
+
+          ## {Service Name}
+
+          ### Errors
+
+          - {timestamp} — {error message}
+          - ...
+
+          ### Warnings
+
+          - ...
+
+          ### Recent Task Failures
+
+          | Task | Step | Error | Timestamp |
+          | ---- | ---- | ----- | --------- |
+          | ...  | ...  | ...   | ...       |
+
+          ### Pattern: {pattern name}
+
+          {description of recurring pattern}
+
+          {Repeat for each service}
+
+          ## Cross-Service Patterns
+
+          - {any correlations between services}
+
+          ## Summary
+
+          - Total errors found: {N}
+          - Services with errors: {list}
+          - Earliest error: {timestamp}
+          - Most frequent error: {description} (seen {N} times)
+          ```
+
+          If a service has no errors or warnings, note it as clean: "No errors or warnings in the analyzed log window."
+
+          ## Quality Criteria
+
+          - Every service marked as failed or degraded in the health snapshot has corresponding log entries extracted
+          - Actual error messages are quoted from logs, not paraphrased or summarized without evidence
+          - Log entries include timestamps for temporal correlation
+          - The summary section accurately counts and categorizes findings
+
+          ## Context
+
+          This step bridges raw status checks and root cause analysis. The diagnose step depends on having real log evidence to work with — vague summaries like "some errors found" are not actionable. Always quote the actual log lines.
+        inputs:
+          health_snapshot_md: { required: true }
+        outputs:
+          log_analysis_md: { required: true }
+
+      - name: diagnose
+        instructions: |
+          # Diagnose Issues
+
+          ## Objective
+
+          Correlate the health snapshot and log analysis to identify root causes of each failure. Produce a structured diagnosis for each issue.
+
+          ## Inputs
+
+          - `health_snapshot.md` from `check_health` — current state of timers, prerequisites, git, locks
+          - `log_analysis.md` from `analyze_logs` — extracted errors, warnings, and patterns
+
+          ## Task
+
+          ### 1. Cross-reference health and logs
+
+          For each issue in the health snapshot's "Issues Found" section, find the corresponding log evidence. For each error pattern in the log analysis, check whether the health snapshot explains the symptom.
+
+          ### 2. Apply the diagnostic decision tree
+
+          For each issue, walk through this decision tree to identify the root cause:
+
+          **Timer inactive/failed:**
+
+          - Is the service unit file present? → NixOS config may not have been applied
+          - Did it fail with exit code? → Check the specific error in logs
+          - Is it masked or disabled? → Intentional or accidental `systemctl mask`
+
+          **Auth failures (gh/fj/rbw):**
+
+          - Token expired? → Needs re-authentication (credential rotation)
+          - Wrong username? → SOUL.md mismatch
+          - Network unreachable? → DNS or firewall issue
+          - Vault locked? → rbw needs unlock (session expired)
+
+          **Git/sync failures:**
+
+          - Rebase conflict? → Manual conflict resolution needed
+          - Permission denied? → SSH key not loaded or not authorized
+          - Remote not found? → Forgejo repo deleted or renamed
+
+          **Task loop failures:**
+
+          - Flock held? → Previous run still active or zombie process
+          - Timeout? → Task took >1h, may need `maxTasks` reduction
+          - Step failure? → Specific task error (check per-task logs)
+
+          **Scheduler failures:**
+
+          - YAML parse error? → Malformed SCHEDULES.yaml
+          - No tasks created? → Schedule conditions not matching (check day/date logic)
+
+          ### 3. Classify each issue
+
+          For each diagnosed issue, assign:
+
+          - **Severity:** critical (agent non-functional), warning (degraded), info (cosmetic)
+          - **Category:** auth, git, timer, config, resource, task
+          - **Affected components:** which timers/services are impacted
+          - **Root cause:** the underlying reason (not the symptom)
+          - **Evidence:** specific log lines or status output supporting the diagnosis
+
+          ## Output Format
+
+          Write `diagnosis.md`:
+
+          ```markdown
+          # Diagnosis: agent-{name}
+
+          **Date:** {timestamp}
+          **Overall Assessment:** {summary sentence}
+
+          ## Issues
+
+          ### Issue 1: {descriptive title}
+
+          - **Severity:** critical / warning / info
+          - **Category:** auth / git / timer / config / resource / task
+          - **Affected:** {components}
+          - **Symptom:** {what was observed in health check / logs}
+          - **Root Cause:** {underlying reason}
+          - **Evidence:**
+            - {specific log line or status output}
+            - {another piece of evidence}
+
+          ### Issue 2: {title}
+
+          ...
+
+          ## Dependency Graph
+
+          {If issues are related, describe the chain. E.g.: "SSH key not loaded → notes-sync fails → task-loop can't fetch → stale TASKS.yaml"}
+
+          ## No Issues Found
+
+          {If the agent is healthy, state: "No issues detected. All timers active, all prerequisites passing, no errors in recent logs."}
+          ```
+
+          ## Quality Criteria
+
+          - Every failure from the health snapshot has a corresponding diagnosis entry
+          - Each issue has a plausible root cause, not just a symptom restatement
+          - Evidence includes specific log lines or status outputs from the prior steps
+          - The dependency graph captures cascading failure chains when present
+
+          ## Context
+
+          This step synthesizes the health snapshot and log analysis into actionable root causes. The prescribe step depends on accurate diagnoses — a wrong root cause leads to wrong fixes. When uncertain, state the uncertainty and list alternative causes.
+        inputs:
+          health_snapshot_md: { required: true }
+          log_analysis_md: { required: true }
+        outputs:
+          diagnosis_md: { required: true }
+
+      - name: prescribe
+        instructions: |
+          # Prescribe Fixes
+
+          ## Objective
+
+          Produce an ordered list of actionable fix commands for each diagnosed issue. Fixes should be safe, reversible where possible, and include verification steps.
+
+          ## Inputs
+
+          - `diagnosis.md` from `diagnose` — root cause analysis with severity and affected components
+
+          ## Task
+
+          ### 1. Order fixes by dependency and severity
+
+          - Fix upstream issues first (e.g., fix SSH keys before addressing notes-sync failures)
+          - Critical issues before warnings
+          - Quick wins before complex fixes
+
+          ### 2. Write fix actions
+
+          For each diagnosed issue, produce:
+
+          - The exact commands to run (using `agentctl` patterns from common job info)
+          - What the commands do and why
+          - Expected output after the fix
+          - A verification command to confirm the fix worked
+          - Rollback instructions if the fix makes things worse
+
+          ### 3. Apply fix patterns by category
+
+          For each failure category from the diagnosis, write the specific fix+verify+rollback triple:
+
+          - **Auth failures** — re-authenticate the specific service, verify with status command, note dependent services
+          - **Git/sync failures** — resolve conflicts or reset state, verify clean working tree
+          - **Lock contention** — identify and clear stale locks, restart service
+          - **Timer issues** — restart or re-enable, verify active state and next trigger
+          - **Config/YAML errors** — validate and fix syntax, re-trigger the service
+          - **Missing prerequisites** — install or configure the missing component
+
+          ### 4. Flag dangerous operations
+
+          Any fix that involves killing processes, git reset, or credential changes must include:
+
+          - A clear warning about what could go wrong
+          - Confirmation that the operator should verify before proceeding
+          - Rollback commands
+
+          ## Output Format
+
+          Write `prescription.md`:
+
+          ````markdown
+          # Prescription: agent-{name}
+
+          **Date:** {timestamp}
+          **Issues to fix:** {N}
+          **Estimated time:** {rough estimate}
+
+          ## Fix Order
+
+          1. {Issue title} (critical)
+          2. {Issue title} (warning)
+          3. ...
+
+          ## Fixes
+
+          ### Fix 1: {Issue title}
+
+          **Addresses:** Issue {N} from diagnosis — {root cause summary}
+          **Risk:** low / medium / high
+
+          **Commands:**
+
+          ```bash
+          {exact commands}
+          ```
+          ````
+
+          **Expected result:** {what should happen}
+
+          **Verify:**
+
+          ```bash
+          {verification command}
+          ```
+
+          **Rollback:**
+
+          ```bash
+          {rollback commands if applicable}
+          ```
+
+          ---
+
+          ### Fix 2: {title}
+
+          ...
+
+          ## Post-Fix Verification
+
+          After applying all fixes, verify overall agent health by checking all three timer statuses, CLI auth, and git state.
+
+          ## No Fixes Needed
+
+          {If the agent is healthy: "Agent is healthy. No fixes required."}
+
+          ## Quality Criteria
+
+          - Each fix includes exact shell commands that can be executed directly
+          - Destructive actions are flagged with warnings and have rollback instructions
+          - Each fix includes a verification command to confirm it worked
+          - Every diagnosed issue has a corresponding fix action
+          - Fixes are ordered by dependency (upstream fixes first) and severity
+
+          ## Context
+
+          This is the final step of the doctor workflow. The prescription should be immediately actionable — the operator should be able to copy-paste commands and fix the agent. Avoid vague advice like "check the configuration" — always provide the specific command.
+        inputs:
+          diagnosis_md: { required: true }
+        outputs:
+          prescription_md: { required: true }
+
+  issue:
+    summary: "File an infrastructure issue on the admin's nixos-config repo"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      When agents discover infrastructure problems they cannot fix themselves (NixOS config
+      changes, secret provisioning, service restarts requiring root), they file issues on
+      the admin's nixos-config repo.
+
+      - **Repo:** ncrmro/keystone (on GitHub)
+      - **Admin GitHub username:** ncrmro (from TEAM.md)
+      - **CLI:** `gh issue create --repo ncrmro/keystone`
+      - Issues MUST be assigned to the admin (`--assignee ncrmro`)
+      - Issues SHOULD include the agent name, affected service, and exact error/evidence
+      - Issues MAY reference doctor workflow output (diagnosis, prescription) for context
+    steps:
+      - name: draft_issue
+        instructions: |
+          # Draft Issue
+
+          ## Objective
+
+          Draft a GitHub issue for the admin's nixos-config repo (ncrmro/keystone) documenting an infrastructure problem that the agent cannot fix itself.
+
+          ## Inputs
+
+          - `issue_description` — description of the infrastructure problem from the user or from a doctor workflow diagnosis
+
+          ## Task
+
+          ### 1. Gather issue context
+
+          If the description is vague, ask structured questions to clarify:
+
+          - Which agent is affected?
+          - What service or component is broken?
+          - What error message or symptom was observed?
+          - When did the problem start?
+          - Is the agent partially operational or fully broken?
+
+          If a doctor workflow was recently run, read the diagnosis and prescription files from `.deepwork/tmp/` for evidence.
+
+          ### 2. Determine issue category
+
+          Classify the issue to select the right label:
+
+          | Category            | Label    | Examples                                              |
+          | ------------------- | -------- | ----------------------------------------------------- |
+          | NixOS agent config  | `agent`  | Missing timer, wrong schedule, service unit error     |
+          | Secrets/credentials | `agenix` | Missing SSH key secret, mail password not provisioned |
+          | Nix store/packages  | `nix`    | Permission denied on store path, missing package      |
+          | Infrastructure      | `infra`  | DNS, firewall, service down                           |
+
+          ### 3. Draft the issue
+
+          Write `issue_draft.md` with the complete issue ready to file.
+
+          ## Output Format
+
+          Write `issue_draft.md`:
+
+          ```markdown
+          # Issue Draft
+
+          ## Metadata
+
+          - **Repo:** ncrmro/keystone
+          - **Assignee:** ncrmro
+          - **Labels:** {comma-separated labels from category above}
+          - **Title:** {concise title: "[agent-{name}] {problem summary}"}
+
+          ## Body
+
+          ### Problem
+
+          {1-2 sentences describing what's wrong}
+
+          ### Affected Agent
+
+          - **Agent:** agent-{name}
+          - **Service:** {timer/service name or component}
+          - **Status:** {operational / degraded / down}
+
+          ### Evidence
+
+          {Exact error messages, log lines, or status output. Use code blocks.}
+          ```
+
+          {error output}
+
+          ```
+
+          ### Expected Behavior
+
+          {What should happen instead}
+
+          ### Suggested Fix
+
+          {If known — e.g., "regenerate store path", "add agenix secret for agent-luce"}
+
+          ### Context
+
+          {Any additional context: when it started, what changed, link to doctor output if available}
+          ```
+
+          ## Quality Criteria
+
+          - The issue title clearly states the problem and affected agent/component
+          - The issue body includes the agent name, affected service, error evidence, and expected vs actual behavior
+          - The draft specifies ncrmro as assignee
+          - Evidence includes actual error output, not paraphrased descriptions
+        inputs:
+          issue_description: { required: true }
+        outputs:
+          issue_draft_md: { required: true }
+
+      - name: file_issue
+        instructions: |
+          # File Issue
+
+          ## Objective
+
+          Create the GitHub issue on ncrmro/keystone using the draft from the previous step.
+
+          ## Inputs
+
+          - `issue_draft.md` from `draft_issue` — contains the title, body, labels, and assignee
+
+          ## Task
+
+          ### 1. Parse the draft
+
+          Read `issue_draft.md` and extract:
+
+          - Title (from the `## Metadata` section)
+          - Body (the `## Body` section content)
+          - Labels (from metadata)
+          - Assignee (should be `ncrmro`)
+
+          ### 2. Create the issue
+
+          ```bash
+          gh issue create \
+            --repo ncrmro/keystone \
+            --title "{title}" \
+            --body "$(cat <<'EOF'
+          {body content}
+          EOF
+          )" \
+            --assignee ncrmro \
+            --label "{label1},{label2}"
+          ```
+
+          If a label doesn't exist on the repo, create it first or omit it and note in the output.
+
+          ### 3. Record the result
+
+          Capture the issue URL returned by `gh issue create`.
+
+          ## Output Format
+
+          Write `issue_url.md`:
+
+          ```markdown
+          # Issue Filed
+
+          - **Issue:** #{number}
+          - **URL:** {url}
+          - **Repo:** ncrmro/keystone
+          - **Assigned to:** ncrmro
+          - **Labels:** {labels applied}
+          - **Title:** {title}
+          ```
+
+          ## Quality Criteria
+
+          - The issue was successfully created on GitHub (URL is valid)
+          - The issue is assigned to ncrmro
+          - The output includes the issue number and URL
+
+          ## Context
+
+          This is the final step. After filing, the agent should reference this issue number when discussing the problem in other contexts (e.g., task comments, status updates).
+        inputs:
+          issue_draft_md: { required: true }
+        outputs:
+          issue_url_md: { required: true }

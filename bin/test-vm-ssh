@@ -1,0 +1,246 @@
+#!/usr/bin/env python3
+"""
+test-vm-ssh - SSH into whitelisted Keystone test VMs
+
+This script provides a clean way to SSH into test VMs without
+polluting your user SSH configuration or cluttering agent context with warnings.
+
+Usage:
+    ./bin/test-vm-ssh                           # Connect to default VM (keystone-test-vm)
+    ./bin/test-vm-ssh build-vm-terminal         # Connect to build-vm-terminal
+    ./bin/test-vm-ssh build-vm-terminal "ls"    # Run command on build-vm-terminal
+    ./bin/test-vm-ssh keystone-test-vm "ls -la" # Run command on keystone-test-vm
+
+Features:
+    - Isolated known_hosts file (won't pollute ~/.ssh/known_hosts)
+    - Suppresses SSH warnings for clean agent context
+    - Checks VM is running before attempting connection
+    - Supports multiple whitelisted VMs
+"""
+
+import os
+import sys
+import subprocess
+import time
+from pathlib import Path
+
+# Whitelisted VM configurations
+VM_CONFIGS = {
+    "keystone-test-vm": {
+        "host": "192.168.100.99",
+        "port": 22,
+        "user": "root",
+        "check_virsh": True,
+        "description": "Libvirt test VM with full stack"
+    },
+    "build-vm-terminal": {
+        "host": "localhost",
+        "port": 2222,
+        "user": "testuser",
+        "check_virsh": False,
+        "description": "Terminal dev environment test VM"
+    },
+    "build-vm-desktop": {
+        "host": "localhost",
+        "port": 2223,
+        "user": "testuser",
+        "check_virsh": False,
+        "description": "Desktop Hyprland test VM"
+    }
+}
+
+# Default VM if none specified
+DEFAULT_VM = "keystone-test-vm"
+KNOWN_HOSTS_FILE = "/tmp/keystone-test-vm-known-hosts"
+
+# ANSI colors
+RED = '\033[0;31m'
+GREEN = '\033[0;32m'
+YELLOW = '\033[1;33m'
+NC = '\033[0m'  # No Color
+
+
+def log(color, message):
+    """Print colored message to stderr."""
+    print(f"{color}{message}{NC}", file=sys.stderr)
+
+
+def check_vm_running(vm_name, vm_config, verbose=False):
+    """Check if the VM exists and is running."""
+    # Skip virsh check if not required
+    if not vm_config["check_virsh"]:
+        return
+
+    # Check if virsh is available
+    if not subprocess.run(["which", "virsh"], capture_output=True).returncode == 0:
+        if verbose:
+            log(RED, "Error: virsh not found. Is libvirt installed?")
+        sys.exit(1)
+
+    # Check VM state
+    result = subprocess.run(
+        ["virsh", "domstate", vm_name],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        if verbose:
+            log(RED, f"Error: VM '{vm_name}' does not exist.")
+            log(YELLOW, f"Create it with: ./bin/virtual-machine --name {vm_name} --start")
+        sys.exit(1)
+
+    vm_state = result.stdout.strip()
+    if vm_state != "running":
+        if verbose:
+            log(RED, f"Error: VM '{vm_name}' is not running (state: {vm_state}).")
+            log(YELLOW, f"Start it with: virsh start {vm_name}")
+        sys.exit(1)
+
+
+def wait_for_ssh(vm_config, max_attempts=5):
+    """Wait for SSH to be available on the VM."""
+    host = vm_config["host"]
+    port = vm_config["port"]
+    user = vm_config["user"]
+
+    log(YELLOW, f"Checking SSH connectivity to {host}:{port}...")
+
+    ssh_opts = [
+        "-p", str(port),
+        "-o", "ConnectTimeout=2",
+        "-o", "StrictHostKeyChecking=no",
+        "-o", f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
+        "-o", "LogLevel=ERROR",
+        "-q"
+    ]
+
+    for attempt in range(1, max_attempts + 1):
+        result = subprocess.run(
+            ["ssh"] + ssh_opts + [f"{user}@{host}", "exit 0"],
+            capture_output=True
+        )
+
+        if result.returncode == 0:
+            return True
+
+        if attempt == max_attempts:
+            log(RED, f"Error: Could not connect to SSH after {max_attempts} attempts.")
+            log(YELLOW, f"Make sure sshd is running and port {port} is accessible.")
+            return False
+
+        time.sleep(2)
+
+    return False
+
+
+def filter_ssh_output(line):
+    """Filter out SSH warnings from output."""
+    warnings = [
+        "Warning: Permanently added",
+        "Offending ECDSA key",
+        "Warning: the ECDSA host key"
+    ]
+    return not any(warning in line for warning in warnings)
+
+
+def run_ssh(vm_name, vm_config, command=None):
+    """Run SSH connection, either interactive or with a command."""
+    host = vm_config["host"]
+    port = vm_config["port"]
+    user = vm_config["user"]
+
+    ssh_opts = [
+        "-p", str(port),
+        "-o", "StrictHostKeyChecking=no",
+        "-o", f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
+        "-o", "LogLevel=ERROR",
+        "-o", "ServerAliveInterval=60",
+        "-o", "ServerAliveCountMax=3"
+    ]
+
+    ssh_cmd = ["ssh"] + ssh_opts
+
+    if command:
+        # Run command mode
+        ssh_cmd.extend([f"{user}@{host}", command])
+    else:
+        # Interactive mode
+        log(GREEN, f"Connecting to {vm_name} ({host}:{port}) as {user}...")
+        log(YELLOW, "Exit with 'exit' or Ctrl-D")
+        ssh_cmd.extend(["-t", f"{user}@{host}"])
+
+    # Run SSH and filter output
+    try:
+        process = subprocess.Popen(
+            ssh_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+
+        # Stream output line by line, filtering warnings
+        for line in process.stdout:
+            if filter_ssh_output(line):
+                print(line, end='')
+
+        process.wait()
+        sys.exit(process.returncode)
+
+    except KeyboardInterrupt:
+        sys.exit(130)  # Standard exit code for Ctrl-C
+
+
+def list_vms():
+    """List available whitelisted VMs."""
+    log(GREEN, "Available VMs:")
+    for vm_name, config in VM_CONFIGS.items():
+        default = " (default)" if vm_name == DEFAULT_VM else ""
+        log(YELLOW, f"  {vm_name}{default}")
+        print(f"    {config['description']}", file=sys.stderr)
+        print(f"    {config['user']}@{config['host']}:{config['port']}", file=sys.stderr)
+
+
+def main():
+    """Main entry point."""
+    # Parse VM name argument
+    vm_name = DEFAULT_VM
+    command_args = []
+
+    if len(sys.argv) > 1:
+        # Check if first arg is a VM name or --list
+        if sys.argv[1] == "--list":
+            list_vms()
+            sys.exit(0)
+        elif sys.argv[1] in VM_CONFIGS:
+            vm_name = sys.argv[1]
+            command_args = sys.argv[2:]
+        else:
+            # First arg is part of command, use default VM
+            command_args = sys.argv[1:]
+
+    # Get VM config
+    if vm_name not in VM_CONFIGS:
+        log(RED, f"Error: Unknown VM '{vm_name}'")
+        log(YELLOW, "Available VMs:")
+        for name in VM_CONFIGS.keys():
+            log(YELLOW, f"  {name}")
+        sys.exit(1)
+
+    vm_config = VM_CONFIGS[vm_name]
+
+    # Check VM running state
+    check_vm_running(vm_name, vm_config)
+
+    # Wait for SSH
+    if not wait_for_ssh(vm_config):
+        sys.exit(1)
+
+    # Build command if arguments provided
+    command = " ".join(command_args) if command_args else None
+    run_ssh(vm_name, vm_config, command)
+
+
+if __name__ == "__main__":
+    main()

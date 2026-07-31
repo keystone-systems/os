@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# Run a test pipeline from the keystone repo against the template fixture.
+#
+# Generates a consumer-flake fixture from the default template, locks it
+# to the current keystone checkout, then delegates to the fixture's
+# test-iso script. All flags are passed through.
+#
+# Usage (fast direct path — 2-10 min):
+#   bin/test-e2e --direct laptop --headless   # qcow2 build + boot + SSH check
+#   bin/test-e2e --direct --headless          # same; host defaults to 'laptop'
+#
+# Usage (full ISO + installer — 20-30 min):
+#   bin/test-e2e                          # full e2e (build + boot + install + validate)
+#   bin/test-e2e --build-only             # ISO build only
+#   bin/test-e2e --clean                  # regenerate fixture before running
+#   bin/test-e2e --no-build --port 12260  # reuse existing ISO, custom port
+#
+# When no mode flag is given, defaults to --dev --headless --e2e.
+# Mode flags are: --direct, --e2e, --build-only, --no-build.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+FIXTURE_DIR="/tmp/keystone-e2e-fixture"
+CLEAN=false
+PASSTHROUGH_ARGS=()
+
+log_info() { printf '\033[0;34m%s\033[0m\n' "$*"; }
+log_error() { printf '\033[0;31m%s\033[0m\n' "$*" >&2; }
+
+# Separate --clean from passthrough args
+for arg in "$@"; do
+    if [[ "$arg" == "--clean" ]]; then
+        CLEAN=true
+    else
+        PASSTHROUGH_ARGS+=("$arg")
+    fi
+done
+
+# Default to --dev --headless --e2e when no mode flag is given.
+# --direct is a mode flag: it selects the fast qcow2 path and must NOT
+# implicitly force --e2e (which would attempt the installer-TUI flow
+# that is meaningless for a pre-installed image).
+has_mode_flag=false
+for arg in "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}"; do
+    case "$arg" in
+        --direct|--e2e|--build-only|--no-build) has_mode_flag=true ;;
+    esac
+done
+if [[ "$has_mode_flag" == false ]]; then
+    PASSTHROUGH_ARGS=(--dev --headless --e2e "${PASSTHROUGH_ARGS[@]+"${PASSTHROUGH_ARGS[@]}"}")
+fi
+
+# Ensure --dev is present (required for keystone-repo builds)
+has_dev=false
+for arg in "${PASSTHROUGH_ARGS[@]}"; do
+    [[ "$arg" == "--dev" ]] && has_dev=true
+done
+if [[ "$has_dev" == false ]]; then
+    PASSTHROUGH_ARGS=(--dev "${PASSTHROUGH_ARGS[@]}")
+fi
+
+if [[ "$CLEAN" == true ]] && [[ -d "$FIXTURE_DIR" ]]; then
+    log_info "Cleaning existing fixture..."
+    rm -rf "$FIXTURE_DIR"
+fi
+
+if [[ ! -d "$FIXTURE_DIR" ]]; then
+    log_info "Generating consumer-flake fixture from template..."
+    "$REPO_ROOT/bin/generate-template-fixture" \
+        --output "$FIXTURE_DIR" \
+        --keystone-source "path:${REPO_ROOT}"
+else
+    log_info "Refreshing fixture keystone lock..."
+    (cd "$FIXTURE_DIR" && nix flake lock --override-input keystone "path:${REPO_ROOT}")
+    # Commit the lock update so test-iso sees a clean tree
+    if ! git -C "$FIXTURE_DIR" diff --quiet flake.lock 2>/dev/null; then
+        git -C "$FIXTURE_DIR" add flake.lock
+        git -C "$FIXTURE_DIR" commit -m "chore: refresh keystone lock" --no-gpg-sign >/dev/null
+    fi
+
+    # Sync the fixture's bin/ scripts from the current template.
+    #
+    # Without this, edits to templates/default/bin/test-iso only take
+    # effect on --clean, which is a papercut: users hit `Unknown option`
+    # from a stale fixture after adding a flag in the worktree.  The bin
+    # scripts are host-side test tooling and do not participate in flake
+    # evaluation, so overwriting them here is safe.  Local ad-hoc edits
+    # inside the fixture are intentionally clobbered — edit the template
+    # instead.
+    log_info "Syncing fixture bin/ from template..."
+    cp -f "$REPO_ROOT/templates/default/bin/"* "$FIXTURE_DIR/bin/"
+    chmod +x "$FIXTURE_DIR/bin/"*
+    if ! git -C "$FIXTURE_DIR" diff --quiet bin 2>/dev/null; then
+        git -C "$FIXTURE_DIR" add bin
+        git -C "$FIXTURE_DIR" commit -m "chore: sync bin/ from template" --no-gpg-sign >/dev/null
+    fi
+fi
+
+if [[ ! -x "$FIXTURE_DIR/bin/test-iso" ]]; then
+    log_error "Fixture missing bin/test-iso — try bin/test-e2e --clean"
+    exit 1
+fi
+
+log_info "Running: bin/test-iso ${PASSTHROUGH_ARGS[*]}"
+exec "$FIXTURE_DIR/bin/test-iso" "${PASSTHROUGH_ARGS[@]}"

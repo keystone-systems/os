@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# =============================================================================
+# test-microvm-tpm - Fast TPM enrollment/unlock testing via microvm.nix
+# =============================================================================
+#
+# PURPOSE:
+#   Validates TPM-based disk encryption workflows in a lightweight microvm
+#   environment. This is Tier 1 of Keystone's layered testing strategy,
+#   providing fast iteration (~20s) on TPM logic without full UEFI overhead.
+#
+# FUNCTIONAL REQUIREMENTS TESTED:
+#   - FR-002 Full Disk Encryption: LUKS2 volume creation and encryption
+#   - FR-003 Automatic Unlock: TPM-based automatic disk unlock
+#   See: specs/001-keystone-os/spec.md
+#
+# WHAT THIS TEST VALIDATES:
+#   - TPM device availability (/dev/tpm0) in guest
+#   - systemd-cryptenroll TPM enrollment on loopback device
+#   - systemd-cryptsetup TPM unlock without password
+#   - LUKS2 + TPM2 token handling
+#
+# WHAT THIS TEST DOES NOT VALIDATE (use libvirt for these):
+#   - FR-004 Verified Boot Chain (Secure Boot)
+#   - UEFI boot process
+#   - Lanzaboote signed kernel chain
+#   - TPM PCR 7 (Secure Boot state) measurements
+#
+# ARCHITECTURE:
+#   Host: swtpm (socket) <---> MicroVM (QEMU direct kernel boot)
+#                                └── NixOS Guest
+#                                    ├── /dev/tpm0 (virtio-tpm)
+#                                    ├── security.tpm2.enable = true
+#                                    └── systemd.services.verify-tpm
+#
+# RELATED FILES:
+#   - bin/test-deployment          - Full-stack test (Tier 3, Secure Boot + TPM)
+#   - bin/virtual-machine          - Libvirt VM management for Tier 3
+#   - tests/microvm/tpm-test.nix   - MicroVM guest configuration
+#   - tests/flake.nix              - Flake with microvm input
+#   - specs/001-keystone-os/spec.md - Functional requirements
+#   - specs/001-keystone-os/research.testing.md - Framework comparison
+#
+# USAGE:
+#   ./bin/test-microvm-tpm
+#   # Automatically enters nix develop shell if needed
+#
+# =============================================================================
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_ROOT=$(dirname "$SCRIPT_DIR")
+
+# Re-exec in nix develop if swtpm is not available
+if ! command -v swtpm &> /dev/null; then
+    echo "Entering nix develop shell..."
+    exec nix develop "$PROJECT_ROOT" --command "$0" "$@"
+fi
+
+TPM_DIR=$(mktemp -d)
+echo "Using TPM dir: $TPM_DIR"
+SWTPM_LOG="$PROJECT_ROOT/swtpm.log"
+MICROVM_LOG="$PROJECT_ROOT/microvm.log"
+
+MICROVM_RUNNER="$PROJECT_ROOT/microvm-tpm-test-runner"
+SWTPM_SOCK="$TPM_DIR/swtpm-sock"
+PROJECT_SWTPM_SOCK="$PROJECT_ROOT/swtpm-sock" # Symlink location
+
+cleanup() {
+  echo "Cleaning up..."
+  if [ -n "${SWTPM_PID:-}" ]; then
+    kill "$SWTPM_PID" || true
+  fi
+  rm -rf "$TPM_DIR"
+  rm -f "$PROJECT_SWTPM_SOCK"
+  rm -rf "$MICROVM_RUNNER" # Clean up the runner itself
+  echo "Logs available at: $SWTPM_LOG and $MICROVM_LOG"
+}
+trap cleanup EXIT
+
+echo "Starting swtpm (logging to $SWTPM_LOG)..."
+swtpm socket --tpmstate dir="$TPM_DIR" \
+  --ctrl type=unixio,path="$SWTPM_SOCK" \
+  --tpm2 \
+  --log level=20 > "$SWTPM_LOG" 2>&1 &
+SWTPM_PID=$!
+
+echo "Waiting for swtpm socket..."
+for i in {1..50}; do
+  if [ -S "$SWTPM_SOCK" ]; then
+    break
+  fi
+  sleep 0.1
+done
+
+if [ ! -S "$SWTPM_SOCK" ]; then
+  echo "Failed to start swtpm"
+  cat "$SWTPM_LOG"
+  exit 1
+fi
+
+ln -sf "$SWTPM_SOCK" "$PROJECT_SWTPM_SOCK"
+
+echo "Building MicroVM runner..."
+nix build "$PROJECT_ROOT/tests#nixosConfigurations.tpm-microvm.config.microvm.declaredRunner" -o "$MICROVM_RUNNER"
+
+echo "--- Running TPM Test (single boot loopback test) ---"
+# Run from project root so ./swtpm-sock path resolves correctly
+cd "$PROJECT_ROOT"
+if ! "$MICROVM_RUNNER/bin/microvm-run" > "$MICROVM_LOG" 2>&1; then
+  echo "MicroVM failed!"
+  cat "$MICROVM_LOG"
+  exit 1
+fi
+
+if ! grep -q -- "--- TPM Test: PASSED ---" "$MICROVM_LOG"; then
+  echo "TPM Test failed. Check logs."
+  echo "Last 20 lines of MicroVM log:"
+  tail -n 20 "$MICROVM_LOG"
+  exit 1
+fi
+
+echo "MicroVM TPM + Unlock Test PASSED!"

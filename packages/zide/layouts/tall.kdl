@@ -1,0 +1,32 @@
+layout {
+    tab {
+        floating_panes {
+            zide_rename
+        }
+        pane split_direction="horizontal" {
+            filepicker size=18 name="picker"
+            editor
+        }
+        compact_bar size=1
+    }
+
+    pane_template name="compact_bar" {
+        borderless true
+        plugin location="compact-bar"
+    }
+
+    pane_template name="filepicker" {
+        command "zide-pick"
+    }
+
+    pane_template name="editor" {
+        command "$EDITOR"
+    }
+
+    pane_template name="zide_rename" command="zide-rename" close_on_exit=true
+
+    new_tab_template {
+        pane
+        compact_bar size=1
+    }
+}

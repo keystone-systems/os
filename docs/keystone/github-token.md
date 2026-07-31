@@ -1,0 +1,1 @@
+../../templates/default/docs/keystone/github-token.md

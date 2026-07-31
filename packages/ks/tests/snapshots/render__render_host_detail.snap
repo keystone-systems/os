@@ -1,0 +1,20 @@
+---
+source: tests/render.rs
+expression: output
+---
+                      Host: workstation                     
+                                                            
+────────────────────────────────────────────────────────────
+                                                            
+  System:     x86_64-linux                                  
+                                                            
+  Modules:    operating-system                              
+              desktop                                       
+                                                            
+  Config:     ./configuration.nix                           
+              ./hardware.nix                                
+                                                            
+                                                            
+                                                            
+                                                            
+               b: build • Esc: back • q: quit

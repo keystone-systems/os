@@ -1,0 +1,1529 @@
+name: presentation
+summary: "Presentation workflows: end-to-end deck creation and Slidev slide deck generation"
+
+step_arguments:
+  # ── User parameter inputs ────────────────────────────────────────────
+  - name: topic
+    description: "What is the presentation about? Provide a title or short description."
+    type: string
+
+  - name: audience
+    description: "Who is the audience? (e.g., investors, engineering team, conference attendees)"
+    type: string
+
+  - name: duration_minutes
+    description: "Target presentation duration in minutes (used to calibrate slide count)"
+    type: string
+
+  - name: presentation_source
+    description: "Source of presentation content: a file path, a topic/goal string, or 'ask' to prompt interactively"
+    type: string
+
+  - name: output_dir
+    description: "Directory where the Slidev project will be created (default: ./slide-deck)"
+    type: string
+
+  # ── File outputs flowing between steps (presentation workflow) ───────
+  - name: presentation_requirements
+    description: "Structured requirements: topic, audience, key messages, tone, duration, desired slide count, and confirmed media preferences"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify at least 3 key messages are listed, media preferences are confirmed
+        (immich_search yes/no with search parameters if yes), slide count target is
+        calculated from duration, and tone is stated.
+
+  - name: presentation_media_manifest
+    description: "List of selected media assets with Immich asset ID, local download path, suggested slide placement, and caption hint"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read presentation_requirements to verify the media matches the stated topic,
+        audience, and any specified location/date/people filters. Each asset should
+        have a valid local path and suggested slide placement.
+
+  - name: presentation_outline
+    description: "Slide-by-slide outline with titles, key points, speaker notes, and media placement references"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read presentation_requirements to verify the outline covers all key messages,
+        matches the target audience and duration, follows a narrative arc, and every
+        media asset from the manifest appears on at least one slide.
+
+  - name: presentation_slides_path
+    description: "Path to the generated slides.md file (the Slidev entry point)"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read the slides.md at the referenced path. Verify valid Slidev frontmatter,
+        correct --- separators, all slides from the outline are present, appropriate
+        layouts are used, speaker notes are included, and TODO comments mark
+        unresolved media.
+
+  - name: presentation_review_report
+    description: "Review findings: issues per slide, narrative verdict, and list of edits applied"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read the revised slides.md to verify all identified issues have been fixed.
+        The report should address every slide by number, include actionable findings,
+        and provide an overall narrative verdict.
+
+  - name: presentation_slides_revised_path
+    description: "Path to the revised slides.md after applying review fixes"
+    type: file_path
+
+  - name: presentation_delivery_summary
+    description: "Delivery summary: notes repo path, git LFS tracked files, slide count, serve/export commands, and remaining TODO items"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the summary shows the exact notes-dir path, confirms git LFS tracking
+        for binary assets, includes a conventional-commit message, and lists serve/export
+        commands and all remaining TODO items.
+
+  # ── File outputs flowing between steps (slide_deck workflow) ─────────
+  - name: slide_content_plan
+    description: "Structured slide-by-slide content plan with titles, key points, speaker notes, and layout hints"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify slide count is proportional to target duration, slides follow a
+        coherent narrative arc, content matches the stated audience, every slide has
+        speaker notes, and no slide has more than 4 key points.
+
+  - name: slides_md_path
+    description: "Path to the generated slides.md file (Slidev entry point)"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read the slides.md at the referenced path. Verify valid Slidev frontmatter,
+        correct --- separators, all slides from the content plan are present,
+        appropriate layouts are used, and speaker notes are included.
+
+  - name: slide_review_report
+    description: "Review findings: issues per slide, overall narrative assessment, and recommended edits"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the report addresses every slide by number, includes actionable
+        findings with specific fixes applied, provides an overall narrative verdict,
+        and all issues are fixed in the revised slides.md.
+
+  - name: slides_revised_path
+    description: "Path to the revised slides.md after applying review fixes"
+    type: file_path
+
+  - name: slide_delivery_summary
+    description: "Delivery summary: deck location, slide count, serve/export commands, and remaining open items"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the summary confirms slidev build succeeded, shows the exact serve
+        command, confirms slide count matches the plan, and lists any remaining TODO
+        items.
+
+workflows:
+  presentation:
+    summary: "End-to-end presentation creation: requirements, Immich media search, outline, Slidev deck, speaker notes, and delivery to notes repo"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Presentation workflows for the human operator. These workflows handle
+      requirements gathering, media discovery, Slidev deck creation, review, and
+      delivery to the notes repo.
+
+      Tools available:
+      - Web search: Use WebSearch and WebFetch for research tasks when the source
+        material is incomplete
+      - Immich: Use environment-provided credentials to search and download media
+      - File management: Standard file tools for deck scaffolding and artifact
+        delivery
+      - Notes repo: Use the configured notes dir (`$NOTES_DIR`, `~/notes` for Keystone human users) as the destination for final presentation assets
+      - Slidev: Use the preinstalled `slidev` CLI to verify decks
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+      - Reference specific dates, times, and contacts where possible
+      - Keep slides brief; use speaker notes for the full narrative
+      - Preserve unresolved gaps as explicit `TODO` comments rather than silently
+        inventing missing media or facts
+      - Deliver final decks into `$NOTES_DIR/presentations/<slug>/`
+
+      Output audience: The human operator (CEO). Keep outputs concise and
+      decision-ready.
+    steps:
+      - name: presentation_gather_requirements
+        instructions: |
+          # Gather Presentation Requirements
+
+          ## Objective
+
+          Collect everything needed to plan a presentation end-to-end: topic, audience, key
+          messages, duration, tone, and Immich media preferences. This drives all downstream
+          steps.
+
+          ## Task
+
+          You were invoked with `topic`, `audience`, and `duration_minutes` as inputs. Use
+          these as a starting point, then ask structured questions to fill in the gaps before
+          writing the requirements document.
+
+          ### Process
+
+          1. **Confirm core inputs** — if any of the three inputs are missing, vague, or
+             contradictory, ask structured questions using the AskUserQuestion tool before
+             continuing.
+
+          2. **Ask structured questions** to gather:
+             - The 3–5 key messages the audience should remember
+             - The desired tone (formal/professional, casual/conversational, technical)
+             - Whether there is an opening hook (story, statistic, demo, bold claim)
+             - Whether to search Immich for relevant photos, screenshots, or videos, and if
+               so, what search parameters to use (topic keywords, locations, people, date range,
+               screenshot subject matter)
+
+          3. **Calculate target slide count** using: `target_slides = max(5, round(duration_minutes / 1.5))`.
+
+          4. **Write presentation_requirements.md** — see Output Format below.
+
+          ## Output Format
+
+          ### presentation_requirements.md
+
+          A structured requirements document covering all inputs needed by downstream steps.
+
+          **Structure**:
+
+          ```markdown
+          # Presentation requirements
+
+          ## Core details
+          - **Topic**: Keystone infrastructure overview
+          - **Audience**: Engineering new-hires
+          - **Duration**: 20 minutes → target ~13 slides
+          - **Tone**: Technical, conversational
+
+          ## Key messages
+          1. Keystone is a fully declarative NixOS platform — you never configure a server by hand.
+          2. Secrets are encrypted at rest with agenix and unlocked at boot via TPM/hardware key.
+          3. The dev workflow is: edit → `ks build` to verify → `ks update` to deploy.
+
+          ## Opening hook
+          "Show a diff where one line of Nix adds a full service to the fleet — no SSH, no
+          Ansible, no manual steps."
+
+          ## Media preferences
+          - **Search Immich**: yes
+          - **Search parameters**: screenshots of the terminal, photos of the server rack,
+            OCR search for "ks build" in screenshots, date range 2025-2026
+          ```
+
+          ## Quality Criteria
+
+          - At least 3 key messages are captured and specific (not "explain what Keystone is")
+          - Media preferences are confirmed: `immich_search` is explicitly `yes` or `no`; if
+            yes, search parameters are concrete enough to drive the presentation_search_media step
+          - Target slide count is calculated and present in the document
+          - Tone is stated as one of: formal/professional, casual/conversational, or technical
+
+          ## Context
+
+          This is the first step of the `presentation` workflow. Its output feeds directly into
+          `presentation_search_media` (to scope the Immich query) and `presentation_outline` (to structure the
+          narrative). Getting the key messages right here prevents back-and-forth in later steps.
+        inputs:
+          topic: {required: true}
+          audience: {required: true}
+          duration_minutes: {required: true}
+        outputs:
+          presentation_requirements: {required: true}
+
+      - name: presentation_search_media
+        instructions: |
+          # Search Media in Immich
+
+          ## Objective
+
+          Query the Immich photo library to find photos, videos, and OCR-indexed screenshots
+          that are relevant to the presentation. Produce a media manifest so downstream steps
+          can embed or reference the assets.
+
+          ## Task
+
+          Read `presentation_requirements.md`. If `immich_search` is `no`, write a minimal manifest
+          and finish. If `yes`, query the Immich API using the search parameters from the
+          requirements, download the selected assets, and document them in the manifest.
+
+          ### Process
+
+          1. **Check media preference** — read `presentation_requirements.md`. If `immich_search: no`,
+             write the no-media manifest (see Output Format) and call `finished_step`.
+
+          2. **Discover Immich credentials**:
+
+             ```bash
+             env | grep -i immich
+             ```
+
+             Look for `IMMICH_URL` (typically `http://localhost:2283`) and `IMMICH_API_KEY`.
+             If missing, check `~/.config/immich/` or ask the user.
+
+          3. **Run smart search** using the topic keywords from requirements:
+
+             ```bash
+             curl -s -X POST "${IMMICH_URL}/api/search/smart" \
+               -H "x-api-key: ${IMMICH_API_KEY}" \
+               -H "Content-Type: application/json" \
+               -d '{"query": "<topic keywords>", "type": "IMAGE", "size": 20}' \
+               | jq '.assets.items[] | {id, originalFileName, description: .exifInfo.description}'
+             ```
+
+             For location-based searches, add `city` or `country` to the JSON body.
+             For people, first resolve person IDs via `/api/people` then add `personIds`.
+
+          4. **Select the most relevant assets** — choose images/screenshots that visually
+             support the key messages from requirements. Prefer high-resolution assets.
+
+          5. **Download selected assets** into the dataroom:
+
+             ```bash
+             mkdir -p presentations/<slug>/_dataroom/media
+             curl -s "${IMMICH_URL}/api/assets/${ASSET_ID}/original" \
+               -H "x-api-key: ${IMMICH_API_KEY}" \
+               --output "presentations/<slug>/_dataroom/media/<filename>"
+             ```
+
+             Where `<slug>` is the kebab-case presentation topic (e.g.,
+             `keystone-infrastructure-overview`).
+
+          6. **Write presentation_media_manifest.md** — see Output Format below.
+
+          ## Output Format
+
+          ### presentation_media_manifest.md
+
+          **When no media search was requested**:
+
+          ```markdown
+          # Media manifest
+
+          _No media search requested. All image slots will be TODO placeholders._
+          ```
+
+          **When media was found**:
+
+          ```markdown
+          # Media manifest
+
+          | # | Asset ID | Local path | Type | Caption hint | Suggested slide |
+          |---|----------|------------|------|--------------|-----------------|
+          | 1 | a1b2c3 | presentations/keystone-overview/_dataroom/media/a1b2c3_rack.jpg | photo | Server rack in the data center | Slide 2: Infrastructure |
+          | 2 | d4e5f6 | presentations/keystone-overview/_dataroom/media/d4e5f6_terminal.png | screenshot | `ks build` terminal output | Slide 8: Dev workflow |
+
+          ## Assets not downloaded (TODO)
+          - [ ] Slide 5: need a photo of a YubiKey — not found in Immich search; add manually
+          ```
+
+          ## Quality Criteria
+
+          - Each listed asset has a valid local path under `presentations/<slug>/_dataroom/media/`
+          - Each asset has a suggested slide that matches a key message from requirements
+          - Slots that could not be filled are listed explicitly as TODO items with a
+            human-readable description of what is needed
+          - The manifest is complete even if all slots are TODOs (no silent omissions)
+
+          ## Context
+
+          This step runs after `presentation_gather_requirements` and before `presentation_outline`. The
+          manifest is used by `presentation_outline` to assign media to specific slides and by
+          `presentation_build_deck` to embed the correct file paths. Assets downloaded here are
+          later committed to the notes repo with git LFS in `presentation_deliver`.
+        inputs:
+          presentation_requirements: {required: true}
+        outputs:
+          presentation_media_manifest: {required: true}
+
+      - name: presentation_outline
+        instructions: |
+          # Create Presentation Outline
+
+          ## Objective
+
+          Build a complete slide-by-slide outline that weaves together the key messages,
+          narrative arc, speaker notes, and media placements into a coherent plan before
+          any Slidev code is written.
+
+          ## Task
+
+          Read `presentation_requirements.md` and `presentation_media_manifest.md`, then compose the
+          outline. Assign each media asset to the slide where it has the most impact.
+          Insert TODO placeholders for any unfilled media slots.
+
+          ### Process
+
+          1. **Design the narrative arc**:
+             - **Opening** (1–2 slides): Hook, agenda, why this matters to the audience
+             - **Body** (bulk): One section per key message, each with supporting evidence
+             - **Closing** (1–2 slides): Summary, call-to-action, Q&A prompt
+
+          2. **Assign media** — for each asset in `presentation_media_manifest.md`, place it on the
+             slide matching the `Suggested slide` column. If no slide matches, create one or
+             adjust the placement. Unresolved slots get `<!-- TODO: add image of <X> -->`.
+
+          3. **Write one section per slide** — see Output Format below.
+
+          4. **Validate slide count** — ensure total slides are within ±2 of the target from
+             `presentation_requirements.md`. If outside that range, add or remove slides and note
+             the adjustment.
+
+          ## Output Format
+
+          ### presentation_outline.md
+
+          ```markdown
+          # Presentation outline: Keystone infrastructure overview
+
+          **Total slides**: 13  **Target**: 13  **Duration**: 20 min
+
+          ---
+
+          ## Slide 1 — Keystone: your infrastructure, fully declared
+          **Layout**: cover
+          **Key points**:
+          - (subtitle) One diff to rule them all
+          **Speaker notes**: Open with the diff demo — show a single line of Nix that adds
+            a full service. Let the audience absorb the implications before saying anything.
+          **Media**: none
+
+          ---
+
+          ## Slide 2 — What Keystone manages
+          **Layout**: two-cols
+          **Key points**:
+          - Left: OS, secrets, users, services
+          - Right: dev tooling, agents, monitoring
+          **Speaker notes**: Keep this overview fast — 60 seconds. The goal is to set scope,
+            not explain every module.
+          **Media**: none
+
+          ---
+
+          ## Slide 3 — The server rack
+          **Layout**: image-right
+          **Key points**:
+          - Hardware is commodity; config is code
+          **Speaker notes**: Point out that none of these machines have been SSHed into
+            manually since Keystone was adopted.
+          **Media**: ![Server rack](presentations/keystone-overview/_dataroom/media/a1b2c3_rack.jpg)
+
+          ---
+
+          ## Slide 5 — Hardware key unlock
+          **Layout**: default
+          **Key points**:
+          - Secrets are released by TPM + YubiKey at boot
+          **Speaker notes**: Emphasize: even with physical access to the disk, an attacker
+            cannot read the secrets without the key.
+          **Media**: <!-- TODO: add photo of YubiKey — not found in Immich search -->
+          ```
+
+          ## Quality Criteria
+
+          - The outline follows a coherent narrative arc: opening hook → body sections →
+            closing call-to-action
+          - Every slide has speaker notes explaining what to say (not just what's on the slide)
+          - Every media asset from the manifest appears on at least one slide
+          - Unresolved media slots are marked with a TODO comment containing a concrete
+            description of what is needed
+          - Total slide count is within ±2 of the target in presentation_requirements.md
+
+          ## Context
+
+          This step is the planning gate before `presentation_build_deck`. A solid outline prevents
+          the deck-building step from having to make structural decisions. Reviewers will check
+          that the narrative arc is clear, so invest time here rather than in the Slidev syntax.
+        inputs:
+          presentation_requirements: {required: true}
+          presentation_media_manifest: {required: true}
+        outputs:
+          presentation_outline: {required: true}
+
+      - name: presentation_build_deck
+        instructions: |
+          # Build Slidev Deck
+
+          ## Objective
+
+          Convert the approved outline into a working Slidev markdown presentation. Embed
+          media, speaker notes, and TODO comments. Save the deck to the notes repo.
+
+          ## Task
+
+          Read `presentation_outline.md` and `presentation_media_manifest.md`, then generate a complete
+          `slides.md` in Slidev format. Write the file to the configured notes dir `presentations/<slug>/`
+          using `NOTES_DIR="${NOTES_DIR:-$HOME/notes}"`.
+
+          ### Process
+
+          1. **Determine the output path**:
+             - Derive `<slug>` from the topic in `presentation_requirements.md`: lowercase, kebab-case,
+               max 40 chars (e.g., `keystone-infrastructure-overview`).
+             - If `$NOTES_DIR/presentations/<slug>/` already exists, append `-2`.
+             - Create the directory: `mkdir -p "$NOTES_DIR/presentations/<slug>"`.
+
+          2. **Write the Slidev frontmatter header** at the top of `slides.md`:
+
+             ```yaml
+             ---
+             theme: default
+             title: <Presentation title>
+             info: |
+               <One-line description>
+             class: text-center
+             highlighter: shiki
+             drawings:
+               persist: false
+             transition: slide-left
+             ---
+             ```
+
+          3. **Write each slide** from `presentation_outline.md`, separated by `---`.
+
+             **Layout options**:
+             - `cover` — title slide
+             - `default` — standard text slide
+             - `center` — centered content
+             - `two-cols` — use `::left::` / `::right::` markers
+             - `image-right` / `image-left` — image beside text
+
+             **Speaker notes** — add after a `<!--` comment block:
+
+             ```markdown
+             ---
+             layout: default
+             ---
+
+             # Slide title
+
+             - Bullet
+
+             <!-- Speaker note text goes here -->
+             ```
+
+             **Media** — use `<img>` for layout control:
+
+             ```markdown
+             <img src="./_dataroom/media/abc123_rack.jpg" class="h-60 rounded shadow" />
+             ```
+
+             **TODO placeholders**:
+
+             ```markdown
+             <!-- TODO: replace with screenshot of ks build output -->
+             ```
+
+          4. **Copy media assets** to sit next to `slides.md`:
+
+             ```bash
+             NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+             cp -r presentations/<slug>/_dataroom "$NOTES_DIR/presentations/<slug>/_dataroom"
+             ```
+
+             Skip if already in the configured notes dir.
+
+          5. **Write `presentation_slides_path.txt`** — the absolute path to the slides.md file:
+
+             ```
+             <notes-dir>/presentations/keystone-infrastructure-overview/slides.md
+             ```
+
+          ## Output Format
+
+          ### presentation_slides_path.txt
+
+          A single line containing the absolute path to slides.md. No trailing newline.
+
+          **Example**:
+          ```
+          <notes-dir>/presentations/keystone-infrastructure-overview/slides.md
+          ```
+
+          ### slides.md (referenced by the path above)
+
+          ```markdown
+          ---
+          theme: default
+          title: Keystone infrastructure overview
+          info: |
+            How Keystone turns hardware into a fully declared, encrypted fleet.
+          class: text-center
+          highlighter: shiki
+          drawings:
+            persist: false
+          transition: slide-left
+          ---
+
+          # Keystone: your infrastructure, fully declared
+
+          *One diff to rule them all*
+
+          ---
+          layout: two-cols
+          ---
+
+          ## What Keystone manages
+
+          ::left::
+          - OS, secrets, users, services
+
+          ::right::
+          - Dev tooling, agents, monitoring
+
+          <!-- Keep this fast — 60 seconds. Goal is scope, not deep explanation. -->
+
+          ---
+          layout: image-right
+          image: ./_dataroom/media/a1b2c3_rack.jpg
+          ---
+
+          ## Hardware is commodity; config is code
+
+          - No SSH, no manual config, no Ansible
+          - One `git push` deploys to the fleet
+
+          <!-- Point out that none of these machines have been SSHed into manually. -->
+
+          ---
+          layout: default
+          ---
+
+          ## Hardware key unlock
+
+          - Secrets released by TPM + YubiKey at boot
+          - Physical disk access alone cannot expose secrets
+
+          <!-- TODO: replace with photo of YubiKey — not found in Immich search -->
+
+          <!-- Emphasize: attacker with disk access is still locked out without the key. -->
+          ```
+
+          ## Quality Criteria
+
+          - The file uses correct Slidev frontmatter and `---` slide separators with no
+            syntax errors
+          - Every slide from `presentation_outline.md` is represented in the deck
+          - Slides use appropriate Slidev layouts rather than bare `default` throughout
+          - Every slide has a `<!-- speaker note -->` block with presenter guidance
+          - Slides with unresolved media have `<!-- TODO: ... -->` comments so the human
+            knows what to fill in before presenting
+
+          ## Context
+
+          This step converts the plan into code. Keep slides brief — one idea per slide,
+          short bullets. The speaker notes carry the explanation, not the slide content.
+          The resulting deck goes into the configured notes dir and will be committed with
+          git LFS in `presentation_deliver`.
+        inputs:
+          presentation_outline: {required: true}
+          presentation_media_manifest: {required: true}
+        outputs:
+          presentation_slides_path: {required: true}
+
+      - name: presentation_review_deck
+        instructions: |
+          # Review Presentation Deck
+
+          ## Objective
+
+          Run a structured review of the Slidev deck against the intended outline. Apply
+          all fixable issues. Produce a review report and the path to the revised slides.
+
+          ## Task
+
+          Read `presentation_outline.md` to understand intended content, then read the slides.md
+          at the path in `presentation_slides_path.txt`. Review every slide, apply fixes, and
+          document findings.
+
+          ### Process
+
+          1. **Read the deck** — open the slides.md at the path recorded in
+             `presentation_slides_path.txt`.
+
+          2. **Per-slide review** — for each slide, check every item in this table:
+
+             | Check | Pass criteria |
+             |-------|--------------|
+             | Title clarity | Specific and informative (not "Introduction" or "Overview") |
+             | Bullet brevity | Short phrases, not full sentences or paragraphs |
+             | Speaker notes | Tells the presenter what to say, not just what's on the slide |
+             | Media relevance | Image/video is directly relevant and renders at a visible size |
+             | TODO resolution | TODO comments are either resolved or explicitly left for human |
+             | Narrative flow | Content flows logically from the previous slide |
+             | Slidev syntax | No broken frontmatter, unclosed tags, or missing `---` separators |
+
+          3. **Narrative assessment** — after reviewing all slides:
+             - Does the deck open with a compelling hook?
+             - Does each section build toward the closing?
+             - Is the call-to-action or closing message clear?
+
+          4. **Apply fixes** — correct everything you can without human input:
+             - Tighten long bullets to phrases
+             - Improve vague speaker notes
+             - Fix Slidev syntax errors
+             - Adjust layout choices if clearly wrong
+             - Do NOT resolve `<!-- TODO: ... -->` media placeholders — leave those for the human
+
+          5. **Save the revised deck** to the same path.
+
+          6. **Write `presentation_review_report.md`** and **`presentation_slides_revised_path.txt`** — see
+             Output Format below.
+
+          ## Output Format
+
+          ### presentation_review_report.md
+
+          ```markdown
+          # Deck review report: Keystone infrastructure overview
+
+          ## Overall narrative verdict
+          The deck tells a coherent story from the infrastructure problem to the Keystone
+          solution. The closing slide is strong. One section (slides 8–10) runs long and
+          could be tightened in a future iteration.
+
+          ## Per-slide findings
+
+          ### Slide 1
+          - ✅ Hook is compelling; no changes
+
+          ### Slide 3
+          - ⚠️ Bullet was a full sentence — trimmed to "No SSH, no manual config"
+          - ✅ Speaker notes updated to be more specific
+
+          ### Slide 5
+          - 🔲 TODO left for human: media placeholder for YubiKey photo
+
+          ### Slide 8
+          - ⚠️ Layout was `default` — changed to `two-cols` to balance content
+          - ✅ Speaker notes were missing — added based on key message
+
+          ## Fixes applied
+          - Slide 3: trimmed bullet, updated speaker notes
+          - Slide 8: changed layout to two-cols, added speaker notes
+
+          ## Remaining open items (for human)
+          - Slide 5: `<!-- TODO: replace with photo of YubiKey -->`
+          - Slide 11: `<!-- TODO: add chart from Q1 dashboard -->`
+          ```
+
+          ### presentation_slides_revised_path.txt
+
+          Absolute path to the revised slides.md. If no changes were made, this equals
+          the path from `presentation_slides_path.txt`.
+
+          ```
+          /home/ncrmro/notes/presentations/keystone-infrastructure-overview/slides.md
+          ```
+
+          ## Quality Criteria
+
+          - The report addresses every slide by number, even if just "no issues"
+          - Each issue entry includes the slide number, the problem, and the specific fix applied
+          - The report includes an overall narrative verdict (2–3 sentences on story arc)
+          - All identified issues are fixed in the revised slides.md before this step completes
+          - TODO comments (for human-only items like missing media) are listed in "Remaining
+            open items" so the human has a complete checklist
+
+          ## Context
+
+          This step is the final quality gate before delivery. The goal is a presentation the
+          human can step in front of immediately, with a clear list of the few items that still
+          need their personal attention (media, data, or decisions that require human judgment).
+        inputs:
+          presentation_outline: {required: true}
+          presentation_slides_path: {required: true}
+        outputs:
+          presentation_review_report: {required: true}
+          presentation_slides_revised_path: {required: true}
+
+      - name: presentation_deliver
+        instructions: |
+          # Deliver Presentation to Notes Repo
+
+          ## Objective
+
+          Ensure the final Slidev deck and all media assets are committed to the notes repo
+          with git LFS tracking for binaries. Produce a delivery summary the human can use
+          to preview, export, and finish any remaining TODO items.
+
+          ## Task
+
+          Read `presentation_requirements.md` (for the slug and title) and `presentation_slides_revised_path.txt`
+          (for the deck location). Configure git LFS, stage files, commit, and write the
+          delivery summary.
+
+          ### Process
+
+          1. **Confirm the notes repo**:
+
+             ```bash
+             NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+             git -C "$NOTES_DIR" status
+             ```
+
+             If not a git repo or the path doesn't exist, stop and alert the user.
+
+          2. **Configure git LFS** (idempotent — safe to re-run):
+
+             ```bash
+             NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+             git -C "$NOTES_DIR" lfs install
+             git -C "$NOTES_DIR" lfs track \
+               "presentations/**/*.jpg" "presentations/**/*.jpeg" \
+               "presentations/**/*.png" "presentations/**/*.gif" \
+               "presentations/**/*.webp" "presentations/**/*.mp4" \
+               "presentations/**/*.mov" "presentations/**/*.pdf"
+             git -C "$NOTES_DIR" add "$NOTES_DIR/.gitattributes"
+             ```
+
+          3. **Stage the presentation directory**:
+
+             ```bash
+             NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+             git -C "$NOTES_DIR" add presentations/<slug>/
+             ```
+
+          4. **Verify LFS objects** — run `git -C "$NOTES_DIR" lfs status` and confirm binary
+             assets show up as LFS objects (not plain files). If not, re-run the `lfs track`
+             commands and re-stage.
+
+          5. **Commit** using a conventional commit message:
+
+             ```bash
+             NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+             git -C "$NOTES_DIR" commit -m "docs(presentations): add <slug> presentation"
+             ```
+
+          6. **Write `presentation_delivery_summary.md`** — see Output Format below.
+
+          ## Output Format
+
+          ### presentation_delivery_summary.md
+
+          ```markdown
+          # Delivery summary: Keystone infrastructure overview
+
+          ## Location
+          `<notes-dir>/presentations/keystone-infrastructure-overview/slides.md`
+
+          ## Git LFS assets
+          | File | Tracked as LFS |
+          |------|----------------|
+          | presentations/keystone-infrastructure-overview/_dataroom/media/a1b2c3_rack.jpg | ✅ yes |
+          | presentations/keystone-infrastructure-overview/_dataroom/media/d4e5f6_terminal.png | ✅ yes |
+
+          ## Commit
+          `docs(presentations): add keystone-infrastructure-overview presentation`
+          **Status**: committed ✅
+
+          ## Preview
+          ```bash
+          cd <notes-dir>/presentations/keystone-infrastructure-overview
+          slidev
+          ```
+          Open: http://localhost:3030
+
+          ## Export to PDF
+          ```bash
+          cd <notes-dir>/presentations/keystone-infrastructure-overview
+          slidev export --format pdf
+          ```
+
+          ## Open TODO items (review before presenting)
+          - [ ] Slide 5: `<!-- TODO: add photo of YubiKey — not found in Immich search -->`
+          - [ ] Slide 11: `<!-- TODO: add Q1 dashboard chart -->`
+          ```
+
+          ## Quality Criteria
+
+          - The summary shows the exact configured notes-dir `presentations/<slug>/` path where the deck
+            was saved
+          - All binary assets (images, videos) are confirmed as git LFS tracked objects
+          - A git commit was made with a conventional-commit message, and the summary confirms
+            the commit status
+          - The summary includes the exact commands to preview with Slidev and export to PDF
+          - All remaining `<!-- TODO: ... -->` comments from the deck are listed so the human
+            has a complete checklist before presenting
+
+          ## Context
+
+          This is the final step of the `presentation` workflow. After this step, the deck
+          lives in the notes repo (tracked by git with LFS for binary assets) and the human
+          has everything they need to preview, iterate, and present. The TODO checklist is
+          the handoff from agent to human — keep it complete and specific.
+        inputs:
+          presentation_requirements: {required: true}
+          presentation_slides_revised_path: {required: true}
+        outputs:
+          presentation_delivery_summary: {required: true}
+
+  slide_deck:
+    summary: "Build and review a Slidev presentation deck from outline or presentation content"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Presentation workflows for the human operator. These workflows handle
+      requirements gathering, media discovery, Slidev deck creation, review, and
+      delivery to the notes repo.
+
+      Tools available:
+      - Web search: Use WebSearch and WebFetch for research tasks when the source
+        material is incomplete
+      - File management: Standard file tools for deck scaffolding and artifact
+        delivery
+      - Slidev: Use the preinstalled `slidev` CLI to verify decks
+
+      Conventions:
+      - Always act on behalf of the human operator (see TEAM.md for identity)
+      - Use plain, professional language in all written outputs
+      - Include actionable next steps in every deliverable
+      - Keep slides brief; use speaker notes for the full narrative
+      - Preserve unresolved gaps as explicit `TODO` comments rather than silently
+        inventing content
+
+      Output audience: The human operator (CEO). Keep outputs concise and
+      decision-ready.
+    steps:
+      - name: slide_gather_content
+        instructions: |
+          # Gather Presentation Content
+
+          ## Objective
+
+          Collect, structure, and validate the source material for a Slidev slide deck. Produce a
+          slide-by-slide content plan that the build step can convert directly into Slidev markdown.
+
+          ## Task
+
+          Determine the presentation's purpose, audience, and constraints, then organize the raw
+          content into a numbered slide plan with titles, key points, and speaker notes.
+
+          ### Process
+
+          1. **Determine the content source**
+
+             Inspect the `presentation_source` input:
+
+             - **File path** — read the file (e.g., `presentation_outline.md` from the
+               `presentation` workflow). Extract sections as slides.
+             - **Topic/goal string** — treat it as the presentation brief. Research the topic using
+               available tools (web search, notes repos, project files) to build the content.
+             - **`ask`** — prompt the operator for the presentation topic, goal, and key points
+               interactively before proceeding.
+
+          2. **Establish presentation parameters**
+
+             Record the following from the inputs (use sensible defaults when not provided):
+
+             | Parameter          | Default                     |
+             | ------------------ | --------------------------- |
+             | Audience           | General professional        |
+             | Duration (minutes) | 20                          |
+             | Slide count target | `ceil(duration / 1.5)`      |
+             | Output directory   | `./slide-deck`              |
+
+          3. **Structure the narrative arc**
+
+             Every deck MUST follow this arc:
+
+             - **Opening** (1–2 slides): hook, title, who is speaking and why this matters
+             - **Context** (1–3 slides): problem statement or background — why now?
+             - **Body** (bulk of slides): main argument, evidence, examples, data
+             - **Close** (1–2 slides): summary, call-to-action or next steps, contact/links
+
+          4. **Plan each slide**
+
+             For every slide in the plan, specify:
+
+             - `slide_number`: integer starting at 1
+             - `title`: short, punchy title (≤ 8 words)
+             - `layout`: recommended Slidev layout (`cover`, `intro`, `default`, `center`,
+               `two-cols`, `image-right`, `image-left`, `fact`, `quote`, `section`, `end`)
+             - `key_points`: bullet list of 2–4 points to appear on the slide
+             - `visual_hint`: description of any image, diagram, or code block to include
+               (use `none` if the slide is text-only)
+             - `speaker_notes`: 2–5 sentences the presenter should say while on this slide
+
+          5. **Validate calibration**
+
+             - Total slide count MUST be between `floor(duration / 2)` and `ceil(duration / 1)`.
+             - No more than 4 bullet points per slide.
+             - Opening and closing slides MUST be present.
+
+          ## Output Format
+
+          ### slide_content_plan.md
+
+          ```markdown
+          # Slide Content Plan
+
+          ## Presentation Parameters
+
+          - **Title**: [presentation title]
+          - **Audience**: [audience description]
+          - **Duration**: [N] minutes
+          - **Target slide count**: [N]
+          - **Output directory**: [path]
+          - **Source**: [file path or brief description of source]
+
+          ## Narrative Arc
+
+          [2–3 sentence summary of the story the deck tells]
+
+          ## Slides
+
+          ### Slide 1 — [title]
+
+          - **Layout**: cover
+          - **Key points**:
+            - [point]
+          - **Visual hint**: [description or "none"]
+          - **Speaker notes**: [notes]
+
+          ### Slide 2 — [title]
+
+          ...
+          ```
+
+          ## Quality Criteria
+
+          - The number of slides is proportional to the target duration (roughly 1–2 minutes per slide).
+          - Slides follow a coherent story: opening hook, body, and closing call-to-action or summary.
+          - Content depth and vocabulary match the stated audience.
+          - Every slide has speaker notes summarizing what to say.
+          - No slide has more than 4 key points.
+          - A layout is specified for every slide.
+
+          ## Context
+
+          This is the planning step for the slide_deck workflow. The output is consumed by
+          `slide_build_deck`, which translates the plan directly into Slidev markdown. Invest time
+          here to produce a complete, well-structured plan — it is much cheaper to fix the outline
+          than to rewrite rendered slides.
+
+          If the `presentation` workflow has already run, its output file
+          (typically `presentation_outline.md` or `presentation_script.md`) should be passed as
+          `presentation_source`. The workflow is designed so this step can ingest that output
+          without additional research.
+        inputs:
+          presentation_source: {required: true}
+          audience: {required: true}
+          duration_minutes: {required: true}
+          output_dir: {required: false}
+        outputs:
+          slide_content_plan: {required: true}
+
+      - name: slide_build_deck
+        instructions: |
+          # Build Slidev Deck
+
+          ## Objective
+
+          Translate the slide content plan into a complete, runnable Slidev presentation. Scaffold
+          the project directory, write `slides.md`, and verify the file is syntactically valid.
+
+          ## Task
+
+          Create the Slidev project on disk and populate it with every slide from the plan.
+
+          ### Process
+
+          1. **Prepare the output directory**
+
+             Read `slides_md_path.txt` output target path from the previous step inputs, or derive
+             from the `output_dir` parameter supplied at workflow start (default: `./slide-deck`).
+
+             ```bash
+             mkdir -p <output_dir>
+             ```
+
+             Do NOT run `slidev init` — write `slides.md` directly to avoid interactive prompts.
+
+          2. **Write the global frontmatter**
+
+             The first block of `slides.md` is the global Slidev configuration:
+
+             ```markdown
+             ---
+             theme: default
+             title: "<presentation title>"
+             info: |
+               <one-line description>
+             class: text-center
+             highlighter: shiki
+             drawings:
+               persist: false
+             transition: slide-left
+             mdc: true
+             ---
+             ```
+
+             Adjust `theme` and `transition` based on the audience:
+             - Formal/investor: `theme: seriph`, `transition: fade`
+             - Technical/engineering: `theme: default`, `transition: slide-left`
+             - Creative/marketing: `theme: apple-basic`, `transition: slide-up`
+
+          3. **Write each slide**
+
+             Separate slides with `---`. For each slide in the content plan:
+
+             - Add a per-slide frontmatter block with `layout:` and optional `class:` overrides.
+             - Render `key_points` as a Markdown bullet list (`- item`).
+             - For `two-cols` layout, split points across `::left::` and `::right::` dividers.
+             - For `image-right` / `image-left`, add a placeholder image comment if no asset exists:
+               ```markdown
+               <!-- TODO: replace with actual image -->
+               ![placeholder](https://placehold.co/600x400)
+               ```
+             - For `fact` or `quote` layouts, use the largest key point as the featured text.
+             - Add speaker notes as an HTML comment block at the end of each slide:
+               ```markdown
+               <!--
+               Speaker notes go here.
+               -->
+               ```
+
+          4. **Cover slide convention**
+
+             The first slide MUST use `layout: cover` and include:
+
+             ```markdown
+             ---
+             layout: cover
+             background: https://cover.sli.dev
+             ---
+
+             # <Title>
+
+             <Subtitle or speaker name>
+
+             <div class="pt-12">
+               <span @click="$slidev.nav.next" class="px-2 py-1 rounded cursor-pointer" hover="bg-white bg-opacity-10">
+                 Press Space to continue <carbon:arrow-right class="inline"/>
+               </span>
+             </div>
+             ```
+
+          5. **Section dividers**
+
+             Use `layout: section` slides to separate major sections of the deck (context, body, close).
+
+          6. **Write the path file**
+
+             After writing `slides.md`, record its absolute path:
+
+             ```bash
+             echo "<absolute_path_to_slides.md>" > slides_md_path.txt
+             ```
+
+          7. **Syntax check**
+
+             Verify the file contains the expected number of `---` separators:
+
+             ```bash
+             grep -c "^---$" <slides.md path>
+             # Expected: (slide_count * 2) - 1  (each slide opens and closes with ---)
+             ```
+
+             If the count is wrong, re-read the file and fix the structure before completing this step.
+
+          ## Output Format
+
+          ### slides_md_path.txt
+
+          A single line containing the absolute path to the generated `slides.md` file:
+
+          ```
+          /home/ncrmro/.keystone/repos/.../<output_dir>/slides.md
+          ```
+
+          ### slides.md (the deck itself)
+
+          Complete Slidev presentation. Example structure for a 5-slide deck:
+
+          ```markdown
+          ---
+          theme: default
+          title: "My Presentation"
+          ...
+          ---
+
+          # My Presentation
+
+          Subtitle
+
+          <!--
+          Speaker notes for slide 1.
+          -->
+
+          ---
+          layout: default
+          ---
+
+          ## Slide 2 Title
+
+          - Point one
+          - Point two
+          - Point three
+
+          <!--
+          Speaker notes for slide 2.
+          -->
+
+          ---
+          layout: two-cols
+          ---
+
+          ## Slide 3 Title
+
+          ::left::
+          - Left column point one
+          - Left column point two
+
+          ::right::
+          - Right column point one
+          - Right column point two
+
+          <!--
+          Speaker notes for slide 3.
+          -->
+          ```
+
+          ## Quality Criteria
+
+          - The file uses correct Slidev frontmatter and `---` slide separators with no syntax errors.
+          - Every slide from `slide_content_plan.md` is present in the deck.
+          - Slides use appropriate Slidev layouts rather than blank `default` throughout.
+          - Each slide has a speaker notes comment block.
+          - The `slides_md_path.txt` file contains a valid, accessible file path.
+
+          ## Context
+
+          Slidev is available on this host at the system path. The deck is served with:
+
+          ```bash
+          slidev <slides.md path>
+          ```
+
+          And exported with:
+
+          ```bash
+          slidev export <slides.md path>
+          ```
+
+          Do not install Slidev or run `npm install` — it is pre-installed system-wide via the
+          Keystone NixOS package (`pkgs.keystone.slidev`). If `slidev` is not on `$PATH`, it is
+          available at `/etc/profiles/per-user/ncrmro/bin/slidev`.
+        inputs:
+          slide_content_plan: {required: true}
+        outputs:
+          slides_md_path: {required: true}
+
+      - name: slide_review_deck
+        instructions: |
+          # Review Deck
+
+          ## Objective
+
+          Perform a structured editorial and technical review of the Slidev deck. Identify and fix
+          all content, structure, and presenter-readiness issues before delivery.
+
+          ## Task
+
+          Read the generated `slides.md`, audit it against the content plan, apply fixes, and
+          produce a review report that documents every finding and the resolution taken.
+
+          ### Process
+
+          1. **Load inputs**
+
+             - Read `slide_content_plan.md` for the intended content and structure.
+             - Read the path from `slides_md_path.txt`, then read the `slides.md` file at that path.
+
+          2. **Count and index slides**
+
+             Parse the slide separators (`---`) to establish a slide index. Confirm the count
+             matches `slide_content_plan.md`. Log any discrepancy.
+
+          3. **Run the editorial checklist per slide**
+
+             For every slide, check:
+
+             | Check                   | Pass criteria                                                  |
+             | ----------------------- | -------------------------------------------------------------- |
+             | **Title present**       | Slide has a `#` or `##` heading                                |
+             | **Bullet count**        | ≤ 4 bullets; no bullets longer than 12 words                   |
+             | **Speaker notes**       | `<!-- ... -->` block is present and has ≥ 2 sentences          |
+             | **Layout correct**      | Per-slide layout matches the plan; no unnecessary `default`    |
+             | **Placeholder images**  | TODO image comments are flagged as open items                  |
+             | **No walls of text**    | No paragraph longer than 3 sentences on a single slide         |
+
+          4. **Run the narrative checklist**
+
+             Review the deck as a whole:
+
+             - Does the opening slide immediately communicate the topic and value?
+             - Is there a logical flow from context → body → close?
+             - Is the closing slide action-oriented (call-to-action, next steps, or contact)?
+             - Are there section-divider slides between major topic shifts?
+             - Is the tone consistent with the target audience?
+
+          5. **Apply fixes**
+
+             For every issue found, apply the fix directly to `slides.md` in place. Do not
+             produce a separate corrected file — edit the file at the path from `slides_md_path.txt`.
+
+             Common fixes:
+             - Split overlong bullets into two shorter bullets.
+             - Add missing speaker notes.
+             - Replace wrong layout with the correct Slidev layout name.
+             - Reorder slides to restore narrative flow.
+             - Add a closing call-to-action slide if none is present.
+
+          6. **Write review report**
+
+             Document findings and fixes in `slide_review_report.md`.
+
+          7. **Record revised path**
+
+             After all edits, write the (potentially unchanged) path to `slides_revised_path.txt`:
+
+             ```bash
+             echo "<absolute_path_to_revised_slides.md>" > slides_revised_path.txt
+             ```
+
+             This MUST be the same absolute path as in `slides_md_path.txt` (edits are in-place).
+
+          ## Output Format
+
+          ### slide_review_report.md
+
+          ```markdown
+          # Slide Deck Review Report
+
+          ## Parameters
+
+          - **Deck**: [path to slides.md]
+          - **Planned slide count**: [N]
+          - **Actual slide count**: [N]
+          - **Reviewed on**: [date]
+
+          ## Narrative Verdict
+
+          [2–3 sentences: does the deck tell a clear, audience-appropriate story?]
+
+          ## Per-Slide Findings
+
+          ### Slide 1 — [title]
+
+          [No issues] OR
+
+          - **Issue**: [description]
+            **Fix applied**: [what was changed]
+
+          ### Slide 2 — [title]
+
+          ...
+
+          ## Open Items
+
+          Items that require human input or assets not available to the agent:
+
+          - [ ] [description] (slide N)
+
+          ## Summary
+
+          - **Issues found**: [N]
+          - **Issues fixed**: [N]
+          - **Open items remaining**: [N]
+          ```
+
+          ### slides_revised_path.txt
+
+          Absolute path to the revised `slides.md` (same file, edited in place):
+
+          ```
+          /home/ncrmro/.keystone/repos/.../<output_dir>/slides.md
+          ```
+
+          ## Quality Criteria
+
+          - The report addresses every slide by number, even if just "no issues."
+          - Each issue entry includes the slide number, the problem, and the specific fix applied.
+          - The report includes an overall narrative verdict.
+          - All identified issues are fixed in `slides.md` before this step completes.
+          - The `slides_revised_path.txt` file contains a valid, accessible file path.
+
+          ## Context
+
+          This review step is designed to catch what automated generation misses: narrative gaps,
+          overloaded slides, missing speaker notes, and audience-tone mismatches. The agent acts
+          as both a content editor and a technical reviewer.
+
+          If the deck is based on output from the `presentation` workflow,
+          cross-reference the original presentation outline to ensure no key messages were lost
+          during slide conversion.
+        inputs:
+          slide_content_plan: {required: true}
+          slides_md_path: {required: true}
+        outputs:
+          slide_review_report: {required: true}
+          slides_revised_path: {required: true}
+
+      - name: slide_deliver
+        instructions: |
+          # Deliver Deck
+
+          ## Objective
+
+          Verify the deck builds cleanly with Slidev, confirm the final artifact, and hand off
+          clear serve and export instructions to the operator.
+
+          ## Task
+
+          Run a build verification pass, confirm the slide count, list any remaining open items,
+          and produce a concise delivery summary.
+
+          ### Process
+
+          1. **Read the revised deck path**
+
+             Read `slides_revised_path.txt` to get the absolute path to the final `slides.md`.
+
+          2. **Verify the deck builds**
+
+             Run a Slidev build in the output directory to confirm no parse or render errors:
+
+             ```bash
+             cd <output_dir>
+             slidev build slides.md --out dist/ 2>&1 | tee slidev_build.log
+             ```
+
+             - If the build exits 0: note "Build: success" in the summary.
+             - If the build exits non-zero: read `slidev_build.log`, identify the error, fix
+               `slides.md`, re-run the build. Do not mark this step complete until the build passes.
+
+             > **Note**: Slidev requires a Node.js runtime. If the build fails with a Node/npm
+             > error, try: `cd <output_dir> && slidev slides.md --open false` to verify the
+             > Markdown syntax instead. Document whichever verification method was used.
+
+          3. **Count final slides**
+
+             ```bash
+             grep -c "^---$" <slides.md path>
+             ```
+
+             Divide the separator count by 2 (each slide is bounded by two `---` lines, except the
+             last). Compare to the target from `slide_content_plan.md`. Note any discrepancy.
+
+          4. **Collect open items**
+
+             Scan the revised `slides.md` for outstanding placeholders:
+
+             ```bash
+             grep -n "TODO" <slides.md path>
+             ```
+
+             List each hit by line number and description in the delivery summary.
+
+          5. **Produce the delivery summary**
+
+             Write `slide_delivery_summary.md` with serve command, export command, file location,
+             slide count, build status, and open items.
+
+          ## Output Format
+
+          ### slide_delivery_summary.md
+
+          ```markdown
+          # Slide Deck Delivery Summary
+
+          ## Deck
+
+          - **File**: [absolute path to slides.md]
+          - **Output directory**: [path]
+          - **Slide count**: [N] (planned: [N])
+          - **Build status**: ✅ Success | ❌ Failed (see notes below)
+
+          ## How to use
+
+          ### Preview (live reload)
+
+          ```bash
+          slidev [path/to/slides.md]
+          ```
+
+          Opens the presenter view at http://localhost:3030
+
+          ### Export to PDF
+
+          ```bash
+          slidev export [path/to/slides.md] --format pdf
+          ```
+
+          ### Export to PNG (one file per slide)
+
+          ```bash
+          slidev export [path/to/slides.md] --format png
+          ```
+
+          ### Build static site
+
+          ```bash
+          slidev build [path/to/slides.md] --out dist/
+          ```
+
+          ## Open items
+
+          Items requiring human input before the deck is presentation-ready:
+
+          - [ ] Slide [N]: [description]
+
+          (Leave blank if none.)
+
+          ## Notes
+
+          [Any build warnings, workarounds, or deviations from the standard process]
+          ```
+
+          ## Quality Criteria
+
+          - The summary confirms `slidev build` (or equivalent verification) completed without errors.
+          - The summary shows the exact command to preview the deck locally.
+          - The final slide count matches the planned count from `slide_content_plan.md` (or the
+            discrepancy is explained).
+          - Any remaining TODOs (missing images, placeholder text, pending decisions) are listed.
+          - The deck file path in the summary is absolute and accessible.
+
+          ## Context
+
+          Slidev is pre-installed on this Keystone host (`pkgs.keystone.slidev`). The binary is at
+          `/etc/profiles/per-user/ncrmro/bin/slidev`. The serve command opens a local dev server
+          with hot-reload — useful for final review before a presentation.
+
+          If the deck was generated from `presentation` workflow output, consider
+          committing the `slides.md` into the relevant project notes repo alongside the source
+          outline so the two artifacts stay linked.
+        inputs:
+          slides_revised_path: {required: true}
+        outputs:
+          slide_delivery_summary: {required: true}

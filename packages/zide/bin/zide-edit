@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: zide-edit [OPTIONS] <path>...
+
+Options:
+  -h, --help       Show this help text.
+  -c, --command    Editor command mode: open, hsplit, or vsplit.
+EOF
+}
+
+editor_command() {
+  local editor="$1"
+  local action="$2"
+
+  case "$(basename -- "$editor"):$action" in
+    hx:open | helix:open) printf 'open' ;;
+    hx:hsplit | helix:hsplit) printf 'hsplit' ;;
+    hx:vsplit | helix:vsplit) printf 'vsplit' ;;
+    hx:cd | helix:cd) printf 'cd' ;;
+    nvim:open | vim:open | vi:open) printf 'edit' ;;
+    nvim:hsplit | vim:hsplit | vi:hsplit) printf 'split' ;;
+    nvim:vsplit | vim:vsplit | vi:vsplit) printf 'vsplit' ;;
+    nvim:cd | vim:cd | vi:cd) printf 'cd' ;;
+    kak:open | kak:hsplit | kak:vsplit) printf 'edit' ;;
+    kak:cd) printf 'cd' ;;
+    *) printf '%s' "$action" ;;
+  esac
+}
+
+command="open"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -c | --command)
+      [[ $# -ge 2 ]] || { echo "zide-edit: --command requires a value" >&2; exit 2; }
+      command="$2"
+      shift 2
+      ;;
+    -*)
+      echo "zide-edit: unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -eq 0 ]]; then
+  exit 0
+fi
+
+editor="${ZIDE_ORIGINAL_EDITOR:-${EDITOR:-hx}}"
+escaped_paths=()
+for path in "$@"; do
+  escaped_paths+=("$(printf '%q' "$path")")
+done
+
+zellij action focus-next-pane
+
+if [[ $# -eq 1 && -d "$1" ]]; then
+  cd_command="$(editor_command "$editor" cd)"
+  zellij action write 27
+  zellij action write-chars ":${cd_command} ${escaped_paths[0]}"
+  zellij action write 13
+  sleep "$(printf '%s' "${#escaped_paths[0]} / 150" | bc -l)"
+fi
+
+open_command="$(editor_command "$editor" "$command")"
+zellij action write 27
+zellij action write-chars ":${open_command} ${escaped_paths[*]}"
+zellij action write 13

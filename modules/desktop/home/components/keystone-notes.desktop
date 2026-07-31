@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Notes
+GenericName=Inbox note capture
+Comment=Open zk inbox capture in a floating window
+Exec=keystone-notes-inbox
+Terminal=false
+Categories=Utility;Office;
+Icon=notes

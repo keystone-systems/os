@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - "release/**"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      force_iso_build: ${{ steps.prepare.outputs.force_iso_build }}
+      publish_iso: ${{ steps.prepare.outputs.publish_iso }}
+      iso_artifact_name: ${{ steps.prepare.outputs.iso_artifact_name }}
+      iso_file_name: ${{ steps.prepare.outputs.iso_file_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release inputs
+        id: prepare
+        run: |
+          set -euo pipefail
+
+          # Distribution is branch-based: consumers track a `release/<M>.<m>`
+          # branch (stable) or `main` (unstable) and `ks update` follows the
+          # branch head. There is no version tag to cut — releasing a fix is
+          # just landing it on the release branch.
+          #
+          # Only `release/*` pushes build and publish the rolling installer
+          # ISO. `main` is validation-only here (its installer is exercised in
+          # the merge queue), so the expensive ISO build is skipped on main.
+          force_iso_build=false
+          publish_iso=false
+          iso_artifact_name="starter-installer-iso"
+          iso_file_name="keystone-starter-installer-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::12}.iso"
+
+          if [[ "${GITHUB_REF_NAME}" == release/* ]]; then
+            force_iso_build=true
+            publish_iso=true
+            iso_file_name="keystone-starter-installer-${GITHUB_REF_NAME//\//-}.iso"
+          fi
+
+          {
+            echo "force_iso_build=$force_iso_build"
+            echo "publish_iso=$publish_iso"
+            echo "iso_artifact_name=$iso_artifact_name"
+            echo "iso_file_name=$iso_file_name"
+          } >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: prepare
+    uses: ./.github/workflows/validate.yml
+    with:
+      force_iso_build: ${{ needs.prepare.outputs.force_iso_build == 'true' }}
+      upload_iso_artifact: ${{ needs.prepare.outputs.publish_iso == 'true' }}
+      iso_artifact_name: ${{ needs.prepare.outputs.iso_artifact_name }}
+      iso_file_name: ${{ needs.prepare.outputs.iso_file_name }}
+      cache_branch_name: ${{ github.ref_name }}
+      save_nix_cache: true
+    secrets: inherit
+
+  warm-cache:
+    needs:
+      - prepare
+      - validate
+    uses: ./.github/workflows/warm-cache.yml
+    with:
+      cache_branch_name: ${{ github.ref_name }}
+      save_nix_cache: true
+    secrets: inherit
+
+  publish-iso:
+    # Intentionally does NOT depend on warm-cache: publishing the installer
+    # artifact needs the validated ISO, not a populated binary cache. Gating
+    # on warm-cache would let a flaky cache push block the rolling ISO.
+    needs:
+      - prepare
+      - validate
+    if: needs.prepare.outputs.publish_iso == 'true' && needs.validate.outputs.iso_built == 'true'
+    # Serialize all publishers across release lines: every `release/*` push
+    # mutates the single shared `latest-iso` tag/release, so concurrent runs
+    # (e.g. release/1.0 and release/2.0) must not race. Keyed by a constant,
+    # independent of the workflow-level per-ref concurrency group.
+    concurrency:
+      group: publish-latest-iso
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download starter ISO artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.validate.outputs.iso_artifact_name }}
+          path: ${{ runner.temp }}/starter-installer-iso
+
+      - name: Resolve starter ISO artifact
+        id: iso
+        run: |
+          set -euo pipefail
+
+          iso_path="$RUNNER_TEMP/starter-installer-iso/${{ needs.validate.outputs.iso_file_name }}"
+          if [[ ! -f "$iso_path" ]]; then
+            iso_path="$(find "$RUNNER_TEMP/starter-installer-iso" -maxdepth 1 -name '*.iso' -print -quit)"
+          fi
+
+          if [[ -z "$iso_path" || ! -f "$iso_path" ]]; then
+            echo "The release validation workflow did not produce a starter ISO artifact"
+            exit 1
+          fi
+
+          echo "iso_path=$iso_path" >> "$GITHUB_OUTPUT"
+
+      - name: Publish rolling starter ISO
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISO_PATH: ${{ steps.iso.outputs.iso_path }}
+        run: |
+          set -euo pipefail
+
+          # Rolling release: the `latest-iso` tag always points at the tip of
+          # the newest stabilized release line and carries that line's starter
+          # installer. This is artifact hosting for the bootstrap installer
+          # only — `ks update` never reads it. Consumers track the
+          # `release/<M>.<m>` branch directly. Recreate (not just upload) so
+          # the tag and release target advance to this commit.
+          gh release delete latest-iso --yes --cleanup-tag || true
+          gh release create latest-iso \
+            --prerelease \
+            --title "Keystone starter ISO (rolling)" \
+            --notes "Rolling starter installer ISO built from \`${GITHUB_REF_NAME}\` at \`${GITHUB_SHA::12}\`. Tracks the newest stabilized release line. \`ks update\` follows the release branch directly and does not consume this release." \
+            --target "$GITHUB_SHA" \
+            "$ISO_PATH"

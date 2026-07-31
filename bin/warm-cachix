@@ -1,0 +1,561 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+CACHE_NAME="ks-systems"
+CACHE_URL=""
+KEYSTONE_SOURCE="path:${REPO_ROOT}"
+FIXTURE_DIR=""
+RUN_GENERATED=true
+RUN_CURATED=true
+RUN_HEAVY=true
+RUN_REPORT=true
+REPORT_ONLY=false
+KEEP_TEMP=false
+TOKEN="${CACHIX_AUTH_TOKEN:-}"
+IN_CI="${CI:-}"
+
+CURATED_ATTRS=(
+    .#packages.x86_64-linux.agent-coding-agent
+    .#packages.x86_64-linux.agent-mail
+    .#packages.x86_64-linux.chrome-devtools-mcp
+    .#packages.x86_64-linux.deepwork-library-jobs
+    .#packages.x86_64-linux.fetch-email-source
+    .#packages.x86_64-linux.fetch-forgejo-sources
+    .#packages.x86_64-linux.fetch-github-sources
+    .#packages.x86_64-linux.forgejo-cli-ex
+    .#packages.x86_64-linux.forgejo-project
+    .#packages.x86_64-linux.grafana-mcp
+    .#packages.x86_64-linux.keystone-conventions
+    .#packages.x86_64-linux.keystone-deepwork-jobs
+    .#packages.x86_64-linux.ks
+    .#packages.x86_64-linux.lfs-s3
+    .#packages.x86_64-linux.podman-agent
+    .#packages.x86_64-linux.repo-sync
+    .#packages.x86_64-linux.slidev
+    .#packages.x86_64-linux.zellij-tab-name
+    .#packages.x86_64-linux.zesh
+)
+
+WATCHLIST_REGEX='(claude-code|codex|gemini-cli|opencode|himalaya|yazi|walker|hyprland|hypr[a-z-]*|aquamarine|xdg-desktop-portal-hyprland|llm-agents)'
+WATCHLIST_LABEL="Rust-heavy watchlist"
+
+installer_targets=()
+target_attrs=()
+HEAVY_EXPR_FILE=""
+
+log_info() {
+    printf 'INFO: %s\n' "$*" >&2
+}
+
+log_error() {
+    printf 'ERROR: %s\n' "$*" >&2
+}
+
+human_size() {
+    if [[ "${1:-0}" =~ ^[0-9]+$ ]]; then
+        numfmt --to=iec-i --suffix=B "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+json_size_or_unknown() {
+    local value="${1:-null}"
+
+    if [[ "$value" == "null" || -z "$value" ]]; then
+        printf 'unknown'
+        return
+    fi
+
+    human_size "$value"
+}
+
+load_local_env() {
+    local env_file token_line token_value
+
+    env_file="${REPO_ROOT}/.env"
+    if [[ ! -f "$env_file" ]]; then
+        return
+    fi
+
+    token_line="$(grep -E '^(export[[:space:]]+)?CACHIX_AUTH_TOKEN=' "$env_file" | tail -n1 || true)"
+    if [[ -z "$token_line" ]]; then
+        return
+    fi
+
+    token_value="${token_line#*=}"
+    if [[ "$token_value" =~ ^\".*\"$ || "$token_value" =~ ^\'.*\'$ ]]; then
+        token_value="${token_value:1:${#token_value}-2}"
+    fi
+
+    if [[ -n "$token_value" ]]; then
+        log_info "Loading CACHIX_AUTH_TOKEN from ${env_file}"
+        TOKEN="$token_value"
+    fi
+}
+
+show_help() {
+    cat <<EOF
+Warm the Keystone Cachix cache from a generated template fixture.
+
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+  -c, --cache NAME            Cachix cache name (default: ${CACHE_NAME})
+  -s, --keystone-source REF   Flake ref for the generated fixture's keystone input
+                              (default: ${KEYSTONE_SOURCE})
+  -f, --fixture-dir DIR       Reuse or create the fixture in DIR instead of a temp dir
+      --token TOKEN           Cachix auth token. Prefer CACHIX_AUTH_TOKEN instead.
+      --report-only           Report cache coverage without pushing anything
+      --skip-report           Skip the pre-warm cache coverage report
+      --skip-generated        Skip generated-template host closures
+      --skip-curated          Skip curated package attrs
+      --skip-heavy            Skip explicit heavy Rust/tool stack warm targets
+      --keep-temp             Keep temporary XDG config and fixture directories
+  -h, --help                  Show this help
+
+Environment:
+  CACHIX_AUTH_TOKEN           Auth token used when --token is not provided
+
+This command uses a temporary XDG config directory by default so the Cachix
+token is not persisted locally after the process exits. In CI, the command
+assumes Cachix is already configured and skips that local-only setup. For
+local use, a repo-local .env file may provide CACHIX_AUTH_TOKEN.
+EOF
+}
+
+summarize_dry_run() {
+    local label="$1"
+    shift
+
+    local output build_header fetch_header item
+    local -a build_items fetch_items
+
+    output="$(nix build "$@" --dry-run --no-link 2>&1 || true)"
+    build_header="$(printf '%s\n' "$output" | grep -E '^these [0-9]+ derivations will be built:$' | head -n1 || true)"
+    fetch_header="$(printf '%s\n' "$output" | grep -E '^these [0-9]+ paths will be fetched ' | head -n1 || true)"
+
+    mapfile -t build_items < <(
+        printf '%s\n' "$output" | awk '
+            /^these [0-9]+ derivations will be built:$/ { section="build"; next }
+            /^these [0-9]+ paths will be fetched / { section=""; next }
+            section == "build" && /^\/nix\/store\// { print; next }
+            section == "build" && /^$/ { section="" }
+        '
+    )
+    mapfile -t fetch_items < <(
+        printf '%s\n' "$output" | awk '
+            /^these [0-9]+ paths will be fetched / { section="fetch"; next }
+            section == "fetch" && /^\/nix\/store\// { print; next }
+            section == "fetch" && /^$/ { section="" }
+        '
+    )
+
+    log_info "${label} dry-run summary"
+    if [[ -n "$build_header" ]]; then
+        log_info "  ${build_header%:}"
+        for item in "${build_items[@]:0:5}"; do
+            log_info "    build $(basename "$item")"
+        done
+        if (( ${#build_items[@]} > 5 )); then
+            log_info "    ... and $(( ${#build_items[@]} - 5 )) more derivations"
+        fi
+    fi
+
+    if [[ -n "$fetch_header" ]]; then
+        log_info "  $fetch_header"
+        for item in "${fetch_items[@]:0:5}"; do
+            log_info "    fetch $(basename "$item")"
+        done
+        if (( ${#fetch_items[@]} > 5 )); then
+            log_info "    ... and $(( ${#fetch_items[@]} - 5 )) more store paths"
+        fi
+    fi
+
+    report_watchlist_matches "would build locally" "${build_items[@]}"
+    report_watchlist_matches "would fetch from cache" "${fetch_items[@]}"
+
+    if [[ -z "$build_header" && -z "$fetch_header" ]]; then
+        log_info "  no local builds or remote fetches reported"
+    fi
+}
+
+report_watchlist_matches() {
+    local action="$1"
+    shift
+
+    local item base
+    local -a matches=()
+
+    for item in "$@"; do
+        base="$(basename "$item")"
+        if [[ "$base" =~ $WATCHLIST_REGEX ]]; then
+            matches+=("$base")
+        fi
+    done
+
+    if (( ${#matches[@]} == 0 )); then
+        log_info "  ${WATCHLIST_LABEL} ${action}: none"
+        return
+    fi
+
+    log_info "  ${WATCHLIST_LABEL} ${action}:"
+    for item in "${matches[@]}"; do
+        log_info "    $item"
+    done
+}
+
+report_remote_output() {
+    local label="$1"
+    local output_path="$2"
+    local path_info closure_info nar_size download_size closure_size closure_count
+
+    if ! path_info="$(nix path-info --json --store "$CACHE_URL" "$output_path" 2>/dev/null)"; then
+        log_info "  ${label}: top-level output is not cached"
+        return
+    fi
+
+    nar_size="$(jq -r --arg path "$output_path" '.[$path].narSize' <<<"$path_info")"
+    download_size="$(jq -r --arg path "$output_path" '.[$path].downloadSize' <<<"$path_info")"
+    log_info "  ${label}: top-level output is cached"
+    log_info "    output: $(basename "$output_path")"
+    log_info "    nar size: $(json_size_or_unknown "$nar_size"), download size: $(json_size_or_unknown "$download_size")"
+
+    # A recursive query only succeeds when the full closure is present in the
+    # remote cache. That distinguishes "the toplevel output exists" from "the
+    # installer can substitute the entire host closure without local builds".
+    if closure_info="$(nix path-info --recursive --closure-size --json --store "$CACHE_URL" "$output_path" 2>/dev/null)"; then
+        closure_size="$(jq -r --arg path "$output_path" '.[$path].closureSize // 0' <<<"$closure_info")"
+        closure_count="$(jq 'length' <<<"$closure_info")"
+        log_info "    full closure cached: yes ($(human_size "$closure_size"), ${closure_count} paths)"
+    else
+        log_info "    full closure cached: no"
+    fi
+}
+
+report_generated_cache_coverage() {
+    local index output_path
+
+    log_info "Installer cache coverage against ${CACHE_URL}"
+    summarize_dry_run "Generated installer targets" "${target_attrs[@]}"
+
+    for index in "${!installer_targets[@]}"; do
+        output_path="$(
+            nix build "${target_attrs[$index]}" --dry-run --json --no-link 2>/dev/null \
+                | jq -r '.[0].outputs.out'
+        )"
+        report_remote_output "${installer_targets[$index]}" "$output_path"
+    done
+}
+
+report_curated_cache_coverage() {
+    log_info "Curated package cache coverage against ${CACHE_URL}"
+    summarize_dry_run "Curated package set" "${CURATED_ATTRS[@]}"
+}
+
+resolve_build_outputs() {
+    nix build "$@" --json --dry-run --no-link 2>/dev/null | jq -r '.[].outputs.out'
+}
+
+heavy_label_for_output() {
+    local output_path="$1"
+    local base
+
+    base="$(basename "$output_path")"
+    case "$base" in
+        *claude-code*) printf 'claude-code' ;;
+        *gemini-cli*) printf 'gemini-cli' ;;
+        *codex*) printf 'codex' ;;
+        *opencode*) printf 'opencode' ;;
+        *himalaya*) printf 'himalaya' ;;
+        *yazi*) printf 'yazi' ;;
+        *walker*) printf 'walker' ;;
+        *hyprland*) printf 'hyprland' ;;
+        *) printf '%s' "$base" ;;
+    esac
+}
+
+write_heavy_expr() {
+    HEAVY_EXPR_FILE="${FIXTURE_DIR}/warm-cache-heavy.nix"
+    cat >"$HEAVY_EXPR_FILE" <<EOF
+let
+  flake = builtins.getFlake "${KEYSTONE_SOURCE}";
+  system = "x86_64-linux";
+  pkgs = import flake.inputs.nixpkgs {
+    inherit system;
+    overlays = [ flake.overlays.default ];
+  };
+in [
+  pkgs.keystone.claude-code
+  pkgs.keystone.gemini-cli
+  pkgs.keystone.codex
+  pkgs.keystone.opencode
+  pkgs.keystone.himalaya
+  pkgs.yazi
+  flake.inputs.walker.packages.\${system}.default
+  flake.inputs.hyprland.packages.\${system}.hyprland
+]
+EOF
+}
+
+report_heavy_cache_coverage() {
+    local -a heavy_outputs=()
+    local output_path
+
+    log_info "Heavy Rust/tool cache coverage against ${CACHE_URL}"
+    summarize_dry_run "Heavy Rust/tool stack" --impure --file "$HEAVY_EXPR_FILE"
+
+    mapfile -t heavy_outputs < <(resolve_build_outputs --impure --file "$HEAVY_EXPR_FILE")
+    for output_path in "${heavy_outputs[@]}"; do
+        report_remote_output "$(heavy_label_for_output "$output_path")" "$output_path"
+    done
+}
+
+push_store_paths() {
+    local -a batch=()
+    local path
+
+    while IFS= read -r path; do
+        [[ -n "$path" ]] || continue
+        batch+=("$path")
+
+        if (( ${#batch[@]} >= 200 )); then
+            run_cachix push "$CACHE_NAME" "${batch[@]}"
+            batch=()
+        fi
+    done
+
+    if (( ${#batch[@]} > 0 )); then
+        run_cachix push "$CACHE_NAME" "${batch[@]}"
+    fi
+}
+
+push_heavy_closures() {
+    local -a heavy_outputs=()
+
+    mapfile -t heavy_outputs < <(
+        nix build --impure --file "$HEAVY_EXPR_FILE" --json --no-link | jq -r '.[].outputs.out'
+    )
+
+    if (( ${#heavy_outputs[@]} == 0 )); then
+        log_error "Heavy Rust/tool stack produced no output paths to push"
+        exit 1
+    fi
+
+    log_info "Pushing heavy Rust/tool closures to ${CACHE_NAME}"
+    nix path-info --recursive "${heavy_outputs[@]}" | sort -u | push_store_paths
+}
+
+configure_local_cachix() {
+    if [[ "$IN_CI" == "true" ]]; then
+        log_info "Detected CI environment; using existing Cachix configuration"
+        return
+    fi
+
+    if [[ -z "$TOKEN" ]]; then
+        load_local_env
+    fi
+
+    if [[ -z "$TOKEN" ]]; then
+        log_error "Set CACHIX_AUTH_TOKEN, add it to .env, or pass --token to push warmed paths"
+        exit 1
+    fi
+
+    TEMP_XDG_CONFIG_HOME="$(mktemp -d)"
+    export XDG_CONFIG_HOME="$TEMP_XDG_CONFIG_HOME"
+
+    log_info "Configuring temporary Cachix credentials for ${CACHE_NAME}"
+    run_cachix authtoken "$TOKEN"
+    run_cachix use "$CACHE_NAME"
+}
+
+prepare_fixture_and_targets() {
+    if [[ "$RUN_GENERATED" != true ]]; then
+        return
+    fi
+
+    log_info "Generating template fixture in ${FIXTURE_DIR}"
+    "${SCRIPT_DIR}/generate-template-fixture" \
+        --output "$FIXTURE_DIR" \
+        --keystone-source "$KEYSTONE_SOURCE" >/dev/null
+
+    log_info "Resolving generated installer targets"
+    mapfile -t installer_targets < <(
+        nix eval \
+            --apply 'targets: builtins.concatStringsSep "\n" (builtins.attrNames targets)' \
+            --raw \
+            "$FIXTURE_DIR#installerTargets"
+    )
+
+    if [[ "${#installer_targets[@]}" -eq 0 ]]; then
+        log_error "Generated fixture did not expose any installer targets"
+        exit 1
+    fi
+
+    for target in "${installer_targets[@]}"; do
+        target_attrs+=("$FIXTURE_DIR#nixosConfigurations.${target}.config.system.build.toplevel")
+    done
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -c|--cache)
+            CACHE_NAME="$2"
+            shift 2
+            ;;
+        -s|--keystone-source)
+            KEYSTONE_SOURCE="$2"
+            shift 2
+            ;;
+        -f|--fixture-dir)
+            FIXTURE_DIR="$2"
+            shift 2
+            ;;
+        --token)
+            TOKEN="$2"
+            shift 2
+            ;;
+        --report-only)
+            REPORT_ONLY=true
+            shift
+            ;;
+        --skip-report)
+            RUN_REPORT=false
+            shift
+            ;;
+        --skip-generated)
+            RUN_GENERATED=false
+            shift
+            ;;
+        --skip-curated)
+            RUN_CURATED=false
+            shift
+            ;;
+        --skip-heavy)
+            RUN_HEAVY=false
+            shift
+            ;;
+        --keep-temp)
+            KEEP_TEMP=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$REPORT_ONLY" == true ]]; then
+    RUN_REPORT=true
+fi
+
+if [[ "$RUN_REPORT" == false && "$RUN_GENERATED" == false && "$RUN_CURATED" == false && "$RUN_HEAVY" == false ]]; then
+    log_error "Nothing to do: reporting and all warm targets are disabled"
+    exit 1
+fi
+
+if [[ "$REPORT_ONLY" == true && "$RUN_GENERATED" == false && "$RUN_CURATED" == false && "$RUN_HEAVY" == false ]]; then
+    log_error "Nothing to report: generated targets, curated packages, and heavy targets are disabled"
+    exit 1
+fi
+
+TEMP_XDG_CONFIG_HOME=""
+FIXTURE_WAS_TEMP=false
+
+cleanup() {
+    if [[ -z "$TEMP_XDG_CONFIG_HOME" ]]; then
+        if [[ "$KEEP_TEMP" == true && "$FIXTURE_WAS_TEMP" == true ]]; then
+            log_info "Keeping temporary fixture directory:"
+            log_info "  FIXTURE_DIR=${FIXTURE_DIR}"
+        elif [[ "$FIXTURE_WAS_TEMP" == true ]]; then
+            rm -rf "$FIXTURE_DIR"
+        fi
+        return
+    fi
+
+    if [[ "$KEEP_TEMP" == true ]]; then
+        log_info "Keeping temporary state:"
+        log_info "  XDG_CONFIG_HOME=${TEMP_XDG_CONFIG_HOME}"
+        if [[ "$FIXTURE_WAS_TEMP" == true ]]; then
+            log_info "  FIXTURE_DIR=${FIXTURE_DIR}"
+        fi
+        return
+    fi
+
+    rm -rf "$TEMP_XDG_CONFIG_HOME"
+    if [[ "$FIXTURE_WAS_TEMP" == true ]]; then
+        rm -rf "$FIXTURE_DIR"
+    fi
+}
+trap cleanup EXIT
+
+if [[ -z "$FIXTURE_DIR" ]]; then
+    FIXTURE_DIR="$(mktemp -d)"
+    FIXTURE_WAS_TEMP=true
+fi
+
+CACHE_URL="https://${CACHE_NAME}.cachix.org"
+
+if command -v cachix >/dev/null 2>&1; then
+    CACHIX_CMD=(cachix)
+else
+    CACHIX_CMD=(nix shell nixpkgs#cachix -c cachix)
+fi
+
+run_cachix() {
+    "${CACHIX_CMD[@]}" "$@"
+}
+
+prepare_fixture_and_targets
+if [[ "$RUN_HEAVY" == true ]]; then
+    write_heavy_expr
+fi
+
+if [[ "$RUN_REPORT" == true ]]; then
+    if [[ "$RUN_GENERATED" == true ]]; then
+        report_generated_cache_coverage
+    fi
+
+    if [[ "$RUN_CURATED" == true ]]; then
+        report_curated_cache_coverage
+    fi
+
+    if [[ "$RUN_HEAVY" == true ]]; then
+        report_heavy_cache_coverage
+    fi
+fi
+
+if [[ "$REPORT_ONLY" == true ]]; then
+    exit 0
+fi
+
+configure_local_cachix
+
+if [[ "$RUN_GENERATED" == true ]]; then
+    log_info "Warming generated-template host closures"
+    run_cachix watch-exec "$CACHE_NAME" -- \
+        nix build "${target_attrs[@]}" --print-build-logs
+fi
+
+if [[ "$RUN_CURATED" == true ]]; then
+    log_info "Warming curated package cache"
+    run_cachix watch-exec "$CACHE_NAME" -- \
+        nix build "${CURATED_ATTRS[@]}"
+fi
+
+if [[ "$RUN_HEAVY" == true ]]; then
+    log_info "Warming explicit heavy Rust/tool stack"
+    run_cachix watch-exec "$CACHE_NAME" -- \
+        nix build --impure --file "$HEAVY_EXPR_FILE"
+    push_heavy_closures
+fi

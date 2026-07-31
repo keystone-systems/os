@@ -1,0 +1,69 @@
+[package]
+name = "ks"
+version = "0.1.0"
+edition = "2021"
+description = "Keystone CLI/TUI for infrastructure configuration and management"
+license = "MIT"
+
+[[bin]]
+name = "ks"
+path = "src/main.rs"
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "fs", "io-util"] }
+tokio-util = "0.7"
+futures = "0.3"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Git
+git2 = "0.19"
+
+# SSH keys
+ssh-key = { version = "0.6", features = ["ed25519", "std"] }
+
+# YAML
+serde_yaml = "0.9"
+
+# Nix parsing
+rnix = "0.11"
+
+# Encryption (agenix-compatible)
+age = { version = "0.11", features = ["cli-common"] }
+
+# FIDO2
+# ctap-hid-fido2 deferred — shell out to ssh-keygen -t ed25519-sk initially
+
+# Home directory discovery
+home = "0.5"
+hostname = "0.4"
+
+# HTTP client (rustls for cross-platform)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
+
+# System monitoring
+sysinfo = "0.33"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Unix
+libc = "0.2"
+
+# Time
+chrono = "0.4"
+
+[dev-dependencies]
+insta = "1"
+tempfile = "3"

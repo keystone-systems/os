@@ -1,0 +1,518 @@
+name: marketing
+summary: "Marketing workflows: social media setup, credential collection, and content strategy"
+
+step_arguments:
+  - name: project_name
+    description: "Name of the project to set up social media for (must match a key in PROJECTS.yaml)"
+    type: string
+
+  - name: discovery_report
+    description: "Summary of project context, existing credentials found in Bitwarden, and platforms still needing setup"
+    type: file_path
+
+  - name: platform_status
+    description: "Per-platform status report: credentials created, Bitwarden item names, any issues encountered"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify that:
+        - Every platform (X, LinkedIn, Instagram/Facebook, Bluesky) has a status entry — either newly set up, already existing, or skipped with a reason.
+        - All new credentials are confirmed stored in Bitwarden with clear item names.
+        - No API keys, tokens, or passwords appear in the output file.
+
+  - name: content_strategy
+    description: "Content strategy document covering pillars, posting cadence, brand voice, and platform-specific guidelines"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify that:
+        - Strategy covers all platforms that were successfully set up.
+        - Posting schedule is specific (days/times) and realistic.
+        - Brand voice guidelines are concrete enough to follow, not generic platitudes.
+
+  - name: projects_yaml_diff
+    description: "Summary of changes made to PROJECTS.yaml including the social_media section added"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read the project's PROJECTS.yaml to verify the social_media section was actually written correctly.
+        Verify that:
+        - PROJECTS.yaml contains a social_media section for the target project with platform entries and strategy summary.
+        - The YAML content matches the platform_status and content_strategy deliverables.
+
+workflows:
+  social_media_setup:
+    summary: "Set up social media credentials and content strategy for a project"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      A per-project marketing job that helps set up and manage social media presence.
+      Supported platforms: X (Twitter), LinkedIn, Instagram/Facebook, and Bluesky.
+      Accounts may be business or personal depending on the project.
+
+      Credential storage: All API keys, tokens, and passwords are stored in
+      Bitwarden/Vaultwarden via the `rbw` CLI. Never write credentials to plain
+      files or commit them to git.
+
+      Project tracking: Social media setup status and strategy are recorded in the
+      project's PROJECTS.yaml file under a `social_media` key.
+
+      Browser automation: For platform sign-in and API app creation, use Chrome
+      DevTools MCP (the tested browser automation tool in this environment).
+      Prerequisite: Chrome DevTools MCP must be connected before running this workflow.
+
+      Output file paths: All workflow outputs must be saved to the project directory,
+      not to `.deepwork/tmp/`. Use the path pattern:
+        projects/[project_name]/marketing/[filename]
+      For example: projects/plant-caravan/marketing/content_strategy.md
+      Create the directory if it doesn't exist.
+    steps:
+      - name: discover_project
+        instructions: |
+          # Discover Project Context
+
+          ## Objective
+
+          Read the project's PROJECTS.yaml and audit existing credentials to determine what platforms still need setup.
+
+          ## Task
+
+          Gather the project context and audit existing credentials so the next step only sets up what's missing.
+
+          ### Process
+
+          1. **Ask structured questions** to confirm project details:
+             - Which project from PROJECTS.yaml to set up
+             - Whether accounts should be business or personal for each platform
+             - Any platforms to skip
+
+          2. **Read PROJECTS.yaml**
+             - Find the project entry matching the user's input
+             - Check if a `social_media` section already exists
+             - Note any existing platform entries
+
+          3. **Audit existing credentials**
+             - For each supported platform (see common job info), search the credential store for existing API keys or tokens
+             - Use platform names and common aliases as search terms
+             - Record which platforms already have credentials and which need setup
+
+          4. **Compile discovery report**
+             - Summarize the project context
+             - List platforms with existing credentials (and their credential store item names)
+             - List platforms that still need setup
+             - Note any special requirements from the user's answers
+
+          ## Output Format
+
+          ### discovery_report.md
+
+          **Save to**: `projects/[project_name]/marketing/discovery_report.md` (create directory if needed)
+
+          ```markdown
+          # Social Media Discovery: [Project Name]
+
+          ## Project Context
+
+          - **Project**: [name from PROJECTS.yaml]
+          - **Description**: [brief project description]
+          - **Account Type**: [business / personal / mixed]
+          - **Date**: [current date]
+
+          ## Existing Credentials
+
+          | Platform   | Status              | Credential Item  | Notes       |
+          | ---------- | ------------------- | ---------------- | ----------- |
+          | [platform] | [found / not found] | [item name or —] | [any notes] |
+
+          [one row per supported platform]
+
+          ## Platforms Needing Setup
+
+          - [list of platforms that need credentials created]
+
+          ## Platforms to Skip
+
+          - [any platforms the user wants to skip, with reason]
+          ```
+
+          ## Quality Criteria
+
+          - All supported platforms are accounted for in the report
+          - Credential store was actually queried (not assumed)
+          - Project context matches PROJECTS.yaml
+          - User preferences for business vs personal are captured
+          - No secrets appear in the report — only item name references
+
+          ## Context
+
+          This discovery step prevents duplicate work and ensures the setup step only touches platforms that actually need attention. The report feeds directly into the next step where browser automation creates accounts and API keys.
+        inputs:
+          project_name:
+            required: true
+        outputs:
+          discovery_report:
+            required: true
+
+      - name: setup_platforms
+        instructions: |
+          # Set Up Platform Credentials
+
+          ## Objective
+
+          Sign into each platform that needs setup, create API apps/keys where applicable, and store all credentials securely per the credential storage method in common job info.
+
+          ## Task
+
+          Using the discovery report from the previous step, set up credentials for each platform that was marked as needing setup. Use Chrome DevTools MCP for browser automation where sign-in or app creation is required.
+
+          ### Process
+
+          For each platform needing setup (from discovery_report.md), follow the platform-specific process below. Skip platforms already set up or marked to skip.
+
+          #### X (Twitter)
+
+          1. Navigate to developer.twitter.com
+          2. Sign in or create a developer account
+          3. Create a new app/project
+          4. Generate API Key, API Secret, Bearer Token, Access Token, and Access Token Secret
+          5. Store all credentials using the item name format: `[project-name]/twitter-api`
+             - Store each key as a custom field
+
+          #### LinkedIn
+
+          1. Navigate to linkedin.com/developers
+          2. Sign in and create a new app
+          3. Request necessary API products (Share on LinkedIn, Sign In with LinkedIn)
+          4. Generate Client ID and Client Secret
+          5. Store credentials using the item name format: `[project-name]/linkedin-api`
+
+          #### Instagram / Facebook (Meta)
+
+          1. Navigate to developers.facebook.com
+          2. Sign in and create a new app (Business type)
+          3. Add Instagram Graph API product
+          4. Generate access tokens
+          5. Store credentials using the item name format: `[project-name]/meta-api`
+
+          #### Bluesky
+
+          1. Navigate to bsky.app
+          2. Sign in or create account
+          3. Generate an app password (Settings > App Passwords)
+          4. Store credentials using the item name format: `[project-name]/bluesky`
+             - Store handle and app password
+
+          ### Important Guidelines
+
+          - **Never write credentials to files or terminal output** — use the credential store CLI directly
+          - If a platform requires email verification or 2FA, pause and ask the user to complete that step
+          - If a platform denies API access or requires approval, document the status and move on
+
+          ## Output Format
+
+          ### platform_status.md
+
+          **Save to**: `projects/[project_name]/marketing/platform_status.md`
+
+          ```markdown
+          # Platform Setup Status: [Project Name]
+
+          ## Summary
+
+          - **Platforms set up**: [count]
+          - **Platforms skipped**: [count]
+          - **Platforms pending**: [count]
+          - **Date**: [current date]
+
+          ## X (Twitter)
+
+          - **Status**: [completed / skipped / pending approval / failed]
+          - **Credential Item**: [project-name]/twitter-api
+          - **API Access Level**: [free / basic / pro]
+          - **Notes**: [any issues or next steps]
+
+          ## LinkedIn
+
+          - **Status**: [completed / skipped / pending approval / failed]
+          - **Credential Item**: [project-name]/linkedin-api
+          - **API Products**: [list of enabled products]
+          - **Notes**: [any issues or next steps]
+
+          ## Instagram / Facebook
+
+          - **Status**: [completed / skipped / pending approval / failed]
+          - **Credential Item**: [project-name]/meta-api
+          - **App Type**: [business / consumer]
+          - **Notes**: [any issues or next steps]
+
+          ## Bluesky
+
+          - **Status**: [completed / skipped / pending approval / failed]
+          - **Credential Item**: [project-name]/bluesky
+          - **Handle**: [handle without password]
+          - **Notes**: [any issues or next steps]
+          ```
+
+          **Bad example — do NOT include actual secrets:**
+
+          ```markdown
+          ## X (Twitter)
+
+          - **API Key**: sk-abc123... ← NEVER DO THIS
+          ```
+
+          ## Quality Criteria
+
+          - Every supported platform has a status entry — either newly set up, already existing, or skipped with a reason
+          - All new credentials are confirmed stored with clear item names
+          - No API keys, tokens, or passwords appear in the output file
+          - Failed or pending setups have clear next-step instructions
+
+          ## Context
+
+          This is the core setup step. Credentials stored here will be used by future marketing workflows (content posting, analytics, etc.). Clean naming conventions are critical so other agents and workflows can find these credentials later.
+        inputs:
+          discovery_report:
+            required: true
+        outputs:
+          platform_status:
+            required: true
+
+      - name: define_strategy
+        instructions: |
+          # Define Content Strategy
+
+          ## Objective
+
+          Define the project's social media content strategy — posting schedule, content pillars, and brand voice — for each successfully set up platform.
+
+          ## Task
+
+          Using the platform status from the previous step, create a content strategy tailored to the platforms that are active. Collaborate with the user to define their brand identity and goals.
+
+          ### Process
+
+          1. **Review platform status**
+             - Read platform_status.md to know which platforms are active
+             - Only define strategy for platforms with completed setup
+
+          2. **Ask structured questions** to understand the brand:
+             - What is the project's core value proposition?
+             - Who is the target audience? (demographics, interests, pain points)
+             - What tone fits the brand? (professional, casual, technical, playful, authoritative)
+             - What are 3-5 topic areas the content should cover?
+             - How often can they realistically post? (daily, 3x/week, weekly)
+             - Are there any topics or tones to avoid?
+
+          3. **Define content pillars**
+             - Create 3-5 themed content categories based on user input
+             - Each pillar should have a clear purpose and example topics
+             - Pillars should be balanced across educational, promotional, and engagement content
+
+          4. **Create posting schedule**
+             - Define a realistic cadence per platform
+             - Account for platform-specific best practices:
+               - X: higher frequency OK (1-3x/day)
+               - LinkedIn: lower frequency (2-4x/week)
+               - Instagram: visual content focus (3-5x/week)
+               - Bluesky: conversational tone (1-2x/day)
+             - Suggest optimal posting times based on audience
+
+          5. **Define brand voice guidelines**
+             - Document tone, vocabulary, and style rules
+             - Provide do/don't examples for each platform
+             - Note platform-specific adaptations (more formal on LinkedIn, more casual on Bluesky)
+
+          ## Output Format
+
+          ### content_strategy.md
+
+          **Save to**: `projects/[project_name]/marketing/content_strategy.md`
+
+          ```markdown
+          # Content Strategy: [Project Name]
+
+          ## Brand Overview
+
+          - **Value Proposition**: [one sentence]
+          - **Target Audience**: [description]
+          - **Brand Personality**: [3-4 adjectives]
+
+          ## Content Pillars
+
+          ### 1. [Pillar Name]
+
+          - **Purpose**: [what this content achieves]
+          - **Topics**: [example topics]
+          - **Content ratio**: [% of total content]
+
+          ### 2. [Pillar Name]
+
+          ...
+
+          [3-5 pillars total]
+
+          ## Posting Schedule
+
+          | Platform          | Frequency | Best Times | Content Focus |
+          | ----------------- | --------- | ---------- | ------------- |
+          | [active platform] | [cadence] | [times]    | [focus]       |
+
+          [one row per active platform only — omit skipped platforms]
+
+          ## Brand Voice
+
+          ### Tone
+
+          [Description of overall tone]
+
+          ### Do's
+
+          - [example of good voice]
+          - [example of good voice]
+
+          ### Don'ts
+
+          - [example of what to avoid]
+          - [example of what to avoid]
+
+          ### Platform Adaptations
+
+          - **X**: [how voice adapts]
+          - **LinkedIn**: [how voice adapts]
+          - **Instagram**: [how voice adapts]
+          - **Bluesky**: [how voice adapts]
+
+          ## Topics to Avoid
+
+          - [list any sensitive or off-brand topics]
+          ```
+
+          ## Quality Criteria
+
+          - Strategy covers all platforms that were successfully set up
+          - Posting schedule is specific (days/times) and realistic
+          - Brand voice guidelines are concrete enough to follow, not generic platitudes
+          - Content pillars are distinct and cover a balanced mix of content types
+          - Platform-specific adaptations reflect actual platform culture differences
+
+          ## Context
+
+          This strategy document becomes the operational playbook for future content creation workflows. It should be specific enough that an agent or team member can create on-brand content without further guidance. The strategy will be summarized in PROJECTS.yaml in the next step for quick reference.
+        inputs:
+          platform_status:
+            required: true
+        outputs:
+          content_strategy:
+            required: true
+
+      - name: update_tracking
+        instructions: |
+          # Update Project Tracking
+
+          ## Objective
+
+          Update PROJECTS.yaml with the social media setup status and a summary of the content strategy so the project file serves as a single source of truth.
+
+          ## Task
+
+          Read the platform status and content strategy outputs, then add a `social_media` section to the project's entry in PROJECTS.yaml.
+
+          ### Process
+
+          1. **Read inputs**
+             - Read platform_status.md for credential status per platform
+             - Read content_strategy.md for the strategy summary
+
+          2. **Read current PROJECTS.yaml**
+             - Find the project entry
+             - Check if a `social_media` key already exists (update if so, create if not)
+
+          3. **Construct the social_media section**
+             - Add platform entries with setup status and Bitwarden item references
+             - Add a strategy summary (condensed from the full strategy doc)
+             - Add a `last_updated` date
+
+          4. **Write the updated PROJECTS.yaml**
+             - Use the Edit tool to modify the file in place
+             - Preserve all existing content — only add/update the `social_media` section
+
+          5. **Document the changes**
+             - Create a diff summary showing what was added/changed
+
+          ## Output Format
+
+          ### projects_yaml_diff.md
+
+          **Save to**: `projects/[project_name]/marketing/projects_yaml_diff.md`
+
+          ````markdown
+          # PROJECTS.yaml Update: [Project Name]
+
+          ## Changes Made
+
+          - [Added / Updated] `social_media` section under project `[name]`
+          - [count] platform entries added
+          - Strategy summary added
+
+          ## Social Media Section Added
+
+          ```yaml
+          social_media:
+            last_updated: "YYYY-MM-DD"
+            platforms:
+              twitter:
+                status: [active / pending / skipped]
+                credentials: "[bitwarden-item-name]"
+              linkedin:
+                status: [active / pending / skipped]
+                credentials: "[bitwarden-item-name]"
+              instagram:
+                status: [active / pending / skipped]
+                credentials: "[bitwarden-item-name]"
+              bluesky:
+                status: [active / pending / skipped]
+                credentials: "[bitwarden-item-name]"
+            strategy:
+              pillars: ["pillar1", "pillar2", "pillar3"]
+              posting_cadence: "[brief summary]"
+              brand_voice: "[1-2 word tone descriptor]"
+              full_strategy_doc: "projects/[project_name]/marketing/content_strategy.md"
+          ```
+
+          ## Verification
+
+          - [ ] PROJECTS.yaml parses as valid YAML
+          - [ ] Existing project data preserved
+          - [ ] No credentials appear in YAML — only Bitwarden item references
+          ````
+
+          **Bad example — do NOT include secrets in YAML:**
+
+          ```yaml
+          twitter:
+            api_key: "sk-abc123" # NEVER store credentials in PROJECTS.yaml
+          ```
+
+          ## Quality Criteria
+
+          - PROJECTS.yaml contains a `social_media` section for the target project with platform entries and strategy summary
+          - The YAML content matches the platform_status and content_strategy deliverables
+          - Existing PROJECTS.yaml content is preserved (no data lost)
+          - PROJECTS.yaml remains valid, parseable YAML
+          - No credentials or secrets in the YAML — only Bitwarden item name references
+
+          ## Context
+
+          This is the final step that ties everything together. PROJECTS.yaml is the canonical project registry, and having social media status there means any agent or workflow can quickly check what platforms are set up and where to find credentials. The `full_strategy_doc` path lets anyone find the detailed strategy when needed.
+        inputs:
+          platform_status:
+            required: true
+          content_strategy:
+            required: true
+        outputs:
+          projects_yaml_diff:
+            required: true
+        process_requirements:
+          yaml_verification: "Read the project's PROJECTS.yaml to verify the social_media section was actually written correctly"

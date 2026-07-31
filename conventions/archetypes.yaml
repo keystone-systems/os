@@ -1,0 +1,390 @@
+# archetypes.yaml — Centralized Agent Definitions
+#
+# This file defines the core operating environment and behaviors for different
+# types of agents (archetypes) across the system. By centralizing this here,
+# local agent repositories no longer need a local manifest; they simply pass
+# their archetype to the composition scripts.
+#
+# Architecture Breakdown:
+#
+# 1. inlined_conventions vs referenced_conventions:
+#    These lists define the static AGENTS.md context.
+#    - inlined_conventions: Critical operational processes (e.g., git rules)
+#      that are printed in full into the agent's AGENTS.md so they are always
+#      in the immediate context window.
+#    - referenced_conventions: Manuals and advanced guides (e.g., CLI docs)
+#      that are provided as markdown links `[name](path)`. The agent knows they
+#      exist but they don't consume context tokens until explicitly read.
+#
+# 2. roles (Behavioral Modes & Dynamic Conventions):
+#    Roles define the specific behavioral "hats" an agent wears to execute
+#    a specific task (e.g., `code-reviewer`, `project-manager`).
+#    When an agent performs a specific task, it is invoked with that role.
+#    The `compose.sh` script dynamically combines the role's instructions
+#    and its associated conventions to create a tailored system prompt.
+#    NOTE: These roles map cleanly to the concept of "Subagents" and could
+#    be used to generate subagent definitions for various platforms (e.g.,
+#    OpenAI Swarm, AutoGen) in the future.
+#
+# RFC 2119 Requirements:
+# All roles and conventions MUST adhere to RFC 2119 semantics (MUST, MUST NOT,
+# SHOULD, SHOULD NOT, MAY) to provide unambiguous, deterministically interpretable
+# instructions to the LLM.
+
+archetypes:
+  # Default archetype for any user or agent on a keystone NixOS host.
+  # Minimal footprint — just host orientation and links to everything else.
+  keystone-system-host:
+    description: "NixOS host — Nix devshells, direnv, declarative config"
+    inlined_conventions:
+      - process.prose
+      - code.comments
+      - tool.nix-devshell
+      - tool.process-compose-agent
+      - process.git-repos
+      - process.project-navigation
+    referenced_conventions:
+      - process.version-control
+      - process.pr-shepherding
+      - process.privileged-approval
+      - tool.standard-utilities
+      - os.requirements
+      - tool.nix
+      - code.shell-scripts
+      - process.grafana-dashboard-development
+      - tool.bitwarden
+      - tool.himalaya
+      - tool.forgejo
+      - tool.github
+      - process.issue-journal
+      - tool.zk
+      - process.notes
+      - process.project-board
+      - process.presentation-slides
+      - tool.zk-notes
+      - process.enable-by-default
+      - os.zfs-backup
+      - os.systemd-over-activation
+      - process.user-groups
+      - tool.stalwart
+      - process.vcs-context-continuity
+
+  # Archetype for working directly on keystone platform repos:
+  # ncrmro/keystone, ncrmro/ks-config, Unsupervisedcom/deepwork.
+  keystone-developer:
+    description: "Keystone platform developer — editing ks-config, keystone modules, and deepwork jobs"
+    inlined_conventions:
+      - process.version-control
+      - process.privileged-approval
+      - process.prose
+      - tool.nix
+      - process.project-navigation
+      - tool.standard-utilities
+      - process.keystone-development
+    referenced_conventions:
+      - process.keystone-development-mode
+      - tool.nix-devshell
+      - tool.forgejo
+      - tool.github
+      - code.shell-scripts
+      - process.issue-journal
+      - process.project-board
+      - process.pr-shepherding
+      - process.vcs-context-continuity
+      - process.enable-by-default
+      - os.requirements
+      - process.deepwork-job
+      - process.user-groups
+      - tool.process-compose-agent
+
+  engineer:
+    description: "Engineering agents — implementation, code review, architecture"
+    inlined_conventions:
+      - process.version-control
+      - process.enable-by-default
+      - process.prose
+      - tool.standard-utilities
+      - process.vcs-context-continuity
+      - process.project-navigation
+      - tool.process-compose-agent
+    referenced_conventions:
+      - os.requirements
+      - process.agent-cronjobs
+      - process.blocker
+      - process.code-review-ownership
+      - process.continuous-integration
+      - process.copilot-agent
+      - process.pr-review-response
+      - process.pr-shepherding
+      - process.deepwork-job
+      - process.feature-delivery
+      - process.issue-journal
+      - process.project-board
+      - process.refactor
+      - code.shell-scripts
+      - code.tui-screenshots
+      - code.comments
+      - code.tui-screenshots
+      - tool.bitwarden
+      - tool.forgejo
+      - tool.himalaya
+      - tool.nix-devshell
+      - process.version-control-advanced
+      - process.git-repos
+      - tool.github
+      - tool.journal-remote
+      - os.zfs-backup
+      - os.systemd-over-activation
+      - process.user-groups
+      - tool.cloudflare-workers
+      - tool.zk
+      - process.knowledge-management
+      - process.notes
+      - tool.zk-notes
+      - tool.stalwart
+    roles:
+      # Role: code-reviewer
+      # Used when the agent is strictly reviewing PRs authored by others (or subagents).
+      # Focuses on finding flaws, security issues, and style violations rather than writing code.
+      code-reviewer:
+        conventions:
+          - process.code-review-ownership
+          - process.continuous-integration
+          - tool.typescript
+          - process.copilot-agent
+          - tool.forgejo
+          - tool.github
+          - process.version-control
+          - process.version-control-advanced
+
+      # Role: software-engineer
+      # The primary role for writing code, fixing bugs, and executing technical tasks.
+      # Serves as the core implementation subagent.
+      software-engineer:
+        conventions:
+          - process.blocker
+          - process.continuous-integration
+          - process.diagrams
+          - tool.mermaid
+          - process.feature-delivery
+          - process.pr-shepherding
+          - process.pull-request
+          - process.refactor
+          - code.shell-scripts
+          - tool.typescript
+          - process.coding-agent
+          - tool.nix-devshell
+          - process.version-control
+          - process.version-control-advanced
+          - tool.process-compose-agent
+
+      # Role: architect
+      # Used for high-level system design, evaluating trade-offs, and writing technical specs.
+      # Focuses on structure and dependencies before implementation begins.
+      architect:
+        conventions:
+          - process.diagrams
+          - tool.mermaid
+          - process.feature-delivery
+          - process.pull-request
+          - tool.forgejo
+          - process.version-control
+          - process.version-control-advanced
+
+      # Role: project-manager
+      # Used for breaking down large issues, epics, or specs into actionable, sequential tasks.
+      project-manager:
+        conventions:
+          - process.feature-delivery
+          - process.project-board
+          - tool.forgejo
+          - process.task-tracking
+
+      # Role: task-decomposer
+      # A supplementary subagent role used specifically to chunk work into smaller PRs.
+      task-decomposer:
+        conventions:
+          - process.feature-delivery
+          - tool.forgejo
+          - process.task-tracking
+
+      # Role: default
+      # The default "idle" or administrative role. Used for checking email, triaging notifications,
+      # running scheduled cronjobs, and managing the agent's internal state.
+      default:
+        conventions:
+          - tool.bitwarden
+          - process.claude-sessions
+          - process.copilot-agent
+          - tool.forgejo
+          - tool.github
+          - tool.himalaya
+          - tool.nix-devshell
+          - process.task-tracking
+
+  product:
+    description: "Product agents — planning, stakeholder communication, task management"
+    inlined_conventions:
+      - process.product-engineering-handoff
+      - process.press-release
+      - process.prose
+      - tool.standard-utilities
+      - process.vcs-context-continuity
+      - process.project-navigation
+    referenced_conventions:
+      - process.task-tracking
+      - process.project-board
+      - process.issue-journal
+      - os.requirements
+      - process.agent-cronjobs
+      - tool.bitwarden
+      - tool.forgejo
+      - tool.himalaya
+      - tool.github
+      - tool.zk
+      - process.knowledge-management
+      - process.notes
+      - process.presentation-slides
+      - tool.zk-notes
+    roles:
+      # Role: business-analyst
+      # Used for evaluating market opportunities, competitor products, and defining KPIs.
+      business-analyst:
+        conventions:
+          - process.competitive-analysis
+          - tool.himalaya
+          - tool.forgejo
+
+      # Role: press-release-writer
+      # Used specifically for drafting and refining "Working Backwards" style press releases
+      # which serve as the primary handoff mechanism to engineering.
+      press-release-writer:
+        conventions:
+          - process.press-release
+          - tool.forgejo
+
+      # Role: project-manager
+      # Used for taking an approved press release and turning it into milestones and user stories
+      # to be published on the git service for engineering consumption.
+      project-manager:
+        conventions:
+          - process.project-board
+          - tool.forgejo
+          - process.task-tracking
+
+      # Role: task-decomposer
+      # A supplementary subagent role used specifically to chunk work.
+      task-decomposer:
+        conventions:
+          - tool.forgejo
+          - process.task-tracking
+
+      # Role: designer
+      # Used to review UX/UI proposals, user flows, and ensure alignment with the product vision.
+      designer:
+        conventions:
+          - process.diagrams
+          - tool.mermaid
+
+# 3. skills (Progressive Knowledge Loading):
+#    Skills are invocable knowledge bundles that load on demand via slash commands
+#    (e.g., /ks.engineer). Each skill colocates its conventions in the skill folder
+#    so all relevant context loads together when the skill is activated.
+#
+#    Fields:
+#    - description: Human-facing skill description for routing and discovery
+#    - template: Template file in modules/terminal/agent-assets/
+#    - colocated_conventions: Convention files copied into the skill folder
+#    - colocated_roles: Role definition files copied into the skill folder
+
+skills:
+  ks-engineer:
+    description: "Engineering — implementation, code review, architecture, and CI"
+    template: engineer-skill.template.md
+    colocated_conventions:
+      - process.feature-delivery
+      - process.pull-request
+      - process.code-review-ownership
+      - process.continuous-integration
+      - process.pr-shepherding
+      - process.refactor
+      - process.version-control
+      - process.version-control-advanced
+      - process.vcs-context-continuity
+      - process.git-repos
+      - code.shell-scripts
+      - code.comments
+      - tool.nix-devshell
+    colocated_roles:
+      - software-engineer
+      - code-reviewer
+      - architect
+
+  ks-product:
+    description: "Product — planning, milestones, stakeholder communication"
+    template: product-skill.template.md
+    colocated_conventions:
+      - process.product-engineering-handoff
+      - process.press-release
+      - process.project-board
+      - process.prose
+      - process.diagrams
+      - tool.mermaid
+      - tool.forgejo
+    colocated_roles:
+      - business-analyst
+      - project-lead
+
+  ks-project-manager:
+    description: "Project management — task decomposition, tracking, and boards"
+    template: pm-skill.template.md
+    colocated_conventions:
+      - process.feature-delivery
+      - process.project-board
+      - process.task-tracking
+      - process.blocker
+      - process.issue-journal
+      - process.vcs-context-continuity
+      - tool.forgejo
+      - tool.github
+    colocated_roles:
+      - project-lead
+      - task-decomposer
+
+  ks-ea:
+    description: "Executive assistant — calendar, inbox, events, portfolio reviews"
+    template: ks-executive-assistant.template.md
+    colocated_conventions:
+      - tool.calendula
+      - tool.himalaya
+      - tool.stalwart
+    colocated_roles:
+      - executive-assistant
+
+  deepwork:
+    description: "Start or continue DeepWork workflows using MCP tools"
+    template: deepwork-skill.template.md
+
+  deepplan:
+    description: "Start structured planning — explores, designs, and produces an executable plan"
+    template: deepplan-skill.template.md
+
+  deepreviews:
+    description: "Reference documentation for DeepWork Reviews — automated code review rules using .deepreview configs and DeepSchema-generated rules"
+    template: deepreviews-skill.template.md
+
+  deepschema:
+    description: "Create and manage DeepSchemas — rich file-level schemas with automatic validation and review generation"
+    template: deepschema-skill.template.md
+
+  review:
+    description: "Run DeepWork Reviews on the current branch — review changed files using .deepreview rules"
+    template: review-skill.template.md
+
+  configure-reviews:
+    description: "Set up DeepWork Reviews — automated code review rules using .deepreview config files"
+    template: configure-reviews-skill.template.md
+
+  wrap-up:
+    description: "Checkpoint the session: create a configured notes-dir report, comment on issues/PRs, and leave a handoff for the next agent or human"
+    template: wrap-up-skill.template.md

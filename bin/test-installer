@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# Test the Keystone installer TUI using NixOS VM tests
+#
+# Usage:
+#   ./bin/test-installer             # Run headlessly (default)
+#   ./bin/test-installer --interactive  # Watch the test in a graphical window
+#   ./bin/test-installer --help      # Show help
+#
+# This script builds and runs the NixOS VM test for the installer TUI.
+# The test is exposed at .#installer-test (in packages, not checks, to avoid IFD).
+# In interactive mode, you can watch the VM and manually interact with it.
+#
+# Interactive mode REPL commands:
+#   >>> start_all()           # Start the VM
+#   >>> test_script()         # Run the full test
+#   >>> installer.shell_interact()  # Drop into VM shell
+#
+# For manual stepping:
+#   >>> installer.wait_for_text("Network Connected")
+#   >>> installer.send_key("ret")
+#   >>> installer.send_chars("my-hostname")
+#
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+LOCAL_STORE_ROOT="$PROJECT_DIR/.nix"
+LOCAL_STORE_PATH="$LOCAL_STORE_ROOT/nix/store"
+STORE_URI="daemon"
+CACHE_DIR="$PROJECT_DIR/.cache"
+
+export XDG_CACHE_HOME="$CACHE_DIR"
+mkdir -p "$XDG_CACHE_HOME"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Common nix args so we don't rely on a system daemon (disallowed in some environments)
+NIX_COMMON_ARGS=(
+    --store "$STORE_URI"
+    --extra-experimental-features "nix-command flakes"
+    --option accept-flake-config true
+)
+
+ensure_store() {
+    if nix store info --store daemon >/dev/null 2>&1; then
+        STORE_URI="daemon"
+    else
+        STORE_URI="local?root=${LOCAL_STORE_ROOT}"
+        mkdir -p "$LOCAL_STORE_ROOT"
+        nix store info --store "$STORE_URI" >/dev/null
+        echo -e "${YELLOW}Nix daemon unavailable, using local store at ${LOCAL_STORE_PATH}${NC}"
+    fi
+
+    # Update store flag now that we know which one to use
+    NIX_COMMON_ARGS[1]="$STORE_URI"
+
+    # Ensure flake evaluation also uses the chosen store and accepts flake config
+    export NIX_CONFIG=$'experimental-features = nix-command flakes\naccept-flake-config = true\nstore = '"$STORE_URI"$'\n'
+}
+
+nix_cmd() {
+    nix "${NIX_COMMON_ARGS[@]}" "$@"
+}
+
+show_help() {
+    echo "Usage: ./bin/test-installer [OPTIONS]"
+    echo ""
+    echo "Test the Keystone installer TUI using NixOS VM tests."
+    echo ""
+    echo "Options:"
+    echo "  --interactive    Run in interactive mode with graphical display"
+    echo "  --headless       Run headlessly (default)"
+    echo "  --build-only     Only build the test, don't run it"
+    echo "  --help           Show this help message"
+    echo ""
+    echo "Interactive Mode:"
+    echo "  In interactive mode, the test driver starts a Python REPL where"
+    echo "  you can watch the VM and manually control the test."
+    echo ""
+    echo "  Common commands:"
+    echo "    >>> start_all()                    # Start the VM"
+    echo "    >>> test_script()                  # Run the full test"
+    echo "    >>> installer.shell_interact()     # Drop into VM shell"
+    echo "    >>> installer.wait_for_text('X')   # Wait for text on screen"
+    echo "    >>> installer.send_key('ret')      # Send key (ret, down, up, etc)"
+    echo "    >>> installer.send_chars('text')   # Type characters"
+    echo ""
+    echo "Examples:"
+    echo "  ./bin/test-installer                 # Run test headlessly"
+    echo "  ./bin/test-installer --interactive   # Watch test interactively"
+    echo ""
+}
+
+MODE="headless"
+BUILD_ONLY=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --interactive)
+            MODE="interactive"
+            shift
+            ;;
+        --headless)
+            MODE="headless"
+            shift
+            ;;
+        --build-only)
+            BUILD_ONLY=true
+            shift
+            ;;
+        --help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+ensure_store
+
+cd "$PROJECT_DIR"
+
+if [[ "$MODE" == "interactive" ]]; then
+    echo -e "${BLUE}Building interactive test driver...${NC}"
+    # Test is in packages (not checks) to avoid IFD issues with nix flake check
+    nix_cmd build .#installer-test.driverInteractive
+
+    if [[ "$BUILD_ONLY" == "true" ]]; then
+        echo -e "${GREEN}Build complete: ./result/bin/nixos-test-driver${NC}"
+        exit 0
+    fi
+
+    echo -e "${GREEN}Starting interactive test driver...${NC}"
+    echo ""
+    echo -e "${YELLOW}Interactive mode tips:${NC}"
+    echo "  - Type 'start_all()' to start the VM"
+    echo "  - Type 'test_script()' to run the full test"
+    echo "  - Type 'installer.shell_interact()' for a VM shell"
+    echo "  - Use Ctrl+D or 'exit()' to quit"
+    echo ""
+    ./result/bin/nixos-test-driver --interactive
+else
+    echo -e "${BLUE}Building and running test headlessly...${NC}"
+
+    if [[ "$BUILD_ONLY" == "true" ]]; then
+        # Test is in packages (not checks) to avoid IFD issues with nix flake check
+        nix_cmd build .#installer-test
+        echo -e "${GREEN}Build complete: ./result${NC}"
+        exit 0
+    fi
+
+    # Run the test (in packages, not checks)
+    if nix_cmd build .#installer-test --print-build-logs; then
+        echo -e "${GREEN}✓ All tests passed!${NC}"
+        exit 0
+    else
+        echo -e "${RED}✗ Test failed!${NC}"
+        echo "Run with --interactive to debug"
+        exit 1
+    fi
+fi

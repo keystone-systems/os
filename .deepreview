@@ -1,0 +1,523 @@
+# =====================================================================
+# Nix: Format and Flake Check
+# Runs nixfmt check and nix flake check when Nix files change.
+# Mirrors the CI pipeline in .github/workflows/validate.yml (check-eval, etc.).
+# =====================================================================
+nix_validate:
+  description: "Run nixfmt check and nix flake evaluation check when Nix files change."
+  match:
+    include:
+      - "**/*.nix"
+      - "flake.lock"
+    exclude:
+      - "tests/**"
+  review:
+    strategy: matches_together
+    instructions: |
+      Nix files changed. Run exactly these two commands from the project root
+      and report failures. Do NOT run any other nix commands.
+
+      1. **Formatting** — Run `nix fmt -- --check **/*.nix 2>&1 | head -30`
+         and report any unformatted files. Do NOT auto-fix; just list them.
+
+      2. **Evaluation check** — Run `nix flake check --no-build 2>&1 | head -30`
+         and report any evaluation errors, broken module imports, or type
+         mismatches. Use `--no-build` only — full builds run in CI, not here.
+
+      If both pass, report "All checks passed." with a brief summary.
+      Do NOT run `nix flake check` without `--no-build`.
+
+# =====================================================================
+# Implementation Sync: Docs, specs, and tests stay current with code
+# When modules, packages, or flake.nix change, verify that derived
+# artifacts (docs/, specs/, tests/) still match the implementation.
+# =====================================================================
+implementation_sync:
+  description: "Ensure docs/, specs/, and tests/ stay in sync when implementation files change."
+  match:
+    include:
+      - "modules/**/*.nix"
+      - "modules/**/AGENTS.md"
+      - "packages/**/*.sh"
+      - "packages/**/*.nix"
+      - "packages/**/AGENTS.md"
+      - "flake.nix"
+      - "AGENTS.md"
+      - "conventions/AGENTS.md"
+      - "docs/**"
+      - "templates/**"
+      - "tests/**"
+      - ".deepwork/jobs/**"
+    exclude:
+      - "modules/**/scripts/**"
+  review:
+    strategy: matches_together
+    additional_context:
+      unchanged_matching_files: true
+    instructions: |
+      When implementation files change, check whether derived artifacts still match.
+      When derived artifacts change without code changes, verify they match the code.
+
+      ## 1. Documentation (AGENTS.md + docs/)
+
+      Read AGENTS.md and relevant docs/*.md files, then compare against changed source.
+      Note: CLAUDE.md is a symlink to AGENTS.md — they are the same file.
+
+      **AGENTS.md checks:**
+      - Module File Tree: Does the directory tree listing match the actual filesystem layout?
+      - Module descriptions: Do inline descriptions match what the modules actually do?
+      - Server Services table: Does it list all services in modules/server/services/?
+      - nixosModules/homeModules exports: Do they match flake.nix?
+      - Key Options: Does the options list match actual module options?
+      - Deployment Patterns: Do example config snippets use correct option names/structure?
+      - Domain Architecture: Does the server domain docs match actual domain/port defaults?
+      - Packages table: Does it list all packages in packages/?
+
+      **docs/ checks:**
+      - docs/index.md: Does the overview match current module structure and features?
+      - docs/installation.md: Do installation steps reference correct module names and options?
+      - docs/users.md: Does it match keystone.os.users options?
+      - docs/terminal.md: Does it match keystone.terminal options?
+      - docs/hardware-keys.md: Does it match keystone.os.hardwareKey options?
+      - docs/testing-vm.md: Does it match current VM testing workflow?
+      - docs/examples.md: Do code examples use correct option paths?
+
+      For any doc that references module options, NixOS config snippets, or CLI commands,
+      verify they still match the actual implementation. Flag outdated sections.
+      If a module change adds new user-facing features or options not yet documented,
+      flag as "missing documentation".
+
+      ## 2. Specs (docs/specs/)
+
+      Specs are flat files at `docs/specs/REQ-NNN-slug.md` (no subdirectories).
+      The `specs_review` rule handles deep spec-vs-implementation review.
+      Here, only check structural hygiene:
+      - Flag any `docs/specs/REQ-*/` subdirectory that contains a `requirements.md`
+        (violates flat-file convention — should be migrated to `docs/specs/REQ-NNN-slug.md`)
+      - Flag any spec file whose "Affected Modules" section references a path
+        that no longer exists in the repository
+
+      ## 3. Tests (tests/)
+
+      1. Do NOT run `nix flake check` here — the `nix_validate` review handles that.
+      2. For each changed module, check if the relevant test file exercises the
+         new or changed options:
+         - modules/os/** → tests/module/os-evaluation.nix
+         - modules/os/agents/** → tests/module/agent-evaluation.nix
+         - modules/server/** → tests/module/server-evaluation.nix
+         - modules/terminal/** → covered via agent-evaluation.nix (agents import terminal)
+         - templates/ → tests/module/template-evaluation.nix
+      3. If a new user-facing option is added but not exercised in any test, flag
+         as "missing test coverage".
+      4. If test files change, verify they still evaluate cleanly.
+
+      Report which tests cover which changes, and flag any gaps.
+
+# =====================================================================
+# Requirements Traceability
+# Every Nix module header comment should link to its relevant
+# conventions (conventions/*.md) and spec requirements (specs/REQ-*).
+# Enables: `rg "tool.cli-coding-agents"` or `rg "REQ-007"` to find related modules.
+# =====================================================================
+requirements_traceability:
+  description: "Verify Nix module headers link to relevant conventions and spec requirements."
+  match:
+    include:
+      - "modules/**/*.nix"
+    exclude:
+      - "modules/**/scripts/**"
+      - "tests/**"
+  review:
+    strategy: individual
+    instructions: |
+      Each Nix module file MUST have a header comment block that includes:
+
+      1. **Convention references** — If the module implements behavior documented
+         in a conventions/ file, the header MUST contain a comment linking to it.
+         Format: `# See conventions/<name>.md` (one per line).
+         Example: `# See conventions/tool.cli-coding-agents.md`
+
+      2. **Spec references** — If the module implements requirements from a spec,
+         the header MUST reference the spec ID.
+         Format: `# Implements REQ-XXX` or `# See docs/specs/REQ-XXX-<name>.md`
+         Example: `# Implements REQ-007 (OS Agents)`
+
+      These MUST be links/references only — do NOT inline convention content
+      into the comment. The goal is grep-ability: `rg "conventions/tool.cli"` or
+      `rg "REQ-007"` should find every module that touches that concern.
+
+      **How to check:**
+      - Read the module's header comment (first comment block before the opening `{`)
+      - Read the module body to understand what it does
+      - Check conventions/ for any convention that covers this module's domain
+      - Check docs/specs/ for any REQ that lists this file in its "Affected Modules"
+      - Flag missing references as "missing convention link" or "missing spec reference"
+
+      **Exceptions** (do not flag):
+      - Trivial modules that only re-export or barrel-import other modules
+      - Module files under 20 lines
+      - Files that genuinely have no matching convention or spec
+
+# =====================================================================
+# Shell Script Code Review
+# Reviews shell scripts against project conventions in
+# conventions/code.shell-scripts.md. Checks ShellCheck compliance,
+# strict mode, quoting, cleanup, and Nix packaging patterns.
+# =====================================================================
+shell_code_review:
+  description: "Review shell scripts against keystone shell script conventions and best practices."
+  match:
+    include:
+      - "**/*.sh"
+    exclude:
+      - ".claude/worktrees/**"
+      - ".worktrees/**"
+      - "worktree/**"
+  review:
+    strategy: individual
+    instructions: |
+      Review this shell script against the keystone shell script conventions
+      documented in conventions/code.shell-scripts.md.
+
+      Check for:
+      - `set -euo pipefail` present at the top (rule 1)
+      - Correct shebang for standalone scripts vs writeShellApplication (rules 2-3)
+      - ShellCheck compliance — flag any obvious violations (rules 5-7)
+      - SC2155: local declarations split from command substitutions (rule 7)
+      - Cleanup trap on EXIT for scripts creating temp files/dirs (rules 8-10)
+      - All variable expansions double-quoted (rule 11)
+      - `[[ ]]` used instead of `[ ]` (rule 13)
+      - Functions use `local` for all variables (rule 15)
+      - Error messages written to stderr (rule 17)
+      - Argument parsing uses while/case loop (rule 18)
+      - Unknown arguments rejected with error (rule 19)
+
+      Additionally, always check:
+      - **DRY violations**: Is there duplicated logic or repeated patterns that
+        should be extracted into a shared function or utility script?
+      - **Comment accuracy**: Are all comments still accurate after the changes?
+        Flag comments that describe behavior that no longer matches the code.
+
+# =====================================================================
+# Rust Code Review
+# Reviews Rust source files in keystone-tui and keystone-ha packages.
+# Checks idiomatic Rust patterns, error handling, and project style.
+# =====================================================================
+rust_code_review:
+  description: "Review Rust source files against project patterns and idiomatic Rust practices."
+  match:
+    include:
+      - "packages/ks/src/**/*.rs"
+      - "packages/ks/tests/**/*.rs"
+      - "packages/keystone-ha/**/*.rs"
+    exclude:
+      - "**/target/**"
+  review:
+    strategy: individual
+    instructions: |
+      Review this Rust source file against idiomatic Rust practices and the
+      project's existing patterns. Reference packages/ks/AGENTS.md
+      for CI validation expectations.
+
+      Check for:
+      - Proper error handling (Result/Option usage, no unwrap in production code)
+      - Idiomatic Rust patterns (iterators over manual loops, pattern matching)
+      - Consistent naming (snake_case functions/variables, CamelCase types)
+      - Appropriate visibility modifiers (prefer private by default)
+      - Module organization consistent with existing structure
+      - Correct use of lifetimes and ownership (no unnecessary clones)
+      - Test coverage for new public functions
+
+      Additionally, always check:
+      - **DRY violations**: Is there duplicated logic or repeated patterns that
+        should be extracted into a shared function, trait, or module?
+      - **Comment accuracy**: Are all comments, doc comments (///), and inline
+        documentation still accurate after the changes? Flag any comments that
+        describe behavior that no longer matches the code.
+
+# =====================================================================
+# Specs Review
+# When any spec file changes, use ripgrep to find all implementation
+# files referenced by that spec's REQ numbers, then review them
+# holistically against the spec's requirements. Also enforces the
+# flat-file convention: no docs/specs/REQ-*/requirements.md subdirs.
+# =====================================================================
+specs_review:
+  description: "When a spec changes, find related implementation files via ripgrep and review them against the spec's requirements. Enforces the flat-file convention."
+  match:
+    include:
+      - "docs/specs/REQ-*.md"
+      - "docs/specs/AGENTS.md"
+  review:
+    strategy: individual
+    instructions: |
+      A spec file changed. Perform a holistic review of the spec against its
+      implementation and enforce structural conventions.
+
+      ## 1. Flat-file convention check
+
+      Run:
+        find docs/specs/ -mindepth 2 -name "requirements.md"
+
+      If any results are returned, flag each as a violation:
+        "VIOLATION: docs/specs/REQ-NNN-slug/requirements.md must be migrated to
+        docs/specs/REQ-NNN-slug.md (flat file). See docs/specs/AGENTS.md."
+
+      ## 2. Find related implementation files
+
+      Read the changed spec file. Extract:
+      - The REQ number (e.g., `REQ-023`) from the filename or title
+      - All file paths listed in the "Affected Modules" section
+      - All `REQ-NNN.X` requirement IDs in the document body
+
+      Then run ripgrep to discover every file that references this spec:
+        rg "REQ-023" --type nix --type sh -l
+        rg "REQ-023" .deepwork/jobs/ conventions/ -l
+        rg "docs/specs/REQ-023" -l
+
+      Combine the "Affected Modules" list with the ripgrep results into a
+      unified set of related files.
+
+      ## 3. Holistic review
+
+      For each file in the related set:
+
+      a. **Path exists** — confirm the file still exists. If a path in
+         "Affected Modules" is missing, flag as "stale reference."
+
+      b. **Requirements satisfied** — for each `REQ-NNN.X` requirement in
+         the spec, check whether the implementation file satisfies it:
+         - MUST/SHALL requirements: verify the behavior is present
+         - MUST NOT requirements: verify the prohibited behavior is absent
+         - Flag any requirement with no corresponding implementation as
+           "unimplemented: REQ-NNN.X — <requirement text>"
+
+      c. **Implementation matches claims** — check whether the code does
+         anything the spec explicitly prohibits (e.g., REQ-023.43 says the
+         processor MUST NOT modify source files — verify the script has no
+         write/delete calls on input paths).
+
+      d. **Option names and paths** — if the spec references specific Nix
+         option paths (e.g., `keystone.os.agents.<name>.perception.enable`),
+         grep the implementation to confirm the option exists at that path.
+
+      ## 4. Spec quality checks
+
+      - **No subdirectory references**: the spec MUST NOT instruct readers
+        to look at `requirements.md` inside a subdir — all specs are flat files.
+      - **REQ numbers unique**: the spec's own REQ-NNN.X numbers must not
+        duplicate numbers in adjacent spec files. Run:
+          rg "REQ-NNN\." docs/specs/ | grep -v "^docs/specs/REQ-NNN-"
+        to check for cross-spec number leakage.
+      - **Press release / plan links**: if the spec has a "Press release:"
+        or "Plan:" link, fetch the issue to confirm it still exists and
+        references this spec.
+
+      ## 5. Report
+
+      Produce a structured report:
+        - PASS / FAIL for flat-file convention
+        - List of related files found (Affected Modules + ripgrep hits)
+        - Per-requirement status: satisfied / unimplemented / untestable
+        - Stale path references (if any)
+        - Option-path mismatches (if any)
+        - Overall verdict: SPEC IN SYNC or SPEC DRIFT DETECTED
+    additional_context:
+      unchanged_matching_files: true
+
+# =====================================================================
+# Milestone ↔ GitHub Sync
+# When a milestone's README.md (frontmatter or scope) or tracker.md
+# changes, validate that local state matches the GitHub milestone and
+# tracker issue. Precomputed context fetches live GitHub state so the
+# reviewer compares files-on-disk vs. tracker-of-record.
+# =====================================================================
+milestone_github_sync:
+  description: "Validate docs/milestones/M<N>-*/ files against the GitHub milestone and tracker issue."
+  match:
+    include:
+      - "docs/milestones/M*/README.md"
+      - "docs/milestones/M*/tracker.md"
+      - "docs/milestones/M*/press-release.md"
+      - "docs/milestones/M*/internal-faq.md"
+      - "docs/milestones/M*/designs.md"
+  review:
+    strategy: matches_together
+    precomputed_info_for_reviewer_bash_command: .deepwork/review/fetch_milestone_state.sh
+    additional_context:
+      unchanged_matching_files: true
+    instructions: |
+      A milestone doc-set under `docs/milestones/M<N>-<slug>/` changed. Validate
+      it against the live GitHub state injected as Precomputed Context below.
+
+      The frontmatter at the top of each `README.md` is the machine-readable
+      header (the schema lives at `docs/milestones/README.md` § "README.md
+      frontmatter"):
+
+      ```yaml
+      ---
+      slug: <kebab-case>
+      trackerMilestone: <int>          # GitHub milestone number, matches M<N>
+      trackerIssue: <int | null>       # release-tracker issue number
+      flag: KEYSTONE_FLAG_MILESTONE_<UPPER>
+      dependsOnSpecs: [<spec-slug>, ...]
+      status: planned | in_progress | shipped | cancelled
+      ---
+      ```
+
+      Precomputed Context will include one block per changed milestone:
+        - `gh api repos/ncrmro/keystone/milestones/<trackerMilestone>` (title,
+          description, state, open/closed issue counts, due_on)
+        - `gh api repos/ncrmro/keystone/issues/<trackerIssue>` if non-null
+        - `gh issue list --milestone "<title>"` (all issues attached to the
+          milestone, both open and closed)
+
+      ## 1. Hard validations — fail the review on any of these
+
+      - **Frontmatter shape**: every required field present (slug,
+        trackerMilestone, flag, dependsOnSpecs, status). `status` is one of
+        the four allowed values. `flag` matches `KEYSTONE_FLAG_MILESTONE_<UPPER>`
+        where `<UPPER>` is the slug uppercased with hyphens → underscores.
+      - **Directory ↔ trackerMilestone**: the `M<N>` prefix in the directory
+        name matches `trackerMilestone`. If the dir is `M9-v1-stabilization/`
+        then `trackerMilestone: 9`. Mismatch = FAIL.
+      - **slug ↔ directory**: the `slug:` value equals the dir suffix after
+        `M<N>-`. (`M9-v1-stabilization/` → `slug: v1-stabilization`.)
+      - **GitHub milestone exists**: the `gh api .../milestones/<N>` block in
+        Precomputed Context returned data (not a 404). If GitHub reports the
+        milestone doesn't exist, FAIL — the local file is referencing a
+        tracker that's gone.
+      - **trackerIssue alignment**: if `trackerIssue:` is non-null, the
+        `gh api .../issues/<I>` block MUST show `.milestone.number ==
+        trackerMilestone`. If the issue exists but isn't attached to the
+        milestone on GitHub, FAIL.
+      - **status ↔ GitHub state agreement**: if local `status: shipped`,
+        the GitHub milestone state MUST be `closed`. If local
+        `status: cancelled`, GitHub state MUST be `closed`. If local is
+        `planned` or `in_progress`, GitHub state MUST be `open`.
+      - **dependsOnSpecs resolve**: every entry in `dependsOnSpecs:` MUST be
+        a slug matching exactly one `docs/specs/REQ-NNN-<slug>.md` file. If a
+        slug resolves to zero or multiple files, FAIL.
+
+      ## 2. Drift warnings — surface for human judgment, do not auto-fail
+
+      - **Description prose drift**: compare the GitHub milestone description
+        to the `## Scope` section of the local `README.md`. They will not be
+        character-for-character identical; that's fine. Surface a side-by-side
+        diff if the goals/scope bullets differ materially (added items,
+        removed items, changed wording that flips meaning).
+      - **tracker.md staleness**: if `tracker.md` is in the changeset, compare
+        its issue checklist against the `gh issue list` block. Flag missing
+        issues or stale state (e.g. tracker shows `[ ]` for an issue that
+        GitHub reports as CLOSED). Suggest `bin/sync-milestone-tracker
+        <trackerMilestone>` to regenerate.
+      - **Open issues with closed milestone**: if GitHub state is `closed`
+        but the milestone has `open_issues > 0`, surface it. This usually
+        means a v1.1 / post-release issue is still attached.
+
+      ## 3. Report
+
+      Produce a structured report with two sections:
+      - **Hard validation results** — PASS / FAIL per check, with the
+        offending value when it fails.
+      - **Drift warnings** — bullet list of human-judgment items.
+
+      Overall verdict: MILESTONE IN SYNC, MILESTONE DRIFT (warnings only),
+      or MILESTONE VIOLATION (any hard validation failed).
+
+# =====================================================================
+# Experimental Feature Consistency
+# When modules or docs/experimental.md change, verify the three-way
+# contract: module flag, header comment, and docs page stay in sync.
+# Also catches graduation candidates (flag removed but docs not updated).
+# =====================================================================
+experimental_consistency:
+  description: "Verify experimental modules, flags, header markers, and docs/experimental.md stay in sync."
+  match:
+    include:
+      - "modules/**/*.nix"
+      - "docs/experimental.md"
+      - "modules/shared/experimental.nix"
+    exclude:
+      - "modules/**/scripts/**"
+      - "tests/**"
+  review:
+    strategy: matches_together
+    additional_context:
+      unchanged_matching_files: true
+    instructions: |
+      Audit the three-way contract between experimental modules, their flags,
+      and docs/experimental.md. All three must agree.
+
+      ## 1. Find all gated modules
+
+      Run:
+        rg "config\.keystone\.experimental" modules/ --type nix -l
+
+      For each file found:
+        a. The module file header MUST contain `[EXPERIMENTAL]`.
+        b. The module MUST import `../shared/experimental.nix`.
+        c. The module MUST have an entry in `docs/experimental.md` under
+           "Current experimental features."
+
+      Flag any module that uses `config.keystone.experimental` but is missing
+      the header marker or docs entry.
+
+      ## 2. Check docs/experimental.md completeness
+
+      Read docs/experimental.md. For each feature listed under
+      "Current experimental features":
+        a. The referenced module file MUST exist.
+        b. The module MUST actually use `config.keystone.experimental` in its
+           enable default.
+        c. If the module no longer uses the flag (graduation candidate), flag
+           as "docs entry stale — module has graduated or flag was removed."
+
+      ## 3. Graduation detection
+
+      If a changed module previously used `config.keystone.experimental` but
+      now defaults to `true`:
+        a. The `[EXPERIMENTAL]` header MUST be removed.
+        b. The docs/experimental.md entry MUST be moved to the stable surface
+           list or removed.
+        c. Flag if the graduation is incomplete (header or docs not updated).
+
+      ## Report
+
+      - List all modules gated behind `keystone.experimental`
+      - PASS if all three artifacts agree
+      - FAIL with specific mismatches: missing header, missing docs entry,
+        stale docs entry, incomplete graduation
+
+# =====================================================================
+# Suggest New Reviews (DeepWork native)
+# Analyzes all changes to suggest new review rules that would catch
+# issues going forward. Conservative — only suggests high-value rules.
+# =====================================================================
+suggest_new_reviews:
+  description: "Analyze all changes and suggest new review rules that would catch issues going forward."
+  match:
+    include:
+      - "**/*"
+    exclude:
+      - ".github/**"
+      - ".claude/worktrees/**"
+      - ".worktrees/**"
+      - "worktree/**"
+  review:
+    strategy: matches_together
+    instructions: |
+      Analyze the changeset to determine whether any new DeepWork review rules
+      should be added.
+
+      1. Call get_configured_reviews to see all currently configured review rules.
+      2. Read README_REVIEWS.md if present for context on review capabilities.
+      3. For each change, consider:
+         - Did this change introduce a type of issue a review rule could catch?
+         - Is there a pattern likely to recur?
+         - Would an existing rule benefit from a small scope expansion?
+      4. Be extremely conservative. Only suggest rules that are:
+         - Extremely narrow (targets 1 specific file or small bounded set)
+         - Slight additions to existing rules (adding a glob to an include list)
+         - Catches an issue likely to recur and worth ongoing cost
+      5. If no rules are warranted, say so. An empty suggestion list is valid.

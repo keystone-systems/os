@@ -1,0 +1,138 @@
+# =====================================================================
+# ks validation
+# Runs cargo fmt --check, clippy, and tests when Rust source changes.
+# Mirrors the CI pipeline in .github/workflows/validate.yml (check-ks group).
+# =====================================================================
+ks_validate:
+  description: "Run cargo fmt check, clippy, and tests for ks Rust source changes."
+  match:
+    include:
+      - "**/*.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+    exclude:
+      - "target/**"
+  review:
+    strategy: matches_together
+    instructions: |
+      Rust source files changed in the ks package. Run these checks from the
+      packages/ks directory and report any failures:
+
+      1. **Formatting** — Run `cargo fmt --all -- --check` and report any
+         unformatted files. Do NOT auto-fix; just list which files need formatting.
+
+      2. **Clippy** — Run `cargo clippy --all-targets --all-features -- -D warnings`
+         and report any warnings or errors with their full diagnostic messages.
+
+      3. **Tests** — Run `cargo test --verbose` and report any test failures
+         with the failing test name and error output.
+
+      If all three pass, report "All checks passed." with a brief summary of
+      what was validated.
+
+# =====================================================================
+# ks Rust code review
+# Reviews ks Rust source against idiomatic Rust practices and package
+# conventions in packages/ks/AGENTS.md.
+# =====================================================================
+ks_rust_code_review:
+  description: "Review ks Rust source against idiomatic Rust practices and package conventions."
+  match:
+    include:
+      - "src/**/*.rs"
+      - "tests/**/*.rs"
+    exclude:
+      - "target/**"
+  review:
+    strategy: individual
+    instructions: |
+      Review this Rust source file against idiomatic Rust practices and the
+      package conventions documented in AGENTS.md.
+
+      Check for:
+      - Proper error handling (Result/Option usage, no unwrap in production code)
+      - Idiomatic Rust patterns (iterators over manual loops, pattern matching)
+      - Consistent naming (snake_case functions/variables, CamelCase types)
+      - Appropriate visibility modifiers (prefer private by default)
+      - Module organization consistent with the documented ks structure
+      - Correct use of lifetimes and ownership (no unnecessary clones)
+      - Test coverage for new public functions or user-visible behavior
+
+      Additionally, always check:
+      - **DRY violations**: duplicated logic that should move into a shared helper,
+        trait, or module
+      - **Comment accuracy**: comments, doc comments, and inline documentation
+        still match the code after the change
+
+# =====================================================================
+# ks Nix AST review
+# Enforces the ks rule that Rust code reading or writing .nix source must
+# use rnix AST parsing/rewriting rather than string-based manipulation.
+# =====================================================================
+ks_nix_ast_review:
+  description: "Review ks Rust files that handle Nix source and enforce rnix AST usage."
+  match:
+    include:
+      - "src/nix.rs"
+      - "src/template.rs"
+      - "src/repo.rs"
+      - "src/components/install.rs"
+      - "src/components/template/**/*.rs"
+  review:
+    strategy: matches_together
+    instructions: |
+      Review these ks Rust files for compliance with the Nix source handling
+      rules in AGENTS.md.
+
+      The required rule is:
+      - when Rust code reads or writes `.nix` source, it should use `rnix`
+        and operate on the AST
+
+      Check for:
+      - string matching, regex parsing, line filtering, or ad hoc extraction
+        used to read `.nix` source
+      - string replacement, line-based filtering, or template reconstruction
+        used to rewrite `.nix` source
+      - new Nix source handling that does not use `rnix`
+      - migration debt that should be called out explicitly when touched
+
+      Flag any remaining or newly introduced text-based `.nix` parsing that
+      should use rnix AST operations instead.
+
+# =====================================================================
+# ks component architecture review
+# Enforces the ratatui Component Architecture and the documented split
+# between components, widgets, and shared CLI/JSON/TUI execution logic.
+# =====================================================================
+ks_component_architecture_review:
+  description: "Review ks UI architecture against the documented component model."
+  match:
+    include:
+      - "src/main.rs"
+      - "src/app.rs"
+      - "src/action.rs"
+      - "src/component.rs"
+      - "src/cli.rs"
+      - "src/tui.rs"
+      - "src/components/**/*.rs"
+      - "src/widgets/**/*.rs"
+  review:
+    strategy: matches_together
+    instructions: |
+      Review these ks files against the architecture documented in AGENTS.md.
+
+      Check for:
+      - components implementing the documented Component model cleanly
+      - internal component actions staying local rather than leaking into the
+        global `Action` enum
+      - navigation and cross-component effects going through `Action`
+      - complex components using the documented `types.rs` / `run.rs` split
+        when CLI/JSON/TUI logic is shared
+      - widgets remaining stateless rendering primitives
+      - new file placement matching the documented package layout
+
+      Additionally, always check:
+      - **DRY violations**: repeated component or command wiring that should be
+        extracted into shared helpers
+      - **Comment accuracy**: comments and architecture notes still match the
+        actual component boundaries

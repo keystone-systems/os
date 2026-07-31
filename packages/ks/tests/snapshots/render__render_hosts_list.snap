@@ -1,0 +1,19 @@
+---
+source: tests/render.rs
+expression: output
+---
+                      my-infra  2 hosts                     
+────────────────────────────────────────────────────────────
+ Hosts       │ laptop             │  Arch   x86_64-linux    
+ Services    │ server             │                         
+ Secrets     │                    │  Modules  operating-syst
+ Security    │                    │                         
+ Installer   │                    │                         
+             │                    │                         
+             │                    │                         
+             │                    │                         
+             │                    │                         
+             │                    │                         
+             │                    │                         
+             │                    │                         
+1-5: sections • ↑/↓: navigate • Enter: details • r: refresh

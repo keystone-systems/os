@@ -1,0 +1,127 @@
+@page {
+  margin: 0.48in 0.52in 0.56in;
+  size: Letter;
+}
+
+html {
+  font-size: 9.6pt;
+}
+
+body {
+  color: #111827;
+  font-family: "Noto Sans", "Noto Sans Display", "Helvetica Neue", "Liberation Sans", Arial, sans-serif;
+  line-height: 1.32;
+  font-weight: 400;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: #0f172a;
+  font-family: "Noto Sans", "Noto Sans Display", "Helvetica Neue", "Liberation Sans", Arial, sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  page-break-after: avoid;
+}
+
+h1 {
+  font-size: 1.34rem;
+  line-height: 1.08;
+  margin: 0 0 0.42rem;
+}
+
+h2 {
+  border-bottom: 1px solid #cbd5e1;
+  font-size: 0.95rem;
+  line-height: 1.12;
+  margin: 0.75rem 0 0.32rem;
+  padding-bottom: 0.1rem;
+}
+
+h3 {
+  font-size: 0.84rem;
+  line-height: 1.1;
+  margin: 0.58rem 0 0.18rem;
+}
+
+h4 {
+  font-size: 0.77rem;
+  line-height: 1.1;
+  margin: 0.38rem 0 0.14rem;
+}
+
+p,
+ul,
+ol,
+blockquote,
+pre,
+table {
+  margin: 0.25rem 0 0.45rem;
+}
+
+ul,
+ol {
+  padding-left: 1.1rem;
+}
+
+li + li {
+  margin-top: 0.08rem;
+}
+
+table {
+  border-collapse: collapse;
+  font-size: 0.79rem;
+  table-layout: fixed;
+  width: 100%;
+}
+
+thead {
+  display: table-header-group;
+}
+
+th,
+td {
+  border: 1px solid #d1d5db;
+  padding: 0.18rem 0.24rem;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+th {
+  background: #f8fafc;
+  font-weight: 700;
+  text-align: left;
+}
+
+code,
+pre {
+  font-family: "DejaVu Sans Mono", "Liberation Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+pre {
+  background: #f8fafc;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.32rem 0.4rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+blockquote {
+  border-left: 3px solid #cbd5e1;
+  color: #334155;
+  padding-left: 0.6rem;
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid #cbd5e1;
+  margin: 0.6rem 0;
+}
+
+img,
+svg {
+  max-width: 100%;
+}

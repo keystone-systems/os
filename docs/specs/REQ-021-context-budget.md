@@ -1,0 +1,173 @@
+# REQ-021: Agent Context Budget
+
+The combined system prompt for keystone agents (project CLAUDE.md + global
+CLAUDE.md + CLI tool overhead) currently consumes ~16,500 tokens before any
+work begins. Claude Code reports a 40k+ context warning, meaning agents start
+every session with nearly half their effective context already spent on static
+instructions. This spec defines a context budget, identifies the biggest
+contributors, and requires mechanisms to keep the prompt within budget.
+
+Key words: RFC 2119 (MUST, MUST NOT, SHALL, SHALL NOT, SHOULD, SHOULD NOT,
+MAY, REQUIRED, OPTIONAL).
+
+## User Story
+
+As a keystone operator, I want agent system prompts to stay within a defined
+token budget so that agents have sufficient context remaining for actual work
+(reading files, tool results, conversation history) without hitting context
+limits mid-task.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Claude Code Context Window                │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  System Prompt (static, loaded at session start)      │  │
+│  │                                                       │  │
+│  │  ┌─────────────────────┐  ┌────────────────────────┐  │  │
+│  │  │ Project CLAUDE.md   │  │ Global ~/.claude/       │  │  │
+│  │  │ (repo instructions) │  │ CLAUDE.md (conventions) │  │  │
+│  │  │                     │  │                         │  │  │
+│  │  │ ~11,000 tokens      │  │ ~5,500 tokens           │  │  │
+│  │  │ • Module file tree  │  │ • Inlined conventions   │  │  │
+│  │  │ • All options docs  │  │ • Referenced links      │  │  │
+│  │  │ • Config examples   │  │                         │  │  │
+│  │  │ • Deploy patterns   │  │ conventions.nix         │  │  │
+│  │  └─────────────────────┘  └────────────────────────┘  │  │
+│  │                                                       │  │
+│  │  + Claude Code system prompt (~2,000 tokens)          │  │
+│  │  + MCP server instructions (~1,000 tokens)            │  │
+│  │  ─────────────────────────────────────────────        │  │
+│  │  Total: ~19,500 tokens (before any user interaction)  │  │
+│  └───────────────────────────────────────────────────────┘  │
+│                                                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │  Working Context (conversation, tool results, files)  │  │
+│  │  Remaining: whatever the model supports minus above   │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+
+Current breakdown (bytes → est. tokens):
+
+  Project CLAUDE.md     44,001 bytes  →  ~11,000 tokens  (56%)
+  Global CLAUDE.md      21,975 bytes  →   ~5,500 tokens  (28%)
+  Claude Code overhead  ~8,000 bytes  →   ~2,000 tokens  (10%)
+  MCP instructions      ~4,000 bytes  →   ~1,000 tokens  ( 6%)
+                        ────────────     ──────────────
+  Total                 ~78,000 bytes    ~19,500 tokens
+```
+
+## Affected Modules
+
+- `CLAUDE.md` (repo root) — project instructions, largest contributor at 44k bytes
+- `modules/terminal/conventions.nix` — generates global `~/.claude/CLAUDE.md` from archetypes
+- `conventions/archetypes.yaml` — controls inlined vs referenced convention balance
+- `modules/terminal/ai.nix` — Claude Code package configuration
+- `modules/os/agents/agentctl.nix` — agent MCP server configuration
+
+## Requirements
+
+### Context Budget
+
+**REQ-021.1** The combined project CLAUDE.md and global CLAUDE.md MUST NOT
+exceed 10,000 tokens (~40,000 bytes) total.
+
+**REQ-021.2** The project CLAUDE.md MUST NOT exceed 6,000 tokens (~24,000
+bytes). It currently contains 44,001 bytes.
+
+**REQ-021.3** The global CLAUDE.md (generated by conventions.nix) MUST NOT
+exceed 4,000 tokens (~16,000 bytes). It currently contains 21,975 bytes.
+
+### Project CLAUDE.md Reduction
+
+**REQ-021.4** The module file tree in project CLAUDE.md MUST be reduced to
+a summary listing — file paths with one-line descriptions. The current
+multi-paragraph documentation per module MUST be moved to module-level
+comments in the Nix files themselves, where agents can read them on-demand.
+
+**REQ-021.5** Configuration examples in CLAUDE.md SHOULD be limited to one
+canonical example per major feature area (OS, server, terminal, desktop).
+The current exhaustive option documentation SHOULD be replaced with
+references to the Nix option definitions.
+
+**REQ-021.6** The deployment patterns, development/testing, and flake
+exports sections SHOULD be condensed to essential commands only. Detailed
+documentation SHOULD live in standalone docs files or module comments.
+
+### Convention Inlining Budget
+
+**REQ-021.7** The `inlined_conventions` list in `archetypes.yaml` MUST NOT
+produce more than 2,000 tokens (~8,000 bytes) of generated content per
+archetype.
+
+**REQ-021.8** Conventions exceeding 1,000 bytes SHOULD be `referenced`
+rather than `inlined`, unless they contain rules that agents need in every
+session (e.g., version control basics).
+
+**REQ-021.9** All conventions except `process.version-control` MUST be
+moved from `inlined_conventions` to `referenced_conventions` in the
+engineer archetype. The global CLAUDE.md SHOULD contain only: archetype
+identification, basic host orientation (NixOS, Nix devshells available),
+version control essentials, and links to on-demand references.
+
+### Build-Time Validation
+
+**REQ-021.10** The `conventions.nix` module MUST emit a build warning when
+the generated CLAUDE.md exceeds 16,000 bytes (4,000 tokens).
+
+**REQ-021.11** A Nix flake check SHOULD verify that `CLAUDE.md` at the
+repo root does not exceed 24,000 bytes (6,000 tokens).
+
+**REQ-021.12** The convention workflow (`/ks.convention`) SHOULD report
+the current context budget usage after wiring a new convention into
+archetypes, so the author knows if they are approaching the limit.
+
+### On-Demand Loading
+
+**REQ-021.13** Module documentation that is removed from CLAUDE.md MUST
+remain accessible to agents via file reads. Module files SHOULD contain
+header comments explaining their purpose, options, and usage.
+
+**REQ-021.14** The project CLAUDE.md SHOULD include a "Reference" section
+listing documentation files that agents can read on-demand (e.g.,
+`modules/os/agents/README.md`, `modules/server/README.md`).
+
+### Configuration
+
+**REQ-021.15** The context budget limits MUST be configurable via
+`keystone.terminal.conventions` options:
+
+```nix
+keystone.terminal.conventions = {
+  enable = true;
+  maxGlobalTokens = 4000;  # Max tokens for generated CLAUDE.md
+  warnOnExceed = true;     # Emit build warning when exceeded
+};
+```
+
+### Integration
+
+**REQ-021.16** After reducing CLAUDE.md, the `ks.develop` workflow MUST
+still function correctly — agents MUST be able to discover module
+documentation by reading files rather than relying on pre-loaded context.
+
+**REQ-021.17** The `ks.convention` workflow's apply step SHOULD report
+the current and projected inlined convention token count when wiring a
+new convention, warning if the budget would be exceeded.
+
+### Measurement
+
+**REQ-021.18** A `ks doctor` check SHOULD verify that the combined
+CLAUDE.md sizes are within budget on each host.
+
+**REQ-021.19** Token estimation MUST use the ratio of 1 token per 4
+bytes as the standard approximation for budget calculations.
+
+## Implementation Priority
+
+1. **Quick wins** (REQ-021.9): Move 2 large conventions to referenced — 27% inlined reduction
+2. **Medium effort** (REQ-021.4–6): Condense project CLAUDE.md — 50%+ repo instructions reduction
+3. **Guardrails** (REQ-021.10–12): Add build-time validation to prevent regression
+4. **Polish** (REQ-021.15, 17, 18): Configuration options and workflow integration

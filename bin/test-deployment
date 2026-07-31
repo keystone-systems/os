@@ -1,0 +1,1043 @@
+#!/usr/bin/env python3
+"""
+test-deployment - Full-stack Keystone deployment test (Tier 3)
+
+Automates the complete VM deployment testing workflow with UEFI Secure Boot,
+TPM-based disk encryption, and ZFS storage.
+
+FUNCTIONAL REQUIREMENTS VALIDATED:
+  - FR-002 Full Disk Encryption: LUKS2 + ZFS native encryption
+  - FR-003 Automatic Unlock: TPM enrollment and automatic disk unlock
+  - FR-004 Verified Boot Chain: Secure Boot setup mode and key enrollment
+  - FR-005 Copy-on-Write Storage: ZFS pool creation and verification
+  See: specs/001-keystone-os/spec.md
+
+TESTING TIER: 3 (libvirt + OVMF)
+  - Full UEFI boot with Secure Boot
+  - TPM 2.0 emulation via QEMU
+  - Complete nixos-anywhere deployment
+  - ~10-30 minutes per run
+
+RELATED FILES:
+  - bin/virtual-machine        - Libvirt VM management (creates VMs used by this script)
+  - bin/test-microvm-tpm       - Fast TPM testing (Tier 1, ~20s)
+  - tests/flake.nix            - Test configurations (test-server, test-hyprland)
+  - vms/test-server/           - Server VM configuration
+  - specs/001-keystone-os/spec.md - Functional requirements
+  - specs/001-keystone-os/research.testing.md - Testing strategy
+
+WORKFLOW STEPS:
+  1. Stop/reset VM
+  2. Build ISO with SSH key injection
+  3. Generate initrd SSH host key
+  4. Start VM from ISO
+  5. Wait for SSH access
+  6. Copy SSH key to VM
+  7. Verify Secure Boot setup mode
+  8. Deploy via nixos-anywhere
+  9. Remove ISO and reboot
+  10. Unlock disk via initrd SSH
+  11. Verify deployment (SSH, ZFS, Secure Boot)
+  12. TPM enrollment with recovery key
+  13. Reboot and verify TPM unlock
+  14. Test terminal dev environment
+
+Usage:
+    ./bin/test-deployment                    # Normal test run
+    ./bin/test-deployment --rebuild-iso      # Rebuild ISO first
+    ./bin/test-deployment --hard-reset       # Force kill VM and clean artifacts
+    ./bin/test-deployment --debug            # Show full nixos-anywhere output
+    ./bin/test-deployment --rebuild-iso --hard-reset --debug  # Full clean test
+
+Zero external dependencies - uses only Python standard library.
+See: docs/testing-procedure.md for complete testing workflows
+"""
+
+import subprocess
+import sys
+import time
+import os
+import signal
+from pathlib import Path
+
+# ANSI color codes
+RED = '\033[0;31m'
+GREEN = '\033[0;32m'
+YELLOW = '\033[1;33m'
+BLUE = '\033[0;34m'
+CYAN = '\033[0;36m'
+NC = '\033[0m'  # No Color
+
+def print_step(step_num, total_steps, message):
+    """Print a formatted step message"""
+    print(f"\n{BLUE}[{step_num}/{total_steps}]{NC} {message}")
+
+def print_success(message):
+    """Print a success message"""
+    print(f"{GREEN}✓{NC} {message}")
+
+def print_error(message):
+    """Print an error message"""
+    print(f"{RED}✗{NC} {message}")
+
+def print_warning(message):
+    """Print a warning message"""
+    print(f"{YELLOW}⚠{NC} {message}")
+
+def print_info(message):
+    """Print an info message"""
+    print(f"{CYAN}ℹ{NC} {message}")
+
+def run_command(cmd, check=True, capture=False, timeout=None):
+    """Run a shell command"""
+    try:
+        if capture:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                check=check,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            return result.stdout.strip()
+        else:
+            result = subprocess.run(cmd, shell=True, check=check, timeout=timeout)
+            return result.returncode == 0
+    except subprocess.CalledProcessError as e:
+        if check:
+            raise
+        return False
+    except subprocess.TimeoutExpired:
+        print_error(f"Command timed out after {timeout} seconds")
+        return False
+
+def get_vm_state():
+    """Get the state of the keystone-test-vm"""
+    try:
+        output = run_command("virsh list --all 2>/dev/null | grep keystone-test-vm || true", check=False, capture=True)
+        if not output or "keystone-test-vm" not in output:
+            return "not-defined"
+        if "running" in output:
+            return "running"
+        if "shut off" in output:
+            return "shut-off"
+        return "unknown"
+    except:
+        return "unknown"
+
+def stop_vm(force=False):
+    """Stop the VM using libvirt"""
+    state = get_vm_state()
+
+    if state == "not-defined":
+        print_info("VM not defined")
+        return True
+
+    if state != "running":
+        print_info(f"VM already stopped (state: {state})")
+        return True
+
+    command = "virsh destroy keystone-test-vm" if force else "virsh shutdown keystone-test-vm"
+    action = "Force stopping" if force else "Gracefully stopping"
+
+    print_info(f"{action} VM...")
+    result = run_command(command, check=False)
+
+    if not result:
+        if not force:
+            print_warning("Graceful shutdown failed, trying force stop...")
+            return stop_vm(force=True)
+        print_error("Failed to stop VM")
+        return False
+
+    # Wait for VM to stop
+    for i in range(10):
+        if get_vm_state() != "running":
+            print_success("VM stopped")
+            time.sleep(2)  # Extra cooldown
+            return True
+        time.sleep(0.5)
+
+    print_error("VM still running after stop command")
+    return False
+
+def reset_vm():
+    """Completely remove VM and all artifacts using bin/virtual-machine"""
+    print_info("Resetting VM (remove all artifacts)...")
+
+    # Use the VM script's reset function
+    result = run_command("./bin/virtual-machine --reset keystone-test-vm", check=False)
+
+    if result:
+        print_success("VM reset complete")
+        return True
+    else:
+        # VM might not exist, which is fine
+        state = get_vm_state()
+        if state == "not-defined":
+            print_info("VM was not defined, nothing to reset")
+            return True
+
+        print_error("Failed to reset VM")
+        return False
+
+def rebuild_iso():
+    """Rebuild the Keystone ISO with SSH keys"""
+    print_info("Building ISO with SSH key injection...")
+    print_info("This may take 2-5 minutes...")
+
+    ssh_key_file = Path.home() / ".ssh" / "id_ed25519.pub"
+    if not ssh_key_file.exists():
+        print_error(f"SSH key not found: {ssh_key_file}")
+        return False
+
+    cmd = f"./bin/build-iso --ssh-key {ssh_key_file}"
+    success = run_command(cmd, timeout=300)
+
+    if success:
+        print_success("ISO built successfully")
+        return True
+    else:
+        print_error("ISO build failed")
+        return False
+
+# Obsolete functions removed - TPM2 handles auto-unlock, libvirt handles VM lifecycle
+
+# VM configuration constants
+VM_IP = "192.168.100.99"
+VM_HOSTNAME = "keystone-test-vm"
+
+def ssh_vm(command, check=True, capture=False, timeout=None):
+    """Execute SSH command on the test VM"""
+    ssh_cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{VM_IP} '{command}'"
+    return run_command(ssh_cmd, check=check, capture=capture, timeout=timeout)
+
+def start_vm():
+    """Start the VM using bin/virtual-machine"""
+    print_info("Starting VM from ISO...")
+
+    state = get_vm_state()
+
+    # If VM is already defined, just start it
+    if state in ["shut-off", "shut off"]:
+        print_info("VM already defined, starting it...")
+        result = run_command("virsh start keystone-test-vm", check=False, timeout=30)
+        if not result:
+            print_error("Failed to start existing VM")
+            return False
+    # If VM doesn't exist, create and start it
+    elif state == "not-defined":
+        print_info("Creating new VM...")
+        result = run_command("./bin/virtual-machine --name keystone-test-vm --start", check=False, timeout=60)
+        if not result:
+            print_error("Failed to create VM")
+            return False
+    # If VM is already running, that's fine
+    elif state == "running":
+        print_info("VM is already running")
+    else:
+        print_warning(f"VM in unexpected state: {state}")
+
+    # Wait for VM to be reachable (check every 5 seconds, max 2 minutes)
+    print_info("Waiting for VM to boot (max 120 seconds)...")
+    max_wait = 120
+    check_interval = 5
+    elapsed = 0
+
+    while elapsed < max_wait:
+        # Simple connectivity check via virsh
+        result = run_command("virsh domstate keystone-test-vm 2>/dev/null | grep -q running", check=False)
+        if result:
+            # Give a bit more time for services to start
+            time.sleep(5)
+            print_success(f"VM booted (took ~{elapsed + 5} seconds)")
+            return True
+
+        print(f"  Waiting... {elapsed}/{max_wait}s", end='\r')
+        time.sleep(check_interval)
+        elapsed += check_interval
+
+    print_warning("VM may not be fully booted, continuing anyway...")
+    return True
+
+def wait_for_ssh(max_attempts=20, delay=5):
+    """Wait for SSH to become available"""
+    print_info(f"Waiting for SSH access at {VM_IP} (max {max_attempts * delay} seconds)...")
+
+    for attempt in range(max_attempts):
+        try:
+            result = ssh_vm("echo ready", check=False, capture=True, timeout=5)
+            if result == "ready":
+                print_success(f"SSH is ready at {VM_IP}")
+                return True
+        except:
+            pass
+
+        if attempt < max_attempts - 1:
+            print(f"  Attempt {attempt + 1}/{max_attempts}...", end='\r')
+            time.sleep(delay)
+
+    print_error("SSH never became available")
+    return False
+
+def ensure_initrd_ssh_key():
+    """Generate or verify initrd SSH host key exists for VM testing"""
+    key_dir = Path("vms/test-server/ssh-keys")
+    key_path = key_dir / "initrd_ssh_host_ed25519_key"
+    key_pub_path = key_path.with_suffix(".pub")
+
+    # Extra files directory for nixos-anywhere
+    extra_files_dir = Path("vms/test-server/extra-files/etc/ssh")
+    extra_files_key = extra_files_dir / "initrd_ssh_host_ed25519_key"
+    extra_files_pub = extra_files_dir / "initrd_ssh_host_ed25519_key.pub"
+
+    # Check if key exists
+    if key_path.exists():
+        print_info(f"Initrd SSH host key already exists: {key_path}")
+
+        # Ensure it's also in extra-files directory
+        extra_files_dir.mkdir(parents=True, exist_ok=True)
+        if not extra_files_key.exists():
+            print_info("Copying key to extra-files directory...")
+            import shutil
+            shutil.copy2(key_path, extra_files_key)
+            shutil.copy2(key_pub_path, extra_files_pub)
+
+        return True
+
+    print_info("Generating initrd SSH host key for VM testing...")
+
+    # Create directories
+    key_dir.mkdir(parents=True, exist_ok=True)
+    extra_files_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate the key
+    cmd = f'ssh-keygen -t ed25519 -N "" -f {key_path} -C "test-vm-initrd-host-key"'
+    success = run_command(cmd, check=False, timeout=30)
+
+    if success and key_path.exists():
+        print_success(f"Initrd SSH host key generated: {key_path}")
+
+        # Copy to extra-files directory for nixos-anywhere
+        print_info("Copying key to extra-files directory...")
+        import shutil
+        shutil.copy2(key_path, extra_files_key)
+        shutil.copy2(key_pub_path, extra_files_pub)
+
+        return True
+    else:
+        print_error("Failed to generate initrd SSH host key")
+        return False
+
+def copy_ssh_key_to_vm():
+    """Copy host SSH public key to VM for nixos-anywhere installation"""
+    print_info("Copying host SSH key to VM...")
+
+    ssh_key_file = Path.home() / ".ssh" / "id_ed25519.pub"
+    if not ssh_key_file.exists():
+        print_error(f"SSH key not found: {ssh_key_file}")
+        return False
+
+    # Read the SSH public key
+    try:
+        with open(ssh_key_file, 'r') as f:
+            ssh_key = f.read().strip()
+    except Exception as e:
+        print_error(f"Failed to read SSH key: {e}")
+        return False
+
+    # Copy the key to the VM's authorized_keys
+    copy_cmd = f"""
+        mkdir -p /root/.ssh
+        chmod 700 /root/.ssh
+        echo '{ssh_key}' > /root/.ssh/authorized_keys
+        chmod 600 /root/.ssh/authorized_keys
+    """
+
+    result = ssh_vm(copy_cmd, check=False, timeout=10)
+
+    if result:
+        print_success("SSH key copied successfully")
+        return True
+    else:
+        print_error("Failed to copy SSH key")
+        return False
+
+def deploy_to_vm(debug=False):
+    """Deploy using nixos-anywhere with manual cleanup and reboot"""
+    print_info("Starting nixos-anywhere deployment...")
+    print_info("This will take 5-10 minutes...")
+
+    if debug:
+        print_warning("Debug mode: showing full nixos-anywhere output")
+        print_warning("You may need to interact with the deployment (confirmations, etc.)")
+    else:
+        print_info("Running in quiet mode. Use --debug to see full output")
+
+    # Use --no-reboot to allow manual cleanup before rebooting
+    # Use --extra-files to copy initrd SSH key to the target before building
+    cmd = f"nix run nixpkgs#nixos-anywhere -- --flake ./tests#test-server root@{VM_IP} --no-reboot --extra-files vms/test-server/extra-files"
+
+    if debug:
+        # Show full output in debug mode
+        success = run_command(cmd, timeout=600)
+    else:
+        # Capture output and only show if errors occur
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=600
+            )
+            success = result.returncode == 0
+            if not success:
+                print_error("Deployment failed! Output:")
+                print(result.stdout)
+                if result.stderr:
+                    print_error("Errors:")
+                    print(result.stderr)
+        except subprocess.TimeoutExpired:
+            print_error("Deployment timed out after 10 minutes")
+            success = False
+
+    if not success:
+        print_error("Deployment failed")
+        return False
+
+    print_success("Deployment phase completed!")
+
+    # Now perform manual cleanup to prevent hanging during pool export
+    print_info("Performing cleanup before reboot...")
+
+    cleanup_script = """
+        # Unmount all ZFS filesystems first
+        if zpool list rpool >/dev/null 2>&1; then
+            echo "Unmounting ZFS filesystems..."
+            cd /
+            umount -R /mnt 2>/dev/null || true
+        fi
+
+        # Close the credstore LUKS device (must be done before pool export)
+        if cryptsetup status credstore >/dev/null 2>&1; then
+            echo "Closing credstore LUKS device..."
+            cryptsetup close credstore
+        fi
+
+        # Now safely export the ZFS pool
+        if zpool list rpool >/dev/null 2>&1; then
+            echo "Exporting ZFS pool..."
+            zpool export rpool
+        fi
+
+        # Trigger reboot
+        echo "Rebooting system..."
+        nohup sh -c "sleep 2 && reboot" >/dev/null 2>&1 &
+    """
+
+    cleanup_success = ssh_vm(cleanup_script, check=False, timeout=30)
+
+    if cleanup_success:
+        print_success("Cleanup and reboot triggered successfully!")
+    else:
+        print_warning("Cleanup command had issues, but system may still reboot")
+
+    # Wait for system to reboot
+    print_info("Waiting for system to reboot...")
+    time.sleep(5)
+
+    return True
+
+def remove_iso_and_reboot():
+    """Remove ISO from VM config and restart to boot from disk"""
+    print_info("Preparing VM for post-installation boot...")
+
+    # Shut down the VM first
+    print_info("Shutting down VM...")
+    if not stop_vm(force=True):
+        print_warning("Failed to stop VM cleanly, continuing anyway...")
+
+    # Use bin/virtual-machine's post-install-reboot function
+    print_info("Running post-install reboot (removes ISO, snapshots disk, restarts)...")
+    result = run_command("./bin/virtual-machine --post-install-reboot keystone-test-vm", check=False, timeout=60)
+
+    if not result:
+        print_error("Post-install reboot failed")
+        return False
+
+    print_success("VM restarted without ISO")
+
+    return True
+
+def auto_unlock_disk():
+    """Automatically unlock the disk via initrd SSH"""
+    print_info("Waiting for initrd SSH to become available...")
+
+    # Wait for initrd SSH (max 2 minutes)
+    max_wait = 120
+    check_interval = 5
+    elapsed = 0
+
+    while elapsed < max_wait:
+        # Try to connect to initrd SSH and send password
+        # The systemd-tty-ask-password-agent will be the shell
+        # Use heredoc to send password followed by newline
+        ssh_cmd = f'''ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 root@{VM_IP} <<EOF
+keystone
+EOF'''
+
+        result = run_command(ssh_cmd, check=False, timeout=10)
+
+        if result:
+            print_success("Disk unlock password sent!")
+            print_info("Waiting for disk unlock and boot continuation (10 seconds)...")
+            time.sleep(10)
+
+            # Verify the disk actually unlocked by attempting to connect to main system
+            print_info("Verifying unlock was successful...")
+            return True
+
+        print(f"  Waiting for initrd... {elapsed}/{max_wait}s", end='\r')
+        time.sleep(check_interval)
+        elapsed += check_interval
+
+    print_error("Initrd SSH never became available")
+    print_info("Try manually: ssh root@{VM_IP}")
+    print_info("Then enter password: keystone")
+    return False
+
+def verify_secureboot_setup_mode():
+    """Verify VM booted in Secure Boot setup mode (before deployment)"""
+    print_info("Verifying Secure Boot setup mode...")
+
+    # Check bootctl status for setup mode
+    bootctl_output = ssh_vm("bootctl status 2>/dev/null || echo 'bootctl not available'", check=False, capture=True, timeout=10)
+
+    if not bootctl_output or "bootctl not available" in bootctl_output:
+        print_warning("bootctl not available in installer environment")
+        return True  # Not a failure, just not verifiable
+
+    # Check for expected setup mode indicators
+    setup_mode_indicators = [
+        "Secure Boot: disabled (setup)",
+        "Setup Mode: setup"
+    ]
+
+    found_indicators = []
+    for indicator in setup_mode_indicators:
+        if indicator in bootctl_output:
+            found_indicators.append(indicator)
+
+    if len(found_indicators) >= 1:
+        print_success(f"Secure Boot setup mode confirmed: {', '.join(found_indicators)}")
+        return True
+    else:
+        print_error("VM is NOT in Secure Boot setup mode!")
+        print_info("bootctl output:")
+        for line in bootctl_output.split('\n')[:10]:  # Show first 10 lines
+            print(f"  {line}")
+        return False
+
+
+def run_post_install_provisioning():
+    """Run post-install provisioning tasks (Secure Boot, etc.)"""
+    print_info("Running post-install provisioning...")
+
+    # Call the simplified post-install-provisioner script (SSH-only)
+    cmd = f"./bin/post-install-provisioner root@{VM_IP}"
+    result = run_command(cmd, check=False, timeout=300)
+
+    if result:
+        print_success("Post-install provisioning completed")
+        return True
+    else:
+        print_error("Post-install provisioning failed")
+        return False
+
+
+def test_tpm_enrollment():
+    """Test TPM enrollment with recovery key"""
+    print_info("Running TPM enrollment with --auto flag...")
+    print_info("The recovery key will be displayed - you should save it for testing")
+    print_info("When prompted, READ the recovery key from your backup to verify")
+
+    # First check if keystone-enroll-recovery command exists
+    cmd_exists = ssh_vm("which keystone-enroll-recovery", check=False, capture=True, timeout=5)
+    if not cmd_exists:
+        print_error("keystone-enroll-recovery command not found!")
+        print_error("TPM enrollment module may not be enabled in configuration")
+        print_info("Ensure keystone.tpmEnrollment module is loaded")
+        return False
+
+    # Run enrollment - capture output for debugging
+    print_info("Executing: keystone-enroll-recovery --auto")
+    enrollment_output = ssh_vm("keystone-enroll-recovery --auto 2>&1", check=False, capture=True, timeout=180)
+
+    if not enrollment_output or "error" in enrollment_output.lower():
+        print_error("TPM enrollment command failed!")
+        if enrollment_output:
+            print_error(f"Output: {enrollment_output[:500]}")  # Show first 500 chars
+        return False
+
+    # Verify enrollment marker created
+    if not ssh_vm("test -f /var/lib/keystone/tpm-enrollment-complete", check=False, timeout=5):
+        print_error("Enrollment marker file not found at /var/lib/keystone/tpm-enrollment-complete")
+        print_info("Checking enrollment status...")
+        slots_output = ssh_vm("systemd-cryptenroll /dev/zvol/rpool/credstore", check=False, capture=True, timeout=10)
+        if slots_output:
+            print_info(f"Current LUKS slots:\n{slots_output}")
+        return False
+
+    # Verify TPM keyslot exists
+    has_tpm = ssh_vm(
+        "systemd-cryptenroll /dev/zvol/rpool/credstore 2>/dev/null | grep -q tpm2",
+        check=False,
+        timeout=10
+    )
+
+    if not has_tpm:
+        print_error("TPM keyslot not found in LUKS header")
+        # Show actual slots for debugging
+        slots_output = ssh_vm("systemd-cryptenroll /dev/zvol/rpool/credstore", check=False, capture=True, timeout=10)
+        if slots_output:
+            print_error(f"Current LUKS slots:\n{slots_output}")
+        print_info("Troubleshooting:")
+        print_info("  1. Check if TPM is available: tpm2_getcap properties-fixed")
+        print_info("  2. Check Secure Boot status: bootctl status")
+        print_info("  3. Verify TPM enrollment module is enabled in config")
+        return False
+
+    print_success("TPM enrollment completed and verified")
+    return True
+
+def verify_tpm_auto_unlock():
+    """Reboot VM and verify it unlocks automatically via TPM (no password prompt)"""
+    print_info("Triggering reboot to test TPM automatic unlock...")
+
+    # Trigger reboot (use escaped quotes to avoid nested quote issues)
+    ssh_vm("nohup bash -c \"sleep 2 && reboot\" >/dev/null 2>&1 &", check=False, timeout=5)
+
+    print_info("Waiting for system to shut down...")
+    time.sleep(15)
+
+    # Wait for SSH to come back - this should happen automatically without password
+    print_info("Waiting for automatic TPM unlock and boot (max 120 seconds)...")
+    print_info("If this succeeds, TPM automatic unlock is working!")
+
+    if not wait_for_ssh(max_attempts=24, delay=5):
+        print_error("System did not boot after reboot")
+        print_warning("TPM automatic unlock may have failed - system might be waiting for password")
+        print_info("Check via serial console: virsh console keystone-test-vm")
+        return False
+
+    print_success("System rebooted and unlocked automatically via TPM!")
+    print_success("No password prompt was needed - TPM automatic unlock works!")
+    return True
+
+def verify_zfs_user_permissions():
+    """Verify ZFS user dataset permissions"""
+    print_info("Verifying ZFS user permissions...")
+
+    test_user = "testuser"
+    test_dataset = f"rpool/crypt/home/{test_user}"
+
+    checks = [
+        # Dataset exists
+        (f"Dataset exists: {test_dataset}",
+         lambda: ssh_vm(f"zfs list {test_dataset}", check=False, timeout=5)),
+
+        # Dataset is mounted
+        (f"Dataset mounted at /home/{test_user}",
+         lambda: ssh_vm(f"mountpoint -q /home/{test_user}", check=False, timeout=5)),
+
+        # TODO: Uncomment when Linux mount restriction workaround is implemented
+        # User can create child datasets, but Linux kernel prevents auto-mounting
+        # See: https://github.com/openzfs/zfs/discussions/10648
+        # (f"User can create child dataset",
+        #  lambda: ssh_vm(f'su - {test_user} -c "zfs create -o canmount=off {test_dataset}/documents"', check=False, timeout=10)),
+
+        # User can create snapshot
+        (f"User can create snapshot",
+         lambda: ssh_vm(f'su - {test_user} -c "zfs snapshot {test_dataset}@test"', check=False, timeout=10)),
+
+        # User can list their dataset
+        (f"User can list dataset",
+         lambda: ssh_vm(f'su - {test_user} -c "zfs list {test_dataset}"', check=False, timeout=5)),
+
+        # User can send snapshot
+        (f"User can send snapshot",
+         lambda: ssh_vm(f'su - {test_user} -c "zfs send {test_dataset}@test > /tmp/test.zfs"', check=False, timeout=10)),
+
+        # User can destroy their snapshot
+        (f"User can destroy snapshot",
+         lambda: ssh_vm(f'su - {test_user} -c "zfs destroy {test_dataset}@test"', check=False, timeout=10)),
+
+        # TODO: Uncomment when Linux mount restriction workaround is implemented
+        # Dependent on ability to create child datasets
+        # (f"User can destroy child dataset (unmounted)",
+        #  lambda: ssh_vm(f'su - {test_user} -c "zfs destroy {test_dataset}/documents"', check=False, timeout=10)),
+
+        # User CANNOT destroy parent dataset (should fail)
+        (f"User cannot destroy parent dataset (security check)",
+         lambda: not ssh_vm(f'su - {test_user} -c "zfs destroy {test_dataset}"', check=False, timeout=5)),
+    ]
+
+    passed = 0
+    failed = 0
+
+    for check_name, check_func in checks:
+        try:
+            result = check_func()
+            if result:
+                print_success(check_name)
+                passed += 1
+            else:
+                print_error(check_name)
+                failed += 1
+        except:
+            print_error(check_name)
+            failed += 1
+
+    print(f"\nZFS User Checks - Passed: {GREEN}{passed}{NC}, Failed: {RED}{failed}{NC}")
+    return failed == 0
+
+def verify_deployment():
+    """Run the verification script"""
+    print_info("Waiting for deployed system to finish booting...")
+    print_info("This includes time for initrd SSH unlock and boot continuation")
+
+    # Wait longer and try SSH multiple times
+    max_wait = 120  # 2 minutes
+    check_interval = 5
+    elapsed = 0
+    ssh_ready = False
+
+    print_info(f"Attempting SSH connection (max {max_wait} seconds)...")
+    while elapsed < max_wait:
+        try:
+            result = ssh_vm("echo ok", check=False, capture=True, timeout=5)
+            if result == "ok":
+                print_success(f"SSH connected after {elapsed} seconds")
+                ssh_ready = True
+                break
+        except:
+            pass
+
+        print(f"  Waiting... {elapsed}/{max_wait}s", end='\r')
+        time.sleep(check_interval)
+        elapsed += check_interval
+
+    if not ssh_ready:
+        print_error("SSH never became available after deployment")
+        print_warning("The system may be waiting for disk unlock at the initrd prompt")
+        print_info("Try connecting via serial console: virsh console keystone-test-vm")
+        return False
+
+    # Give system a few more seconds to finish starting services
+    time.sleep(5)
+
+    print_info("Running verification checks...")
+
+    # Manual verification checks using ssh_vm helper
+    def check_secureboot():
+        """Check Secure Boot status using sbctl"""
+        # Use sbctl without grep - just check if full output contains "Enabled"
+        result = ssh_vm("sbctl status 2>/dev/null", check=False, capture=True, timeout=10)
+        if not result:
+            return False
+        # Check if Secure Boot line contains "Enabled"
+        for line in result.split('\n'):
+            if 'Secure Boot' in line and ('Enabled' in line or '✓' in line):
+                return True
+        return False
+
+    def check_tpm_enrolled():
+        """Check if TPM is enrolled (informational only for initial deployment)"""
+        # Check if TPM keyslot exists
+        result = ssh_vm(
+            "systemd-cryptenroll /dev/zvol/rpool/credstore 2>/dev/null | grep -q tpm2",
+            check=False,
+            timeout=10
+        )
+        return result
+
+    checks = [
+        ("SSH connectivity", lambda: ssh_vm("echo ok", check=False, capture=True, timeout=5) == "ok"),
+        ("Hostname", lambda: ssh_vm("hostname", check=False, capture=True, timeout=5) == VM_HOSTNAME),
+        ("ZFS pool", lambda: ssh_vm("zpool status rpool | grep -q ONLINE", check=False, timeout=5)),
+        ("SSH service", lambda: ssh_vm("systemctl is-active sshd", check=False, capture=True, timeout=5) == "active"),
+        ("Secure Boot", check_secureboot),
+    ]
+
+    # TPM enrollment status check (enrollment happens in next step)
+    tpm_checks = [
+        ("TPM enrollment status", check_tpm_enrolled),
+    ]
+
+    passed = 0
+    failed = 0
+
+    # Run critical checks
+    for check_name, check_func in checks:
+        try:
+            result = check_func()
+            if result:
+                print_success(f"{check_name}")
+                passed += 1
+            else:
+                print_error(f"{check_name}")
+                failed += 1
+        except:
+            print_error(f"{check_name}")
+            failed += 1
+
+    # Run TPM enrollment status check (informational - enrollment happens in next step)
+    for check_name, check_func in tpm_checks:
+        try:
+            result = check_func()
+            if result:
+                print_success(f"{check_name}: Already enrolled")
+            else:
+                print_info(f"{check_name}: Not enrolled - will enroll in next step")
+        except:
+            print_warning(f"{check_name}: Check failed")
+
+    print(f"\nPassed: {GREEN}{passed}{NC}, Failed: {RED}{failed}{NC}")
+
+    return failed == 0
+
+# ensure_vm_config() no longer needed - libvirt VMs don't use quickemu .conf files
+
+def main():
+    """Main test workflow"""
+    # Parse arguments
+    rebuild_iso_flag = "--rebuild-iso" in sys.argv
+    hard_reset_flag = "--hard-reset" in sys.argv
+    debug_flag = "--debug" in sys.argv
+    help_flag = "--help" in sys.argv or "-h" in sys.argv
+
+    if help_flag:
+        print(__doc__)
+        return 0
+
+    print(f"{CYAN}Keystone Deployment Test{NC}")
+    print("=" * 60)
+
+    # Check if ISO needs rebuilding
+    iso_path = Path("vms/keystone-installer.iso")
+    iso_missing = not iso_path.exists() or not iso_path.resolve().exists()
+
+    total_steps = 13  # Stop/Reset, ISO rebuild (conditional), Ensure initrd key, Start, Wait SSH, Copy SSH key, Verify Secure Boot setup, Deploy, Remove ISO, Unlock, Verify, TPM enrollment, TPM auto-unlock reboot, ZFS Users, Terminal Dev Env
+    if rebuild_iso_flag or iso_missing:
+        total_steps += 1
+    if hard_reset_flag:
+        total_steps += 0  # No extra step, just different behavior in step 1
+
+    current_step = 0
+
+    # Step: Hard reset if requested
+    if hard_reset_flag:
+        current_step += 1
+        print_step(current_step, total_steps, "Hard resetting VM")
+
+        if not reset_vm():
+            print_error("Failed to reset VM")
+            return 1
+    else:
+        # Graceful stop
+        current_step += 1
+        print_step(current_step, total_steps, "Stopping existing VM")
+
+        if not stop_vm(force=False):
+            print_warning("Failed graceful stop, trying force stop...")
+            stop_vm(force=True)
+
+    # Step: Rebuild ISO if requested OR if ISO is missing/invalid
+    if rebuild_iso_flag or iso_missing:
+        current_step += 1
+        if iso_missing and not rebuild_iso_flag:
+            print_step(current_step, total_steps, "ISO missing or invalid - rebuilding")
+        else:
+            print_step(current_step, total_steps, "Rebuilding ISO")
+
+        if not rebuild_iso():
+            return 1
+
+    # Step: Ensure initrd SSH key exists
+    current_step += 1
+    print_step(current_step, total_steps, "Ensuring initrd SSH key exists")
+
+    if not ensure_initrd_ssh_key():
+        print_error("Failed to generate initrd SSH key")
+        return 1
+
+    # Step: Start VM
+    current_step += 1
+    print_step(current_step, total_steps, "Starting VM from ISO")
+
+    if not start_vm():
+        return 1
+
+    # Step: Wait for SSH
+    current_step += 1
+    print_step(current_step, total_steps, "Waiting for SSH access")
+
+    if not wait_for_ssh():
+        print_error("VM did not become accessible")
+        return 1
+
+    # Step: Copy SSH key to VM
+    current_step += 1
+    print_step(current_step, total_steps, "Copying SSH key to VM")
+
+    if not copy_ssh_key_to_vm():
+        print_error("Failed to copy SSH key to VM")
+        return 1
+
+    # Step: Verify Secure Boot setup mode
+    current_step += 1
+    print_step(current_step, total_steps, "Verifying Secure Boot setup mode")
+
+    if not verify_secureboot_setup_mode():
+        print_error("Secure Boot setup mode verification failed")
+        print_warning("Continuing with deployment, but VM may not be in correct state")
+
+    # Step: Deploy
+    current_step += 1
+    print_step(current_step, total_steps, "Deploying with nixos-anywhere")
+
+    if not deploy_to_vm(debug=debug_flag):
+        print_error("Deployment failed - check output above")
+        return 1
+
+    # Step: Remove ISO and reboot to installed system
+    current_step += 1
+    print_step(current_step, total_steps, "Removing ISO and rebooting to disk")
+
+    if not remove_iso_and_reboot():
+        print_error("Failed to remove ISO and reboot")
+        return 1
+
+    # Step: Auto unlock disk via initrd SSH
+    current_step += 1
+    print_step(current_step, total_steps, "Unlocking disk via initrd SSH")
+
+    if not auto_unlock_disk():
+        print_error("Failed to unlock disk")
+        print_info("Try manually: ssh root@{VM_IP}")
+        return 1
+
+    # Wait for system to fully boot after unlock
+    print_info("Waiting for system to complete boot...")
+    if not wait_for_ssh(max_attempts=24, delay=5):  # 2 minutes max
+        print_error("System did not become ready after disk unlock")
+        return 1
+
+    # Give a bit more time for all services to stabilize
+    print_info("Allowing services to stabilize...")
+    time.sleep(5)
+    print_success("System is ready")
+
+    # Note: Secure Boot is automatically provisioned during activation
+    # The secure-boot module's activation script runs on first boot
+    print_info("Secure Boot provisioning happens automatically via activation scripts")
+
+    # Step: Verify basic deployment
+    current_step += 1
+    print_step(current_step, total_steps, "Verifying deployment")
+
+    if not verify_deployment():
+        print_warning("Some verification checks failed")
+        print_info(f"You can still SSH to the VM: ssh root@{VM_IP}")
+        return 1
+
+    # Step: Test TPM enrollment (moved earlier to fail fast before expensive tests)
+    current_step += 1
+    print_step(current_step, total_steps, "Testing TPM enrollment")
+    print_info(f"DEBUG: About to call test_tpm_enrollment() - current_step={current_step}")
+
+    if not test_tpm_enrollment():
+        print_error("TPM enrollment test failed")
+        print_info(f"You can manually test: ssh root@{VM_IP}")
+        print_info(f"  sudo keystone-enroll-recovery --auto")
+        return 1
+
+    # Step: Reboot to verify TPM automatic unlock
+    current_step += 1
+    print_step(current_step, total_steps, "Rebooting to verify TPM automatic unlock")
+
+    if not verify_tpm_auto_unlock():
+        print_error("TPM automatic unlock verification failed")
+        print_warning("System may be waiting for password at boot")
+        return 1
+
+    # Step: Verify ZFS user permissions
+    current_step += 1
+    print_step(current_step, total_steps, "Verifying ZFS user permissions")
+
+    if not verify_zfs_user_permissions():
+        print_warning("Some ZFS user checks failed")
+        print_info(f"You can manually test: ssh root@{VM_IP}")
+        return 1
+
+    # Step: Test terminal development environment (home-manager)
+    current_step += 1
+    print_step(current_step, total_steps, "Testing terminal development environment")
+
+    result = run_command("./bin/test-home-manager", check=False, timeout=300)
+    if not result:
+        print_error("Terminal dev environment test failed")
+        print_info("You can manually test: ./bin/test-home-manager")
+        return 1
+
+    # All tests passed
+    if True:
+        print()
+        print("=" * 60)
+        print(f"{GREEN}✓ All tests passed!{NC}")
+        print("=" * 60)
+        print()
+        print("Test Results:")
+        print(f"  {GREEN}✓{NC} Fresh deployment successful")
+        print(f"  {GREEN}✓{NC} Secure Boot enrolled and verified")
+        print(f"  {GREEN}✓{NC} ZFS user datasets and permissions working")
+        print(f"  {GREEN}✓{NC} Terminal development environment verified")
+        print(f"  {GREEN}✓{NC} TPM enrollment completed")
+        print(f"  {GREEN}✓{NC} TPM automatic unlock working")
+        print()
+        print("Test Configuration:")
+        print(f"  Rebuild ISO: {rebuild_iso_flag}")
+        print(f"  Hard Reset: {hard_reset_flag}")
+        print(f"  Debug Mode: {debug_flag}")
+        print()
+        print("SSH to deployed server:")
+        print()
+        print("Remove old host key (if you get host key verification failed):")
+        print(f"  ssh-keygen -R {VM_IP}")
+        print()
+        print("SSH with normal key checking:")
+        print(f"  ssh root@{VM_IP}")
+        print()
+        print("SSH ignoring host key verification:")
+        print(f"  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@{VM_IP}")
+        print()
+        print("Or use the hostname (requires host key verification):")
+        print(f"  ssh root@{VM_HOSTNAME}")
+        print()
+
+    return 0
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print()
+        print_warning("Test interrupted by user")
+        sys.exit(130)
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

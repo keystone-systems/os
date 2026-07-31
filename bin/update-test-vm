@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+#
+# Update Test VM with Latest Configuration Changes
+#
+# This script updates the test VM (keystone-test-vm) with the latest
+# configuration changes without requiring full redeployment. Perfect for
+# rapid iteration during development.
+#
+# NOTE: This script is part of the automated testing procedure.
+#       Any changes here should be reflected in docs/testing-procedure.md
+#
+# Usage:
+#   ./bin/update-test-vm                 # Build locally, switch (no reboot)
+#   ./bin/update-test-vm --reboot        # Build locally, switch, and reboot
+#   ./bin/update-test-vm --build-host    # Build on VM (slower, less bandwidth)
+#   ./bin/update-test-vm --help          # Show this help
+#
+# See: docs/testing-procedure.md for complete testing workflows
+
+set -euo pipefail
+
+# Configuration
+VM_IP="192.168.100.99"
+VM_NAME="keystone-test-vm"
+FLAKE_CONFIG=".#test-server"
+
+# SSH options for test VMs (ignore host key changes)
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+export NIX_SSHOPTS="${SSH_OPTS}"  # Used by nixos-rebuild
+
+# ANSI colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+print_step() {
+    echo -e "${BLUE}➜${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+print_info() {
+    echo -e "${CYAN}ℹ${NC} $1"
+}
+
+show_help() {
+    cat <<EOF
+Update Test VM with Latest Configuration
+
+Usage: $0 [OPTIONS]
+
+Options:
+  --reboot        Reboot the VM after activating new configuration
+  --build-host    Build on target VM instead of locally (slower, saves bandwidth)
+  --help, -h      Show this help message
+
+Description:
+  Updates the test VM (${VM_NAME} at ${VM_IP}) with the latest configuration
+  changes from ${FLAKE_CONFIG}. Much faster than full redeployment.
+
+  This uses nixos-rebuild to:
+  1. Build the new configuration (locally or on VM)
+  2. Copy the closure to the VM
+  3. Activate the new configuration
+  4. Optionally reboot
+
+Examples:
+  # Quick update during development
+  $0
+
+  # Update and reboot to test boot changes
+  $0 --reboot
+
+  # Build on VM (useful for slow network)
+  $0 --build-host
+
+Benefits:
+  • Fast iteration (1-2 minutes vs 10+ for full redeploy)
+  • Preserves VM state (no reinstall, keeps data)
+  • Safe rollback (can switch back to previous generation)
+  • Perfect for testing TPM enrollment module changes
+
+EOF
+}
+
+# Parse arguments
+REBOOT=false
+BUILD_HOST=false
+
+for arg in "$@"; do
+    case $arg in
+        --reboot)
+            REBOOT=true
+            ;;
+        --build-host)
+            BUILD_HOST=true
+            ;;
+        --help|-h)
+            show_help
+            exit 0
+            ;;
+        *)
+            print_error "Unknown option: $arg"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+echo -e "${CYAN}Keystone Test VM Update${NC}"
+echo "========================================"
+echo ""
+
+# Check if VM is running
+print_step "Checking VM status..."
+if ! virsh list --all 2>/dev/null | grep -q "${VM_NAME}.*running"; then
+    print_error "VM ${VM_NAME} is not running"
+    echo ""
+    print_info "Start the VM first:"
+    echo "  virsh start ${VM_NAME}"
+    echo "  or"
+    echo "  ./bin/virtual-machine --name ${VM_NAME} --start"
+    exit 1
+fi
+print_success "VM ${VM_NAME} is running"
+
+# Check if VM is accessible via SSH
+print_step "Checking SSH connectivity..."
+if ! ssh -o ConnectTimeout=5 ${SSH_OPTS} root@${VM_IP} "echo ready" >/dev/null 2>&1; then
+    print_error "Cannot connect to VM at ${VM_IP}"
+    echo ""
+    print_info "Check VM network:"
+    echo "  virsh domifaddr ${VM_NAME}"
+    echo ""
+    print_info "Or try serial console:"
+    echo "  virsh console ${VM_NAME}"
+    exit 1
+fi
+print_success "SSH connection to ${VM_IP} verified"
+
+# Determine nixos-rebuild action
+if [ "$REBOOT" = true ]; then
+    ACTION="boot"  # Activates and sets as boot default, then we reboot
+    print_info "Will activate configuration and reboot"
+else
+    ACTION="switch"  # Activates immediately without reboot
+    print_info "Will activate configuration without rebooting"
+fi
+
+# Determine build location
+if [ "$BUILD_HOST" = true ]; then
+    BUILD_ARG="--build-host root@${VM_IP}"
+    print_info "Will build configuration on target VM"
+else
+    BUILD_ARG=""
+    print_info "Will build configuration locally"
+fi
+
+echo ""
+print_step "Updating VM configuration..."
+print_info "This may take 1-3 minutes depending on changes..."
+echo ""
+
+# Run nixos-rebuild
+# --use-remote-sudo is important for non-root local users
+# --target-host copies closure and activates on remote system
+if nixos-rebuild ${ACTION} \
+    --flake "${FLAKE_CONFIG}" \
+    --target-host "root@${VM_IP}" \
+    --use-remote-sudo \
+    ${BUILD_ARG} \
+    --fast; then
+    print_success "Configuration activated successfully"
+else
+    print_error "nixos-rebuild failed"
+    echo ""
+    print_warning "The VM may be in an inconsistent state"
+    print_info "You can rollback on the VM with:"
+    echo "  ssh root@${VM_IP}"
+    echo "  sudo nixos-rebuild switch --rollback"
+    exit 1
+fi
+
+# Reboot if requested
+if [ "$REBOOT" = true ]; then
+    echo ""
+    print_step "Rebooting VM..."
+
+    # Trigger reboot
+    ssh ${SSH_OPTS} root@${VM_IP} "nohup bash -c 'sleep 2 && reboot' >/dev/null 2>&1 &" || true
+
+    print_info "Reboot triggered, waiting for VM to restart..."
+    sleep 10  # Wait for reboot to begin
+
+    # Wait for SSH to come back
+    print_info "Waiting for VM to boot (max 60 seconds)..."
+    for i in {1..12}; do
+        if ssh -o ConnectTimeout=5 ${SSH_OPTS} root@${VM_IP} "echo ready" >/dev/null 2>&1; then
+            print_success "VM rebooted and accessible"
+            break
+        fi
+        echo -n "."
+        sleep 5
+    done
+    echo ""
+fi
+
+echo ""
+echo "========================================"
+print_success "Update complete!"
+echo "========================================"
+echo ""
+echo "Next steps:"
+echo ""
+echo "SSH to test VM:"
+echo "  ssh ${SSH_OPTS} root@${VM_IP}"
+echo ""
+if [ "$REBOOT" = false ]; then
+    echo "To test boot changes, reboot the VM:"
+    echo "  virsh reboot ${VM_NAME}"
+    echo "  or"
+    echo "  ssh ${SSH_OPTS} root@${VM_IP} 'reboot'"
+    echo ""
+fi
+echo "To test TPM enrollment:"
+echo "  ssh ${SSH_OPTS} root@${VM_IP}"
+echo "  sudo keystone-enroll-recovery"
+echo ""
+echo "Rollback to previous configuration if needed:"
+echo "  ssh ${SSH_OPTS} root@${VM_IP} 'nixos-rebuild switch --rollback'"
+echo ""

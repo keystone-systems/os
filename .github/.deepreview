@@ -1,0 +1,62 @@
+# =====================================================================
+# CI Path Filter Sync
+# When validate.yml changes, verify that path filters still match the
+# actual test and module file layout. Catches drift between CI skip
+# logic and reality.
+# =====================================================================
+ci_path_sync:
+  description: "Verify CI path filters in validate.yml match actual test and module file locations."
+  match:
+    include:
+      - "workflows/validate.yml"
+  review:
+    strategy: individual
+    additional_context:
+      all_changed_filenames: true
+    instructions: |
+      The CI workflow changed. Verify that the path filters in
+      .github/workflows/validate.yml still match the actual project layout.
+
+      ## 1. Read the path filters
+
+      Read .github/workflows/validate.yml and extract all path filter
+      definitions from the dorny/paths-filter step (check_eval, check_ks,
+      check_scripts, check_agents, iso_build, nixfmt, shellcheck).
+
+      ## 2. Verify each filter's globs match actual files
+
+      For each filter group, check that:
+      - Every glob pattern matches at least one existing file
+      - No glob references a renamed or deleted path
+      - Test files referenced by each group actually exist in tests/module/
+
+      ## 3. Check for uncovered test files
+
+      List all files in tests/module/. For each test file, verify it is
+      covered by at least one check group's path filter. Flag any test
+      file that would never trigger a CI run when it changes.
+
+      ## 4. Check flake.nix check-* groups match
+
+      Read the check-* aggregate derivations in flake.nix. For each
+      individual check referenced by a group (e.g., check-ks links to
+      ksRustTests, ksHelp, etc.), verify the corresponding test file
+      appears in that group's path filter in validate.yml.
+
+      If a new test is added to a check-* group in flake.nix but the
+      test file's path is not in the corresponding path filter, flag it:
+      "Test <name> in check-<group> but its file is not in the
+      check_<group> path filter — changes to it won't trigger CI."
+
+      ## 5. Cross-check with other changed files
+
+      Review the list of all changed filenames in this PR. If any
+      changed files are tests, modules, or packages that are NOT
+      covered by the path filters, flag them as potentially missing
+      from the CI skip logic.
+
+      ## 6. Report
+
+      - PASS if all filters are in sync
+      - FAIL with specific mismatches: dead globs, uncovered tests,
+        filter/group disagreements

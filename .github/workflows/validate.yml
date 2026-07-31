@@ -1,0 +1,409 @@
+name: Validate
+
+on:
+  pull_request:
+  # Merge queue runs the full validation set — including the expensive
+  # ISO build that is otherwise skipped on pull requests. Configure the
+  # repository's merge queue settings to require the iso-build check.
+  merge_group:
+  workflow_call:
+    inputs:
+      force_iso_build:
+        description: Force the installer ISO build instead of using PR path filtering.
+        required: false
+        type: boolean
+        default: false
+      upload_iso_artifact:
+        description: Upload the staged installer ISO as a workflow artifact.
+        required: false
+        type: boolean
+        default: false
+      iso_artifact_name:
+        description: Artifact name used when uploading the staged installer ISO.
+        required: false
+        type: string
+        default: starter-installer-iso
+      iso_file_name:
+        description: File name assigned to the staged installer ISO artifact.
+        required: false
+        type: string
+        default: ""
+      cache_branch_name:
+        description: Branch name used in the internal Nix cache key.
+        required: false
+        type: string
+        default: ""
+      save_nix_cache:
+        description: Save branch-scoped Nix caches for this invocation.
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      CACHIX_CI_AUTH_TOKEN:
+        required: false
+    outputs:
+      iso_built:
+        description: Whether the installer ISO was built.
+        value: ${{ jobs.iso-build.outputs.iso_built }}
+      iso_artifact_name:
+        description: Artifact name for the staged installer ISO.
+        value: ${{ jobs.iso-build.outputs.iso_artifact_name }}
+      iso_file_name:
+        description: File name of the staged installer ISO.
+        value: ${{ jobs.iso-build.outputs.iso_file_name }}
+
+concurrency:
+  # Merge queue runs use a synthetic gh-readonly-queue ref; key off the
+  # ref so concurrent queue entries do not cancel each other.
+  group: validate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Detect which files changed to skip expensive jobs on PRs.
+  # Workflow callers run everything by default.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      check_eval: ${{ steps.pr-policy.outputs.check_eval || steps.merge-policy.outputs.check_eval || steps.call-policy.outputs.check_eval || 'true' }}
+      check_ks: ${{ steps.pr-policy.outputs.check_ks || steps.merge-policy.outputs.check_ks || steps.call-policy.outputs.check_ks || 'true' }}
+      check_scripts: ${{ steps.pr-policy.outputs.check_scripts || steps.merge-policy.outputs.check_scripts || steps.call-policy.outputs.check_scripts || 'true' }}
+      check_desktop: ${{ steps.pr-policy.outputs.check_desktop || steps.merge-policy.outputs.check_desktop || steps.call-policy.outputs.check_desktop || 'true' }}
+      check_agents: ${{ steps.pr-policy.outputs.check_agents || steps.merge-policy.outputs.check_agents || steps.call-policy.outputs.check_agents || 'true' }}
+      iso_build: ${{ steps.pr-policy.outputs.iso_build || steps.merge-policy.outputs.iso_build || steps.call-policy.outputs.iso_build || 'false' }}
+      nixfmt: ${{ steps.pr-policy.outputs.nixfmt || steps.merge-policy.outputs.nixfmt || steps.call-policy.outputs.nixfmt || 'false' }}
+      shellcheck: ${{ steps.pr-policy.outputs.shellcheck || steps.merge-policy.outputs.shellcheck || steps.call-policy.outputs.shellcheck || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+
+      - uses: dorny/paths-filter@v3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            check_eval:
+              - '.github/workflows/validate.yml'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'modules/**'
+              - 'lib/**'
+              - 'templates/**'
+              - 'tests/module/*-evaluation.nix'
+            check_ks:
+              - '.github/workflows/validate.yml'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'packages/ks/**'
+              - 'tests/module/ks-*.nix'
+              - 'tests/module/keystone-photos.nix'
+            check_scripts:
+              - '.github/workflows/validate.yml'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'packages/**/*.sh'
+              - 'modules/**/*.sh'
+              - 'bin/**'
+              - 'tests/module/pz-*.nix'
+              - 'tests/module/keystone-*-menu.nix'
+              - 'tests/module/agentctl-*.nix'
+              - 'tests/module/projects-schema.nix'
+            check_desktop:
+              - '.github/workflows/validate.yml'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'modules/desktop/**'
+              - 'tests/module/desktop-*.nix'
+              - 'tests/module/hyprland-*.nix'
+            check_agents:
+              - '.github/workflows/validate.yml'
+              - 'flake.nix'
+              - 'flake.lock'
+              - 'modules/os/agents/**'
+              - 'modules/terminal/**'
+              - 'tests/module/agent-task-loop-*.nix'
+              - 'tests/module/agent-runtime-coherence.nix'
+              - 'tests/module/agent-queue-migration.nix'
+              - 'tests/module/binary-cache-*.nix'
+              - 'tests/module/zellij-*.nix'
+            nixfmt:
+              - '.github/workflows/validate.yml'
+              - 'flake.nix'
+              - '**/*.nix'
+            shellcheck:
+              - '.github/workflows/validate.yml'
+              - '**/*.sh'
+              - '**/*.bash'
+
+      - name: Use pull request policy
+        if: github.event_name == 'pull_request'
+        id: pr-policy
+        run: |
+          # iso_build is intentionally forced false on PRs — the ISO build
+          # is expensive and runs in the merge queue instead.
+          {
+            echo "check_eval=${{ steps.filter.outputs.check_eval }}"
+            echo "check_ks=${{ steps.filter.outputs.check_ks }}"
+            echo "check_scripts=${{ steps.filter.outputs.check_scripts }}"
+            echo "check_desktop=${{ steps.filter.outputs.check_desktop }}"
+            echo "check_agents=${{ steps.filter.outputs.check_agents }}"
+            echo "iso_build=false"
+            echo "nixfmt=${{ steps.filter.outputs.nixfmt }}"
+            echo "shellcheck=${{ steps.filter.outputs.shellcheck }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Use merge queue policy
+        if: github.event_name == 'merge_group'
+        id: merge-policy
+        run: |
+          # Merge queue runs everything, including the ISO build that PRs skip.
+          {
+            echo "check_eval=true"
+            echo "check_ks=true"
+            echo "check_scripts=true"
+            echo "check_desktop=true"
+            echo "check_agents=true"
+            echo "iso_build=true"
+            echo "nixfmt=true"
+            echo "shellcheck=true"
+          } >> "$GITHUB_OUTPUT"
+
+      # Reusable-workflow calls inherit the caller's event, so a `uses:` call
+      # from the push-triggered Release workflow surfaces here as `push`, not
+      # `workflow_call`. Match both so `inputs.force_iso_build` is actually
+      # honored (otherwise iso_build falls through to its `false` default and
+      # the installer ISO never builds on release/* pushes).
+      - name: Use workflow-call policy
+        if: github.event_name == 'push' || github.event_name == 'workflow_call'
+        id: call-policy
+        run: |
+          {
+            echo "check_eval=true"
+            echo "check_ks=true"
+            echo "check_scripts=true"
+            echo "check_desktop=true"
+            echo "check_agents=true"
+            echo "iso_build=${{ inputs.force_iso_build }}"
+            echo "nixfmt=true"
+            echo "shellcheck=true"
+          } >> "$GITHUB_OUTPUT"
+
+  eval:
+    needs: changes
+    if: needs.changes.outputs.check_eval == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nix-check
+        with:
+          check: checks.x86_64-linux.check-eval
+          cache-name: eval
+          cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
+          cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+
+  ks:
+    needs: changes
+    if: needs.changes.outputs.check_ks == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nix-check
+        with:
+          check: checks.x86_64-linux.check-ks
+          cache-name: ks
+          gc-max-store-size: 5G
+          cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
+          cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+
+  scripts:
+    needs: changes
+    if: needs.changes.outputs.check_scripts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nix-check
+        with:
+          check: checks.x86_64-linux.check-scripts
+          cache-name: scripts
+          cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
+          cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+
+  desktop:
+    needs: changes
+    if: needs.changes.outputs.check_desktop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nix-check
+        with:
+          check: checks.x86_64-linux.check-desktop
+          cache-name: desktop
+          cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
+          cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+
+  agents:
+    needs: changes
+    if: needs.changes.outputs.check_agents == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nix-check
+        with:
+          check: checks.x86_64-linux.check-agents
+          cache-name: agents
+          cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
+          cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+
+  nixfmt:
+    name: nixfmt
+    needs: changes
+    if: needs.changes.outputs.nixfmt == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Check Nix formatting
+        run: |
+          nix shell --inputs-from . .#formatter.x86_64-linux nixpkgs#findutils -c sh -lc '
+            find flake.nix modules packages tests bin conventions docs specs \
+              -name "*.nix" -print0 \
+              | xargs -0 --no-run-if-empty nixfmt --check
+          '
+
+  shellcheck:
+    name: shellcheck
+    needs: changes
+    if: needs.changes.outputs.shellcheck == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Run shellcheck
+        run: |
+          nix shell --inputs-from . nixpkgs#findutils nixpkgs#shellcheck -c sh -lc '
+            find bin modules packages tests .deepwork \
+              \( -path "modules/terminal/claude-code/update.sh" -o -path "modules/terminal/scripts/keystone-sync-agent-assets.sh" \) -prune \
+              -o \( -name "*.sh" -o -name "*.bash" \) -print0 \
+              | xargs -0 --no-run-if-empty shellcheck -S error
+          '
+
+  # TODO: Remove this temporary PR-only cache-warming job after validating the
+  # generated-template installer closure warming path on this branch.
+  warm-cache:
+    name: warm-cache
+    if: github.event_name == 'pull_request' && github.head_ref == 'ci/installer-cache-warm-validation'
+    needs:
+      - changes
+    uses: ./.github/workflows/warm-cache.yml
+    with:
+      cache_branch_name: ${{ github.head_ref }}
+      save_nix_cache: true
+    secrets: inherit
+
+  # Build the real ISO from a generated template fixture when
+  # installer or template surfaces change, or when a workflow caller
+  # explicitly forces the build for cache warming or publishing.
+  iso-build:
+    name: iso-build
+    needs: changes
+    if: needs.changes.outputs.iso_build == 'true'
+    runs-on: ubuntu-latest
+    env:
+      CACHIX_CI_AUTH_TOKEN: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+    outputs:
+      iso_built: ${{ steps.collect-iso.outputs.iso_built }}
+      iso_artifact_name: ${{ steps.artifact-meta-pr.outputs.iso_artifact_name || steps.artifact-meta-call.outputs.iso_artifact_name || 'starter-installer-iso' }}
+      iso_file_name: ${{ steps.collect-iso.outputs.iso_file_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Restore and save internal Nix cache
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || github.head_ref || github.ref_name }}-${{ github.job }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: |
+            nix-${{ runner.os }}-${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || github.head_ref || github.ref_name }}-${{ github.job }}-
+          restore-prefixes-all-matches: |
+            nix-${{ runner.os }}-${{ github.event.repository.default_branch }}-${{ github.job }}-
+          gc-max-store-size-linux: 6G
+          save: ${{ github.event_name == 'workflow_call' && inputs.save_nix_cache || false }}
+
+      # Pull from ks-systems (read-only, trusted production cache)
+      - name: Configure Cachix (ks-systems)
+        uses: cachix/cachix-action@v15
+        with:
+          name: ks-systems
+
+      # Push to ks-ci (CI-only cache, isolated from production)
+      - name: Configure Cachix (ks-ci)
+        if: env.CACHIX_CI_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@v15
+        with:
+          name: ks-ci
+          authToken: ${{ env.CACHIX_CI_AUTH_TOKEN }}
+
+      - name: Set pull request ISO metadata
+        if: github.event_name == 'pull_request'
+        id: artifact-meta-pr
+        run: |
+          echo "iso_artifact_name=starter-installer-iso" >> "$GITHUB_OUTPUT"
+
+      - name: Set workflow-call ISO metadata
+        if: github.event_name == 'workflow_call'
+        id: artifact-meta-call
+        run: |
+          echo "iso_artifact_name=${{ inputs.iso_artifact_name }}" >> "$GITHUB_OUTPUT"
+          echo "iso_file_name=${{ inputs.iso_file_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate ISO template fixture
+        run: |
+          FIXTURE_DIR="$RUNNER_TEMP/keystone-starter-fixture"
+          ./bin/generate-template-fixture --output "$FIXTURE_DIR"
+          echo "FIXTURE_DIR=$FIXTURE_DIR" >> "$GITHUB_ENV"
+
+      - name: Verify generated fixture user
+        run: |
+          grep -n 'username = "keystone";' "$FIXTURE_DIR/flake.nix"
+
+      - name: Build ISO from generated fixture
+        id: collect-iso
+        env:
+          REQUESTED_ISO_FILE_NAME: ${{ steps.artifact-meta-call.outputs.iso_file_name }}
+        run: |
+          set -euo pipefail
+
+          cd "$FIXTURE_DIR"
+          ./bin/test-iso --build-only
+
+          iso_path="$(find "/tmp/keystone-test-iso/iso" -maxdepth 1 -name '*.iso' -print -quit)"
+          if [[ -z "$iso_path" ]]; then
+            echo "Generated fixture build completed but no ISO artifact was found"
+            exit 1
+          fi
+
+          iso_file_name="${REQUESTED_ISO_FILE_NAME:-$(basename "$iso_path")}"
+          artifact_dir="$RUNNER_TEMP/starter-iso-artifact"
+          mkdir -p "$artifact_dir"
+          cp "$iso_path" "$artifact_dir/$iso_file_name"
+
+          {
+            echo "iso_artifact_path=$artifact_dir/$iso_file_name"
+            echo "iso_file_name=$iso_file_name"
+            echo "iso_built=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload starter ISO artifact
+        if: github.event_name == 'workflow_call' && inputs.upload_iso_artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-meta-call.outputs.iso_artifact_name }}
+          path: ${{ steps.collect-iso.outputs.iso_artifact_path }}
+          if-no-files-found: error

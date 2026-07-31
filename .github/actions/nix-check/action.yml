@@ -1,0 +1,52 @@
+name: Nix Flake Check
+description: Build a flake check with Nix store cache and Cachix
+
+inputs:
+  check:
+    description: Flake check attribute (e.g. checks.x86_64-linux.check-eval)
+    required: true
+  cache-name:
+    description: Cache key name for this check group
+    required: true
+  gc-max-store-size:
+    description: Max Nix store size before GC
+    required: false
+    default: "3G"
+  cache-branch-name:
+    description: Branch name for cache key (workflow_call override)
+    required: false
+    default: ""
+  cachix-ci-auth-token:
+    description: Cachix ks-ci auth token for push
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v31
+      with:
+        nix_path: nixpkgs=channel:nixos-unstable
+    - name: Restore and save internal Nix cache
+      uses: nix-community/cache-nix-action@v7
+      with:
+        primary-key: nix-${{ runner.os }}-${{ inputs.cache-branch-name || github.head_ref || github.ref_name }}-${{ inputs.cache-name }}-${{ hashFiles('flake.lock') }}
+        restore-prefixes-first-match: |
+          nix-${{ runner.os }}-${{ inputs.cache-branch-name || github.head_ref || github.ref_name }}-${{ inputs.cache-name }}-
+        restore-prefixes-all-matches: |
+          nix-${{ runner.os }}-${{ github.event.repository.default_branch }}-${{ inputs.cache-name }}-
+        gc-max-store-size-linux: ${{ inputs.gc-max-store-size }}
+        save: true
+    - name: Configure Cachix (ks-systems)
+      uses: cachix/cachix-action@v15
+      with:
+        name: ks-systems
+    - name: Configure Cachix (ks-ci)
+      if: inputs.cachix-ci-auth-token != ''
+      uses: cachix/cachix-action@v15
+      with:
+        name: ks-ci
+        authToken: ${{ inputs.cachix-ci-auth-token }}
+    - name: Build
+      shell: bash
+      run: nix build -L '.#${{ inputs.check }}'

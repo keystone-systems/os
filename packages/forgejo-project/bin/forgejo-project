@@ -1,0 +1,532 @@
+#!/usr/bin/env bash
+# forgejo-project — Forgejo project board management via web routes.
+#
+# Forgejo has no REST API for project boards (as of 14.x). This script
+# automates all board operations via the web UI's internal HTTP endpoints
+# using session cookie authentication.
+#
+# Why session cookies instead of API tokens:
+#   services/auth/basic.go line 47 and services/auth/oauth2.go line 221
+#   explicitly skip non-/api/ paths, so only session cookies work for
+#   web routes. curl bypasses CSRF protection because Go's
+#   net/http.CrossOriginProtection only blocks browser cross-origin
+#   requests (checks Sec-Fetch-Site/Origin headers absent from plain curl).
+#
+# Usage:
+#   export FORGEJO_HOST=git.example.com FORGEJO_USER=alice
+#   forgejo-project login --password-cmd "rbw get git --field password"
+#   forgejo-project create --repo owner/repo --title "v1.0" --template basic-kanban
+#   forgejo-project column add --repo owner/repo --project 5 --title "In Review"
+#   forgejo-project item add --repo owner/repo --project 5 --issue 42
+#
+# See the full interface below or run forgejo-project --help.
+set -euo pipefail
+
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/forgejo-project"
+COOKIE_JAR="$STATE_DIR/cookies.txt"
+
+# ── Global flag defaults ──────────────────────────────────────────────────────
+
+FORGEJO_HOST="${FORGEJO_HOST:-}"
+FORGEJO_USER="${FORGEJO_USER:-}"
+PASSWORD_CMD=""
+
+# ── Usage ─────────────────────────────────────────────────────────────────────
+
+usage() {
+  cat <<'EOF'
+Usage: forgejo-project <command> [options]
+
+Manages Forgejo project boards via web routes (session cookie auth).
+
+Environment:
+  FORGEJO_HOST      Forgejo hostname, e.g. git.example.com
+  FORGEJO_USER      Forgejo username
+
+Auth:
+  login   --host HOST --user USER --password-cmd CMD
+            Log in once; session cookie cached at
+            ~/.local/state/forgejo-project/cookies.txt
+
+Project CRUD:
+  create  --repo OWNER/REPO --title TITLE [--template none|basic-kanban|bug-triage]
+  list    --repo OWNER/REPO
+  close   --repo OWNER/REPO --project ID
+  open    --repo OWNER/REPO --project ID
+  delete  --repo OWNER/REPO --project ID
+
+Column CRUD:
+  column add     --repo OWNER/REPO --project ID --title TITLE [--color HEX]
+  column list    --repo OWNER/REPO --project ID
+  column edit    --repo OWNER/REPO --project ID --column ID --title TITLE [--color HEX]
+  column default --repo OWNER/REPO --project ID --column ID
+  column delete  --repo OWNER/REPO --project ID --column ID
+
+Issue management:
+  item add   --repo OWNER/REPO --project ID --issue NUMBER
+  item move  --repo OWNER/REPO --project ID --issue NUMBER --column ID
+  item list  --repo OWNER/REPO --project ID
+
+Template values for --template:
+  none (0), basic-kanban (1), bug-triage (2)
+EOF
+}
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_require_host() {
+  if [[ -z "$FORGEJO_HOST" ]]; then
+    echo "error: FORGEJO_HOST is not set; pass --host or export FORGEJO_HOST" >&2
+    exit 1
+  fi
+}
+
+_base_url() {
+  echo "https://$FORGEJO_HOST"
+}
+
+# Wrapper around curl that:
+#   1. Sends and saves session cookies
+#   2. Detects session expiry (redirect to /user/login) and auto-retries once
+_curl() {
+  local response http_code body
+  response=$(curl -sL -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    -w "\n%{http_code}" \
+    --max-redirs 0 \
+    "$@" 2>&1 || true)
+  http_code=$(echo "$response" | tail -1)
+  body=$(echo "$response" | sed '$d')
+
+  # Session expired — re-login and retry once
+  if [[ "$http_code" == "302" ]] && echo "$body" | grep -q '/user/login'; then
+    _do_login
+    response=$(curl -sL -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+      -w "\n%{http_code}" \
+      --max-redirs 0 \
+      "$@" 2>&1 || true)
+    http_code=$(echo "$response" | tail -1)
+    body=$(echo "$response" | sed '$d')
+  fi
+
+  echo "$body"
+}
+
+# Resolve issue number → internal DB ID via the REST API.
+# The REST API accepts session cookies, so no separate token is needed.
+_resolve_issue_id() {
+  local repo="$1" issue_number="$2"
+  curl -sf \
+    -b "$COOKIE_JAR" \
+    "$(_base_url)/api/v1/repos/$repo/issues/$issue_number" \
+    | jq -r '.id'
+}
+
+# URL-encode a string (requires jq)
+_urlencode() {
+  printf '%s' "$1" | jq -sRr @uri
+}
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+_do_login() {
+  _require_host
+  if [[ -z "$FORGEJO_USER" ]]; then
+    echo "error: FORGEJO_USER is not set; pass --user or export FORGEJO_USER" >&2
+    exit 1
+  fi
+  if [[ -z "$PASSWORD_CMD" ]]; then
+    echo "error: --password-cmd is required for login" >&2
+    exit 1
+  fi
+
+  local password
+  password=$($PASSWORD_CMD)
+
+  mkdir -p "$STATE_DIR"
+  chmod 700 "$STATE_DIR"
+
+  local http_code
+  http_code=$(curl -s -c "$COOKIE_JAR" \
+    -X POST "$(_base_url)/user/login" \
+    -d "user_name=$(_urlencode "$FORGEJO_USER")&password=$(_urlencode "$password")" \
+    -o /dev/null \
+    -w "%{http_code}")
+
+  if [[ "$http_code" != "303" && "$http_code" != "302" ]]; then
+    echo "error: login failed (HTTP $http_code)" >&2
+    exit 1
+  fi
+}
+
+cmd_login() {
+  _do_login
+  echo "Logged in as $FORGEJO_USER at $FORGEJO_HOST"
+}
+
+# ── Projects ──────────────────────────────────────────────────────────────────
+
+cmd_create() {
+  local repo="" title="" template=1
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)       repo="$2";     shift 2 ;;
+      --title)      title="$2";    shift 2 ;;
+      --template)
+        case "$2" in
+          none)          template=0 ;;
+          basic-kanban)  template=1 ;;
+          bug-triage)    template=2 ;;
+          [0-2])         template=$2 ;;
+          *) echo "error: unknown template '$2' (none|basic-kanban|bug-triage)" >&2; exit 1 ;;
+        esac
+        shift 2
+        ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"  ]] || { echo "error: --repo is required"  >&2; exit 1; }
+  [[ -n "$title" ]] || { echo "error: --title is required" >&2; exit 1; }
+
+  _curl -X POST "$(_base_url)/$repo/projects/new" \
+    -d "Title=$(_urlencode "$title")&Content=&TemplateType=$template&CardType=0" \
+    -o /dev/null
+  echo "Created project '$title' on $repo"
+}
+
+cmd_list() {
+  local repo=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo) repo="$2"; shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo" ]] || { echo "error: --repo is required" >&2; exit 1; }
+
+  local html
+  html=$(_curl "$(_base_url)/$repo/projects")
+
+  # Parse project IDs and titles from HTML.
+  # Project links appear as: href="/owner/repo/projects/N">Title</a>
+  # Output JSON array: [{"id": N, "title": "..."}]
+  echo "$html" | grep -oP "href=\"/$repo/projects/[0-9]+" \
+    | grep -oP '[0-9]+$' \
+    | sort -un \
+    | while read -r id; do
+        local title
+        title=$(echo "$html" \
+          | grep -oP "href=\"/$repo/projects/$id\"[^>]*>[^<]+" \
+          | grep -oP '>[^<]+$' \
+          | sed 's/^>//' \
+          | head -1 \
+          | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        printf '{"id":%s,"title":"%s"}\n' "$id" "$title"
+      done \
+    | jq -s '.'
+}
+
+cmd_close() {
+  local repo="" project=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+
+  _curl -X POST "$(_base_url)/$repo/projects/$project/close"
+}
+
+cmd_open() {
+  local repo="" project=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+
+  _curl -X POST "$(_base_url)/$repo/projects/$project/open"
+}
+
+cmd_delete() {
+  local repo="" project=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+
+  _curl -X POST "$(_base_url)/$repo/projects/$project/delete"
+}
+
+# ── Columns ───────────────────────────────────────────────────────────────────
+
+cmd_column() {
+  local subcmd="${1:-}"
+  if [[ -z "$subcmd" ]]; then
+    echo "error: column subcommand required (add|list|edit|default|delete)" >&2
+    usage; exit 1
+  fi
+  shift
+
+  case "$subcmd" in
+    add)     cmd_column_add     "$@" ;;
+    list)    cmd_column_list    "$@" ;;
+    edit)    cmd_column_edit    "$@" ;;
+    default) cmd_column_default "$@" ;;
+    delete)  cmd_column_delete  "$@" ;;
+    *) echo "error: unknown column subcommand '$subcmd'" >&2; usage; exit 1 ;;
+  esac
+}
+
+cmd_column_add() {
+  local repo="" project="" title="" color=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      --title)   title="$2";   shift 2 ;;
+      --color)   color="$2";   shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+  [[ -n "$title"   ]] || { echo "error: --title is required"   >&2; exit 1; }
+
+  _curl -X POST "$(_base_url)/$repo/projects/$project" \
+    -d "Title=$(_urlencode "$title")&Color=$(_urlencode "$color")"
+}
+
+cmd_column_list() {
+  local repo="" project=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+
+  local html
+  html=$(_curl "$(_base_url)/$repo/projects/$project")
+
+  # Column IDs appear in URLs like /{repo}/projects/{pid}/{cid}
+  # Output JSON array: [{"id": N, "title": "..."}]
+  echo "$html" | grep -oP "href=\"/$repo/projects/$project/[0-9]+" \
+    | grep -oP '[0-9]+$' \
+    | sort -un \
+    | while read -r cid; do
+        local title
+        title=$(echo "$html" \
+          | grep -oP "href=\"/$repo/projects/$project/$cid\"[^>]*>[^<]+" \
+          | grep -oP '>[^<]+$' \
+          | sed 's/^>//' \
+          | head -1 \
+          | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        printf '{"id":%s,"title":"%s"}\n' "$cid" "$title"
+      done \
+    | jq -s '.'
+}
+
+cmd_column_edit() {
+  local repo="" project="" column="" title="" color=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      --column)  column="$2";  shift 2 ;;
+      --title)   title="$2";   shift 2 ;;
+      --color)   color="$2";   shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+  [[ -n "$column"  ]] || { echo "error: --column is required"  >&2; exit 1; }
+  [[ -n "$title"   ]] || { echo "error: --title is required"   >&2; exit 1; }
+
+  _curl -X PUT "$(_base_url)/$repo/projects/$project/$column" \
+    -d "Title=$(_urlencode "$title")&Color=$(_urlencode "$color")"
+}
+
+cmd_column_default() {
+  local repo="" project="" column=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      --column)  column="$2";  shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+  [[ -n "$column"  ]] || { echo "error: --column is required"  >&2; exit 1; }
+
+  _curl -X POST "$(_base_url)/$repo/projects/$project/$column/default"
+}
+
+cmd_column_delete() {
+  local repo="" project="" column=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      --column)  column="$2";  shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+  [[ -n "$column"  ]] || { echo "error: --column is required"  >&2; exit 1; }
+
+  _curl -X DELETE "$(_base_url)/$repo/projects/$project/$column"
+}
+
+# ── Items ─────────────────────────────────────────────────────────────────────
+
+cmd_item() {
+  local subcmd="${1:-}"
+  if [[ -z "$subcmd" ]]; then
+    echo "error: item subcommand required (add|move|list)" >&2
+    usage; exit 1
+  fi
+  shift
+
+  case "$subcmd" in
+    add)  cmd_item_add  "$@" ;;
+    move) cmd_item_move "$@" ;;
+    list) cmd_item_list "$@" ;;
+    *) echo "error: unknown item subcommand '$subcmd'" >&2; usage; exit 1 ;;
+  esac
+}
+
+cmd_item_add() {
+  local repo="" project="" issue=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      --issue)   issue="$2";   shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+  [[ -n "$issue"   ]] || { echo "error: --issue is required"   >&2; exit 1; }
+
+  local issue_id
+  issue_id=$(_resolve_issue_id "$repo" "$issue")
+
+  _curl -X POST "$(_base_url)/$repo/issues/projects" \
+    -d "issue_ids=$issue_id&id=$project"
+}
+
+cmd_item_move() {
+  local repo="" project="" issue="" column=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      --issue)   issue="$2";   shift 2 ;;
+      --column)  column="$2";  shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+  [[ -n "$issue"   ]] || { echo "error: --issue is required"   >&2; exit 1; }
+  [[ -n "$column"  ]] || { echo "error: --column is required"  >&2; exit 1; }
+
+  local issue_id
+  issue_id=$(_resolve_issue_id "$repo" "$issue")
+
+  _curl -X POST "$(_base_url)/$repo/projects/$project/$column/move" \
+    -H "Content-Type: application/json" \
+    -d "{\"issues\": [{\"issueID\": $issue_id, \"sorting\": 0}]}"
+}
+
+cmd_item_list() {
+  local repo="" project=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)    repo="$2";    shift 2 ;;
+      --project) project="$2"; shift 2 ;;
+      *) echo "error: unknown option '$1'" >&2; usage; exit 1 ;;
+    esac
+  done
+  [[ -n "$repo"    ]] || { echo "error: --repo is required"    >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "error: --project is required" >&2; exit 1; }
+
+  local html
+  html=$(_curl "$(_base_url)/$repo/projects/$project")
+
+  # Issue cards appear as links to /{repo}/issues/N
+  # Output JSON array: [{"number": N, "title": "..."}]
+  echo "$html" | grep -oP "href=\"/$repo/issues/[0-9]+" \
+    | grep -oP '[0-9]+$' \
+    | sort -un \
+    | while read -r num; do
+        local title
+        title=$(echo "$html" \
+          | grep -oP "href=\"/$repo/issues/$num\"[^>]*>[^<]+" \
+          | grep -oP '>[^<]+$' \
+          | sed 's/^>//' \
+          | head -1 \
+          | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        printf '{"number":%s,"title":"%s"}\n' "$num" "$title"
+      done \
+    | jq -s '.'
+}
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+
+main() {
+  # Pull global flags before the subcommand
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --host)         FORGEJO_HOST="$2";  shift 2 ;;
+      --user)         FORGEJO_USER="$2";  shift 2 ;;
+      --password-cmd) PASSWORD_CMD="$2";  shift 2 ;;
+      --help|-h)      usage; exit 0 ;;
+      --) shift; break ;;
+      -*) break ;;  # leave subcommand-specific flags for the subcommand handler
+      *)  break ;;
+    esac
+  done
+
+  local cmd="${1:-}"
+  if [[ -z "$cmd" ]]; then
+    usage; exit 1
+  fi
+  shift
+
+  case "$cmd" in
+    login)  cmd_login  "$@" ;;
+    create) cmd_create "$@" ;;
+    list)   cmd_list   "$@" ;;
+    close)  cmd_close  "$@" ;;
+    open)   cmd_open   "$@" ;;
+    delete) cmd_delete "$@" ;;
+    column) cmd_column "$@" ;;
+    item)   cmd_item   "$@" ;;
+    --help|-h) usage; exit 0 ;;
+    *) echo "error: unknown command '$cmd'" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

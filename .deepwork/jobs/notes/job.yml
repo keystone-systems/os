@@ -1,0 +1,2605 @@
+name: notes
+summary: "Initialize, migrate, and maintain zk Zettelkasten notebooks for notes repos"
+
+step_arguments:
+  - name: notes_path
+    description: "Path to the notes repo (e.g., ~/notes or /home/agent-drago/notes)"
+    type: string
+
+  - name: detection_report
+    description: "Source format, keystone status, and format-specific artifacts found"
+    type: file_path
+
+  - name: scaffold_report
+    description: "List of created files and directories from notebook scaffolding"
+    type: file_path
+
+  - name: seed_report
+    description: "List of created index notes with their IDs and topics"
+    type: file_path
+
+  - name: init_report
+    description: "Verification results: index status, group resolution, template test"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Quality criteria:
+        - Index Clean: zk index completes without errors.
+        - Groups Resolve: zk list for each group (inbox, literature, notes, decisions, index) returns results or empty without error.
+        - Template Works: A test note created with --no-input has correct frontmatter fields.
+
+  - name: audit_report
+    description: "Inventory of existing files, structure analysis, frontmatter patterns, link formats, source format details"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Quality criteria:
+        - File Count: The audit includes total markdown file count and breakdown by directory.
+        - Frontmatter Analysis: The audit identifies which files have frontmatter and which fields are present.
+        - Link Format Detection: The audit identifies existing link formats (wikilinks, markdown links, bare URLs).
+        - Source Format Identified: The audit identifies the source format (Obsidian, Apple Notes, plain markdown) and any format-specific artifacts.
+        - Legacy Trees Identified: The audit explicitly lists noncanonical directories containing note-like markdown that still need migration or explicit exclusion.
+        - Project Ownership Audited: The audit identifies project hubs, spike conventions, and probable missing project tags using ripgrep-based project-name discovery.
+        - VCS Ref Fields Audited: The audit scans for non-canonical ref fields (raw URLs, bare numbers, non-standard field names like issue: or github_issue:) and reports counts per pattern.
+
+  - name: migration_plan
+    description: "Migration plan: file-to-type mappings, ID assignment strategy, directory moves, frontmatter additions, format-specific conversions"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Quality criteria:
+        - No Data Loss: The plan does not delete any existing content -- only moves and augments.
+        - ID Strategy Clear: The plan specifies how IDs will be assigned (git history, mtime, or new timestamp).
+        - Operational Files Untouched: TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml, SOUL.md, AGENTS.md are explicitly excluded.
+        - Format Artifacts Handled: The plan addresses format-specific artifacts (Obsidian callouts, dataview blocks, Apple Notes HTML, etc.).
+        - Legacy Trees Accounted For: The plan includes an explicit disposition for every remaining noncanonical directory that contains note-like markdown.
+        - Project Tag Strategy: The plan explains how project hubs, spike notes, and ripgrep-discovered project mentions will be used to add missing project tags.
+        - VCS Ref Normalization Plan: The plan lists every file with non-canonical ref fields and specifies the exact field rename and format conversion to apply.
+
+  - name: migration_log
+    description: "Log of all file transformations with before/after paths and commit hashes"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Quality criteria:
+        - Commit Per File: Each file transformation has its own commit for reversibility.
+        - Content Preserved: No content was deleted -- only frontmatter additions, directory moves, and link format changes.
+        - Legacy Trees Resolved: Remaining noncanonical note directories were either migrated or explicitly left with only operational files.
+        - Project Ownership Applied: Migration updates missing project tags where the evidence is strong and preserves canonical project hubs and spike README notes.
+        - VCS Refs Applied: All non-canonical ref fields identified in the migration plan were renamed to canonical field names and converted to gh:/fj: prefixed format.
+
+  - name: doctor_report
+    description: "Post-migration health check: index status, orphan count, dead links, frontmatter coverage"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Quality criteria:
+        - Index Clean: zk index completes without errors.
+        - Frontmatter Coverage: All markdown files in notes/ have valid frontmatter with id, title, type, created, author, tags.
+        - No Dead Links: No wikilinks point to non-existent notes.
+        - No Stray Note Trees: No note-like markdown remains outside canonical groups unless explicitly classified as operational residue.
+        - Project Tags Verified: The report checks for likely missing project tags via ripgrep-driven project-name discovery and explains any remaining intentional gaps.
+        - VCS Refs Normalized: All ref fields use canonical names (repo_ref, issue_ref, milestone_ref, pr_ref) and gh:/fj: prefixed format. Zero raw URLs or bare numbers remain.
+
+  - name: inbox_review
+    description: "Classification of each inbox note: promote-to-permanent, promote-to-literature, or discard"
+    type: file_path
+
+  - name: promotion_log
+    description: "Log of promotions: fleeting note ID -> new permanent/literature note ID"
+    type: file_path
+
+  - name: link_report
+    description: "List of links added to newly promoted notes and updated index notes"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Quality criteria:
+        - No Orphans: Every newly promoted permanent note links to at least one other note.
+        - Index Updated: Relevant index notes have been updated with links to the new notes.
+
+  - name: sync_status
+    description: "Confirmation that changes were committed and pushed"
+    type: file_path
+
+workflows:
+  setup:
+    summary: "Detect source format and convert to zk Zettelkasten structure"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job manages Zettelkasten-structured notes repositories using the `zk` CLI.
+      It applies to both human user notes repos and OS agent notes repos (agent-space).
+
+      ## Keystone Notes Architecture
+
+      Notes repos are git-backed repositories synced via `repo-sync` on systemd timers.
+      Human users: `keystone.notes` (home-manager module, syncs to `~/notes`).
+      OS agents: `keystone.os.agents.<name>.notes` (NixOS module, syncs to `/home/agent-{name}/notes`).
+
+      ## Zettelkasten Structure (standardized by process.knowledge-management convention)
+
+      ```
+      notes-repo/
+        .zk/
+          config.toml             # zk configuration (ID format, groups, wikilinks)
+          templates/
+            fleeting.md           # Template for inbox notes
+            literature.md         # Template for source summaries
+            permanent.md          # Template for atomic ideas
+            decision.md           # Template for ADRs
+            index.md              # Template for Maps of Content
+        inbox/                    # Fleeting notes (ephemeral, to be processed)
+        literature/               # Literature notes (source summaries)
+        notes/                    # Permanent notes (atomic, linked)
+        decisions/                # Decision records (context, decision, consequences)
+        index/                    # Maps of Content and project hub notes
+        reports/                  # Optional report notes when the repo uses a report group
+        spikes/                   # Optional spike trees with canonical README notes plus support artifacts
+        TASKS.yaml                # Agent task state (existing, untouched)
+        PROJECTS.yaml             # Agent project config (existing, untouched)
+        SCHEDULES.yaml            # Agent schedules (existing, untouched)
+      ```
+
+      ## Note ID Schema
+
+      Format: `YYYYMMDDHHmm` (12-digit timestamp, minute precision).
+      Filename: `{id} {title-slug}.md` (e.g., `202603201430 zfs-encryption-key-loading.md`).
+
+      ## Required Frontmatter
+
+      ```yaml
+      ---
+      id: "202603201430"
+      title: "Note title"
+      type: fleeting | literature | permanent | decision | index | report
+      created: 2026-03-20T14:30:00-05:00
+      author: ncrmro
+      tags: [topic1, topic2]
+      ---
+      ```
+
+      ## Key zk Commands
+
+      - `zk init` — Initialize notebook (creates .zk/)
+      - `zk new <group>/ --title "Title" --no-input --print-path` — Create note (non-interactive)
+      - `zk list --format json --match "query"` — Search notes
+      - `zk list --orphan --format json` — Find unlinked notes
+      - `zk list --linked-by <path> --format json` — Find outgoing links
+      - `zk index` — Rebuild note index
+
+      ## Operational Files
+
+      YAML files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml) and identity files (SOUL.md,
+      AGENTS.md) are NOT notes and MUST NOT be modified by this job. The zk indexer
+      ignores non-markdown files automatically.
+
+      ## Transient Workflow Outputs
+
+      Step outputs such as audit reports, migration plans, scaffold reports, migration logs,
+      and doctor reports are transient workflow artifacts. Write them under `.deepwork/tmp/`
+      and pass those paths back to the workflow engine. They MUST NOT be written at the repo
+      root or committed to git.
+
+      ## Source Format Detection
+
+      The `setup` and `doctor` workflows handle repos that may originate from different
+      note-taking systems. Detection markers:
+
+      - **Obsidian vault**: `.obsidian/` directory present. May contain Obsidian-specific
+        syntax (callouts `> [!note]`, dataview queries `\`\`\`dataview`, embedded files
+        `![[file]]`, aliases in frontmatter, folder-based organization).
+      - **Apple Notes export**: Typically flat or shallow directory structure, HTML fragments
+        in markdown, exported attachments in separate folders, no frontmatter.
+      - **Plain markdown**: No app-specific markers. May have arbitrary structure.
+      - **Keystone agent repo**: Contains TASKS.yaml, AGENTS.md, SOUL.md, or SCHEDULES.yaml.
+        When detected, keystone conventions apply silently (operational files excluded,
+        agent identity preserved).
+
+      ## Project hub and spike conventions
+
+      Some repos adopt two extra conventions beyond the core zk groups:
+
+      - `index/` may contain project hub notes. These are still `type: index`, but they act as
+        the canonical entry point for a project and often carry tags such as `project` plus the
+        project slug.
+      - `spikes/<slug>/README.md` may be the canonical spike note, while sibling files such as
+        `scope.md`, `research.md`, or `prototype/README.md` remain support artifacts that are
+        intentionally ignored by `zk` via `.zk/config.toml`.
+
+      When those conventions are present, the doctor workflow must preserve them instead of
+      forcing all spike content into `notes/` or treating project hubs as stray notes.
+    steps:
+      - name: detect
+        instructions: |
+          # Detect Source Format
+
+          ## Objective
+
+          Quickly identify the source note-taking system and whether this is a keystone-managed repo. This informs all downstream steps with format-specific handling.
+
+          ## Task
+
+          Run the following checks in order (fast filesystem checks, no content reading):
+
+          ### 1. Keystone Detection (silent)
+
+          Check for keystone markers — if found, keystone conventions apply automatically:
+
+          ```bash
+          # Any of these present = keystone repo
+          ls -1 TASKS.yaml AGENTS.md SOUL.md SCHEDULES.yaml PROJECTS.yaml 2>/dev/null
+          ```
+
+          Do NOT announce keystone detection to the user. Just record it in the report and let downstream steps handle it.
+
+          ### 2. Source Format Detection
+
+          Check for app-specific artifacts:
+
+          **Obsidian vault:**
+
+          ```bash
+          [ -d .obsidian ] && echo "OBSIDIAN"
+          ls .obsidian/plugins/ 2>/dev/null  # List installed plugins
+          ls .obsidian/workspace.json 2>/dev/null
+          ```
+
+          Obsidian-specific syntax to watch for (sample 5 files):
+
+          - Callouts: `> [!note]`, `> [!warning]`, `> [!tip]`
+          - Dataview queries: ` ```dataview `
+          - Embedded files: `![[filename]]`
+          - Block references: `^block-id`, `[[note#^block-id]]`
+          - Aliases in frontmatter: `aliases: [...]`
+          - Tags as `#tag` inline (not just frontmatter)
+
+          **Apple Notes export:**
+
+          ```bash
+          # Apple Notes exports typically have HTML fragments, no frontmatter, and attachment dirs
+          # Check for HTML tags in markdown files
+          head -20 *.md 2>/dev/null | grep -l '<div>\|<br>\|<span>' | head -3
+          # Check for "Attachments" or "Media" directories
+          ls -d Attachments Media 2>/dev/null
+          ```
+
+          **Plain markdown:** No app-specific markers found.
+
+          ### 3. Structure Summary
+
+          Quick directory stats (no content reading):
+
+          ```bash
+          # Top-level dirs
+          ls -d */ 2>/dev/null
+          # Total markdown count
+          find . -name "*.md" -not -path "./.git/*" -not -path "./.zk/*" -not -path "./.obsidian/*" -not -path "./.deepwork/*" -not -path "./.claude/*" | wc -l
+          # Existing zk setup?
+          [ -d .zk ] && echo "ZK_ALREADY_INIT"
+          ```
+
+          ## Output Format
+
+          Write `detection_report.md`:
+
+          ```markdown
+          # Detection Report
+
+          ## Source Format
+
+          - **Detected**: Obsidian | Apple Notes | Plain Markdown
+          - **Confidence**: High | Medium (explain why)
+
+          ## Keystone Repo
+
+          - **Is keystone**: yes | no
+          - **Markers found**: (list files found)
+
+          ## Format-Specific Artifacts
+
+          - (list what was found: plugins, callouts, dataview, HTML fragments, etc.)
+
+          ## Structure
+
+          - **Top-level directories**: (list)
+          - **Total markdown files**: N
+          - **Existing zk setup**: yes | no
+
+          ## Recommendations
+
+          - (brief notes for downstream steps, e.g., "Obsidian callouts should be preserved as-is" or "Apple Notes HTML needs stripping")
+          ```
+
+          ## Important Notes
+
+          - This step is READ-ONLY — do not modify any files
+          - Do NOT read note content beyond sampling a few files for syntax detection
+          - Keystone detection is silent — do not prompt the user about it
+          - Speed matters — this should complete in seconds, not minutes
+        inputs:
+          notes_path:
+            required: true
+        outputs:
+          detection_report:
+            required: true
+
+      - name: audit
+        instructions: |
+          # Audit Existing Repo
+
+          ## Objective
+
+          Inventory an existing notes repo to understand its current structure before migration.
+          If a `detection_report.md` exists from the `detect` step, use it to focus the audit
+          on format-specific concerns.
+
+          ## Task
+
+          1. **File inventory**: Count all markdown files, grouped by directory:
+
+             ```bash
+             rg --files <notes_path> -g '*.md' -g '!.zk/**' -g '!.git/**' -g '!.obsidian/**' -g '!.deepwork/**' -g '!.claude/**' | wc -l
+             rg --files <notes_path> -g '*.md' -g '!.zk/**' -g '!.git/**' -g '!.obsidian/**' -g '!.deepwork/**' -g '!.claude/**' | xargs -r -n1 dirname | sort | uniq -c | sort -rn
+             ```
+
+          2. **Structure detection**: Is the repo flat, shallow (1 level of dirs), or deeply nested?
+
+          3. **Frontmatter analysis**: Sample 10-20 markdown files and check:
+             - Do they have YAML frontmatter (`---` delimiters)?
+             - What fields are present? (title, date, tags, etc.)
+             - What format are dates in?
+             - Is there any existing ID scheme?
+
+          4. **Link format detection**: Search for existing links:
+
+             ```bash
+             # Wikilinks (standard and Obsidian-style)
+             rg -n '\[\[' <notes_path> -g '*.md' | head -20
+             # Markdown links to local files
+             rg -n '\[.*\]\((?!http)' <notes_path> -g '*.md' -P | head -20
+             # Obsidian embedded files
+             rg -n '!\[\[' <notes_path> -g '*.md' | head -10
+             ```
+
+          5. **Naming convention**: Are files named with dates, slugs, titles, or randomly?
+
+          6. **Format-specific analysis** (based on detection_report.md if available):
+
+             **Obsidian vaults:**
+             - Count files using callout syntax (`> [!`)
+             - Count files with dataview blocks
+             - Check for Obsidian-specific frontmatter fields (aliases, cssclass, publish)
+             - List Obsidian plugins that affect content format (dataview, templater, etc.)
+             - Check for `_archive/` or other Obsidian-convention dirs
+
+             **Apple Notes exports:**
+             - Count files with HTML fragments
+             - Check for attachment references
+             - Identify date patterns from filenames
+
+          7. **Operational files**: Identify and list files that MUST NOT be migrated:
+             - TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml
+             - SOUL.md, AGENTS.md, CLAUDE.md, HUMAN.md
+             - SERVICES.md, ARCHITECTURE.md, REQUIREMENTS.md
+             - Any dotfiles/directories (.git, .zk, .agents, .deepwork, .envrc, .repos)
+             - Build/config files: flake.nix, flake.lock, pyproject.toml, uv.lock, etc.
+
+          8. **Canonical hub and spike conventions**: Identify whether the repo already uses:
+             - `index/` for project hub notes (`type: index`, usually tagged with `project` plus a project slug)
+             - `reports/` as an extra canonical note group
+             - `spikes/<slug>/README.md` as the canonical spike note, with sibling `scope.md`, `research.md`, or `prototype/` files treated as support artifacts
+             - `.zk/config.toml` ignore rules that intentionally exclude spike support docs from indexing
+
+             If these conventions exist, record them explicitly. Do not treat canonical project hubs or canonical spike README notes as stray legacy content.
+
+          9. **Legacy tree inventory**: Explicitly identify noncanonical directories that still contain note-like markdown:
+             - Check common legacy trees such as `projects/`, `workflow/`, `research/`, `talks/`, `people/`, `journal/`, `ideas/`, `spikes/`, and `_archive/`
+             - Separate them into:
+               - note-like markdown that still needs migration
+               - operational or generated markdown that should remain excluded
+             - If `spikes/` is present, distinguish canonical spike README notes from support docs and from truly stray spike content
+             - If a large legacy tree remains, do not stop at the canonical groups — call it out clearly in the audit
+
+          10. **VCS ref field audit**: Detect non-normalized repository, issue, milestone, and PR references in frontmatter:
+
+             Canonical field names: `repo_ref`, `issue_ref`, `milestone_ref`, `pr_ref`.
+             Canonical formats:
+             - Repo-only: `gh:<owner>/<repo>` or `fj:<owner>/<repo>`
+             - With number: `gh:<owner>/<repo>#<number>` or `fj:<owner>/<repo>#<number>`
+
+             Search for notes that need normalization:
+
+             ```bash
+             # Raw GitHub/Forgejo URLs in frontmatter
+             rg -n "https://github\.com|https://git\.ncrmro\.com" <notes_path> -g '*.md' | head -20
+
+             # Bare issue/PR/milestone numbers (e.g., `issue: 225`)
+             rg -n "^(issue|pr|milestone|repo):\s+[0-9]" <notes_path> -g '*.md' | head -20
+
+             # Non-standard field names that should be canonical refs
+             rg -n "^(github_issue|github_pr|github_repo|forgejo_issue|pr_number|issue_number|issue_url|pr_url):" <notes_path> -g '*.md' | head -20
+
+             # Existing canonical fields with wrong format (should match gh:/fj: prefix)
+             rg -n "^(repo_ref|issue_ref|milestone_ref|pr_ref):\s+(?!gh:|fj:)" <notes_path> -g '*.md' -P | head -20
+             ```
+
+             Record:
+             - Count of files with non-normalized refs
+             - What non-standard field names exist
+             - What raw URL patterns are present
+
+          11. **Project tag gap audit**: Look for files that likely need project tags:
+
+          - Derive project names and aliases from project hub notes in `index/` (title, slug tag, and `subprojects:` if present)
+          - Search across `notes/`, `literature/`, `reports/`, `index/`, and canonical spike `README.md` files for project-name mentions using `rg`
+          - Prefer `scripts/find_missing_project_tags.py <notes_path>` when available, or reproduce its logic manually with `rg`
+          - Record the files that appear to reference a project strongly but do not carry the corresponding project tag yet
+
+          ## Output Format
+
+          Write `.deepwork/tmp/audit_report.md` with sections (add `## VCS Ref Field Audit` between `## Naming Conventions` and `## Canonical hub and spike conventions`):
+
+          ```markdown
+          # Audit Report
+
+          ## Summary
+
+          - Total markdown files: N
+          - Files with frontmatter: N
+          - Files without frontmatter: N
+          - Existing link format: wikilinks / markdown / mixed / none
+          - Source format: Obsidian / Apple Notes / Plain Markdown
+          - Keystone repo: yes / no
+
+          ## Directory Structure
+
+          (tree or listing)
+
+          ## Frontmatter Analysis
+
+          (field frequency table)
+
+          ## Link Analysis
+
+          (existing link patterns)
+
+          ## Format-Specific Findings
+
+          (Obsidian callouts count, dataview usage, Apple Notes HTML fragments, etc.)
+
+          ## Naming Conventions
+
+          (observed patterns)
+
+          ## VCS Ref Field Audit
+
+          - Files with raw GitHub/Forgejo URLs in frontmatter: N
+          - Files with bare issue/PR/milestone numbers: N
+          - Non-standard field names found: (list, e.g., `issue:`, `github_issue:`)
+          - Canonical fields with wrong format: N
+          - Files already using correct `gh:`/`fj:` prefixed canonical fields: N
+
+          ## Canonical hub and spike conventions
+
+          (project hub notes in `index/`, report group usage, spike README conventions, `.zk/config.toml` ignore rules)
+
+          ## Legacy Trees Requiring Migration
+
+          (noncanonical directories that still contain note-like markdown, plus which content is operational residue)
+
+          ## Probable missing project tags
+
+          (files that mention projects but are missing the corresponding project tags)
+
+          ## Excluded Files (not to be migrated)
+
+          (list of operational/identity/config files)
+          ```
+
+          ## Important Notes
+
+          - Do NOT modify any files during audit — this is read-only
+          - Do NOT read personal note content in detail — only scan structure and metadata
+          - Sample files for frontmatter analysis rather than reading every file
+          - Exclude `.obsidian/`, `.deepwork/`, `.claude/` from file counts and analysis
+          - Prefer `rg` over `grep` for content discovery and for project-name searches
+          - The audit report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          notes_path:
+            required: true
+          detection_report:
+            required: false
+        outputs:
+          audit_report:
+            required: true
+
+      - name: plan_migration
+        instructions: |
+          # Plan Migration
+
+          ## Objective
+
+          Based on the audit report, propose a concrete migration plan that converts the existing repo to standardized zk structure, with format-specific strategies.
+
+          ## Task
+
+          1. **File classification**: For each markdown file (excluding operational files), determine:
+             - Target note type: fleeting, literature, permanent, decision, index, or report
+             - Target directory: inbox/, literature/, notes/, decisions/, index/, reports/, or an explicitly preserved spike/support path
+             - Classification rationale (brief)
+
+             Classification heuristics:
+             - Files with structured analysis or ADR-like format -> `decisions/`
+             - Files that summarize external sources (articles, docs) -> `literature/`
+             - Files that summarize work done or outcomes captured for a project -> `reports/` if the repo already uses a report group
+             - Files that curate links to other files -> `index/`
+             - Project hub notes belong in `index/`, even when they are project-specific
+             - Files with developed, standalone ideas -> `notes/`
+             - Short, unstructured captures -> `inbox/`
+             - Canonical spike notes may stay at `spikes/<slug>/README.md` when the repo already uses root spike trees
+             - Spike support docs such as `spikes/<slug>/scope.md`, `research.md`, or `prototype/README.md` may remain as artifacts instead of being forced into canonical zk groups
+
+             **Obsidian-specific heuristics:**
+             - `_archive/` or `Archive/` contents -> `inbox/` (to be triaged)
+             - `_archive/Clippings/` -> `literature/` (web clippings are source summaries)
+             - `journal/` or `daily/` -> `notes/` (permanent, timestamped)
+             - `people/` -> `notes/` (person notes are permanent knowledge)
+             - `projects/` -> preserve as-is or flatten to `notes/` with project tags
+             - `ideas/` -> `inbox/` (fleeting captures to be promoted)
+             - `research/` -> `literature/` (source-based research)
+             - `talks/` -> `literature/` (external content summaries)
+             - old spike/prototype notes in `notes/` or `index/` -> consolidate into canonical `spikes/<slug>/README.md` plus support files where the repo already follows that convention
+
+             **Apple Notes heuristics:**
+             - Flat files with HTML fragments -> strip HTML, classify by content length
+             - Short notes (< 100 words) -> `inbox/`
+             - Longer notes -> `notes/`
+
+          2. **ID assignment strategy**: Decide how to assign IDs:
+             - **Preferred**: Backdate from git history (`git log --follow --diff-filter=A --format=%ai -- <file>`)
+             - **Fallback**: Use file modification time (`stat -c %Y <file>`)
+             - **Last resort**: Generate new timestamps (only for files with no git history)
+             - Handle collisions: if two files share the same minute, offset by 1 minute
+
+          3. **Frontmatter plan**: For each file, specify:
+             - Fields to add (id, title, type, created, author, tags)
+             - How to derive `title` (from existing frontmatter, filename, or first heading)
+             - How to derive `tags` (from existing frontmatter, directory name, project hubs, or content keywords)
+             - **Obsidian**: Preserve `aliases` field if present; convert Obsidian tags (#tag) to frontmatter tags
+             - **Apple Notes**: Derive title from first line of content
+             - For project tags, derive the project slug from project hub notes in `index/`, then use `rg`-based matching across note bodies to find files that should inherit that project tag
+             - Preserve the repo's existing project tag style if one already exists (`project, catalyst` and `project/catalyst` are both valid house styles; do not rewrite styles unnecessarily)
+
+          4. **Directory moves**: Map current paths to target paths.
+
+          5. **Link conversion**: Plan conversion to wikilinks:
+             - Standard markdown links: `[text](file.md)` -> `[[id]]`
+             - Obsidian wikilinks: `[[filename]]` -> `[[id]]` (resolve by filename match)
+             - Obsidian embeds: `![[filename]]` -> `![[id]]` (preserve embed syntax)
+             - Obsidian block refs: `[[note#^block]]` -> preserve as-is (zk supports these)
+
+          6. **Format-specific content conversion plan**:
+             - **Obsidian callouts**: Preserve `> [!type]` syntax (widely supported in markdown renderers)
+             - **Dataview queries**: Convert to static content or wrap in HTML comments with a TODO marker
+             - **Apple Notes HTML**: Strip `<div>`, `<br>`, `<span>` tags, preserve content
+             - **Obsidian-specific plugins**: Document which plugin features will lose functionality
+
+          7. **Batch strategy for large repos** (> 500 files):
+             - Group files by directory for batch processing
+             - Prioritize: operational files exclusion -> structure migration -> frontmatter -> links
+             - Consider processing in batches of 50-100 files per commit group to avoid huge diffs
+
+          8. **Legacy tree disposition**:
+             - For every noncanonical directory found in the audit that still contains note-like markdown, specify one of:
+               - migrate into canonical zk groups
+               - keep in place as operational residue
+               - delete only after note content has been preserved elsewhere
+             - `projects/` and `workflow/` are not automatically exempt. The plan must explicitly decide whether their markdown is notebook content or operational residue.
+             - If the repo already uses root `spikes/` with canonical README notes, classify that as an intentional convention, not a failed migration
+
+          9. **VCS ref field normalization plan**: Based on the audit's ref field findings:
+
+             - For each non-standard field name (e.g., `issue: 225`, `github_issue: foo/bar#3`):
+               - Map to the canonical field name (`issue_ref`, `repo_ref`, etc.)
+               - Convert raw URLs to `gh:<owner>/<repo>#<number>` or `fj:<owner>/<repo>#<number>`
+               - Drop the old field and add the normalized one
+
+             Conversion rules:
+             - `https://github.com/<owner>/<repo>/issues/<N>` -> `issue_ref: gh:<owner>/<repo>#<N>`
+             - `https://github.com/<owner>/<repo>/pull/<N>` -> `pr_ref: gh:<owner>/<repo>#<N>`
+             - `https://github.com/<owner>/<repo>/milestone/<N>` -> `milestone_ref: gh:<owner>/<repo>#<N>`
+             - `https://github.com/<owner>/<repo>` -> `repo_ref: gh:<owner>/<repo>`
+             - Forgejo (`git.ncrmro.com`): same patterns with `fj:` prefix
+             - Bare number fields (e.g., `issue: 225` with no repo context): derive the repo from
+               `repo_ref` if present in the same frontmatter, or from project hub notes
+
+             Record each file that needs ref field corrections so the migrate step can apply them.
+
+          10. **Project tag remediation plan**:
+             - Use the audit's ripgrep-based findings to list files that likely need project tags
+             - Decide whether each gap should be fixed during migration or left as ambiguous/manual follow-up
+             - For ambiguous matches, explain why the project ownership is not strong enough to tag automatically
+
+          ## Output Format
+
+          Write `.deepwork/tmp/migration_plan.md`:
+
+          ```markdown
+          # Migration Plan
+
+          ## Source Format
+
+          (Obsidian / Apple Notes / Plain Markdown — from audit)
+
+          ## ID Assignment Strategy
+
+          (backdating method + collision handling)
+
+          ## File Mappings
+
+          | Current Path          | Target Path                         | Type      | ID           | Notes             |
+          | --------------------- | ----------------------------------- | --------- | ------------ | ----------------- |
+          | journal/2026-03-15.md | notes/202603151200 daily-journal.md | permanent | 202603151200 | Backdate from git |
+
+          ## Frontmatter Additions
+
+          (summary of what needs to be added per file or batch)
+
+          ## Link Conversions
+
+          (before/after examples for each link type found)
+
+          ## Format-Specific Conversions
+
+          (callout handling, dataview handling, HTML stripping, etc.)
+
+          ## Batch Strategy
+
+          (for large repos: processing order, batch sizes)
+
+          ## Legacy Tree Disposition
+
+          (explicit per-directory treatment for `projects/`, `workflow/`, `spikes/`, etc.)
+
+          ## VCS ref field normalization
+
+          (list of files with non-canonical refs, proposed field name mappings, and conversion approach for each URL/bare-number pattern found)
+
+          ## Project tag remediation
+
+          (files or batches that will receive missing project tags, plus any ambiguous leftovers)
+
+          ## Excluded (no action)
+
+          (list of operational files skipped)
+          ```
+
+          ## Important Notes
+
+          - NEVER plan to delete content — only add frontmatter, move files, and convert links
+          - Files already conforming to the standard should be left as-is
+          - Obsidian callouts (`> [!type]`) should be PRESERVED, not stripped
+          - Use `rg`-based project-name discovery instead of ad hoc filename guessing when deciding missing project tags
+          - The plan must be reviewable before execution (next step is the actual migration)
+          - For repos > 500 files, include a batch strategy to keep commits manageable
+          - The migration plan is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          audit_report:
+            required: true
+        outputs:
+          migration_plan:
+            required: true
+
+      - name: scaffold
+        instructions: |
+          # Scaffold Notebook
+
+          ## Objective
+
+          Create the `.zk/` configuration, templates, and directory structure for a Zettelkasten notebook.
+
+          ## Task
+
+          1. Check if `.zk/` already exists at the target path. If it does, skip initialization and report "already scaffolded."
+
+          2. Run `zk init --no-input <notes_path>` to create the `.zk/` directory.
+
+          3. Write `.zk/config.toml` with the canonical configuration:
+             - Note ID format: `{{format-date now '%Y%m%d%H%M'}}`
+             - Filename pattern: `{{id}} {{slug title}}`
+             - Wikilink format enabled
+             - Groups configured: fleeting (inbox/), literature (literature/), permanent (notes/), decision (decisions/), index (index/)
+             - Each group maps to its template file
+
+          4. Create `.zk/templates/` with five template files:
+             - `fleeting.md` — Minimal: id, title, type, created, author, tags, then content
+             - `literature.md` — Includes source, source_url fields + Summary/Key Points/Links sections
+             - `permanent.md` — Single idea + Links section
+             - `decision.md` — Includes status, supersedes fields + Context/Decision/Consequences/Links sections
+             - `index.md` — Includes index tag + Notes section for curated links
+
+          5. Create note directories with `.gitkeep` files:
+             - `inbox/`
+             - `literature/`
+             - `notes/`
+             - `decisions/`
+             - `index/`
+
+          6. Verify with `zk index` — should complete without errors.
+
+          ## Output Format
+
+          Write `.deepwork/tmp/scaffold_report.md` listing every file and directory created, e.g.:
+
+          ```markdown
+          # Scaffold Report
+
+          ## Created
+
+          - .zk/config.toml
+          - .zk/templates/fleeting.md
+          - .zk/templates/literature.md
+          - .zk/templates/permanent.md
+          - .zk/templates/decision.md
+          - .zk/templates/index.md
+          - inbox/.gitkeep
+          - literature/.gitkeep
+          - notes/.gitkeep
+          - decisions/.gitkeep
+          - index/.gitkeep
+
+          ## Verification
+
+          - `zk index`: OK
+          ```
+
+          ## Important Notes
+
+          - Do NOT modify existing files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml, SOUL.md, AGENTS.md)
+          - If the repo has an existing `.zk/` directory, report it and skip — do not overwrite
+          - Template content uses `zk` template syntax (`{{id}}`, `{{title}}`, `{{format-date ...}}`, `{{env "USER"}}`)
+          - The scaffold report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          notes_path:
+            required: true
+        outputs:
+          scaffold_report:
+            required: true
+
+      - name: migrate
+        instructions: |
+          # Execute Migration
+
+          ## Objective
+
+          Execute the migration plan: add frontmatter, assign IDs, move files to correct directories, and convert links. Each transformation is a separate commit for reversibility.
+
+          ## Task
+
+          1. **Read the migration plan** from `migration_plan.md`.
+
+          2. **For each file to migrate**, execute in order:
+
+             a. **Format-specific content conversion** (before frontmatter/move):
+             - **Obsidian callouts**: Keep as-is (`> [!type]` is widely supported)
+             - **Dataview queries**: Wrap in HTML comment with TODO marker:
+               ````
+               <!-- TODO: dataview query removed during migration
+               ```dataview
+               LIST FROM #tag
+               ````
+               -->
+               ```
+
+               ```
+             - **Apple Notes HTML**: Strip HTML tags, preserve text content:
+               ```bash
+               sed -i 's/<br>/\n/g; s/<[^>]*>//g' "$file"
+               ```
+             - **Obsidian inline tags**: Extract `#tag-name` from body text, add to frontmatter tags array, remove from body
+
+             b. **Add/update YAML frontmatter**:
+             - Insert `---` delimiters if absent
+             - Add required fields: id, title, type, created, author, tags
+             - Preserve any existing frontmatter fields
+             - **Obsidian**: Keep `aliases` field if present
+
+             c. **Rename and move the file**:
+             - New filename: `{id} {title-slug}.md`
+             - Move to target directory (inbox/, literature/, notes/, decisions/, or index/)
+
+             d. **Convert links** (if applicable):
+             - Standard markdown links to local files: `[text](file.md)` -> `[[id]]`
+             - Obsidian wikilinks by filename: `[[filename]]` -> `[[id]]` (match by old filename)
+             - Obsidian embeds: `![[filename]]` -> `![[id]]`
+             - Update links in OTHER files that reference this file's old path
+
+             e. **Normalize VCS ref fields** (from the migration plan's ref normalization list):
+             - Rename non-standard fields to canonical names (`issue_ref`, `pr_ref`, `milestone_ref`, `repo_ref`)
+             - Convert raw GitHub/Forgejo URLs to `gh:<owner>/<repo>#<N>` / `fj:<owner>/<repo>#<N>` format
+             - Convert bare issue/PR numbers to include the repo prefix, deriving the repo from `repo_ref` in the same frontmatter or from the project hub note
+             - Preserve all other frontmatter fields — this is a rename+reformat only, no content deletion
+             - Example transformation:
+               ```yaml
+               # Before
+               issue: 225
+               repo: https://github.com/ncrmro/keystone
+
+               # After
+               repo_ref: gh:ncrmro/keystone
+               issue_ref: gh:ncrmro/keystone#225
+               ```
+
+             f. **Apply project ownership tags where the evidence is strong**:
+             - Derive project names and aliases from project hub notes in `index/`
+             - Search with `rg` or `scripts/find_missing_project_tags.py` to find migrated files that mention a project but still lack that project tag
+             - Add the missing project tag when the file has a clear project owner
+             - Leave ambiguous ownership untouched and record it in the migration log instead of guessing
+
+             g. **Respect project hub and spike conventions**:
+             - Keep project hub notes in `index/`
+             - If the repo uses root spike trees, keep `spikes/<slug>/README.md` as the canonical spike note
+             - Do not force spike support docs such as `scope.md`, `research.md`, or `prototype/README.md` into `notes/` just because they are markdown
+             - If `.zk/config.toml` intentionally ignores spike support docs, preserve that behavior
+
+             h. **Commit this single file's changes**:
+
+             ```bash
+             git add -A
+             git commit -m "chore(notes): migrate {old-filename} to {type}/{new-filename}"
+             ```
+
+          3. **Batch mode for large repos** (> 500 files):
+             - Group files by source directory
+             - Process each batch, committing per-file within the batch
+             - After each batch of 50 files, run `zk index` as a sanity check
+             - If errors, stop and report — do not continue with broken state
+
+          4. **After all files are migrated**, do a final commit for any remaining changes (e.g., deleted empty directories, updated cross-references).
+
+          5. **Clean up format artifacts** (final pass):
+             - Remove `.obsidian/` directory if present (commit separately: `chore(notes): remove obsidian config`)
+             - Remove Apple Notes export artifacts (empty attachment dirs, etc.)
+             - Do NOT remove `.deepwork/`, `.claude/`, or other tool directories
+
+          6. **Resolve legacy note trees**:
+             - Revisit every noncanonical directory identified in the migration plan
+             - Migrate all note-like markdown into canonical zk groups unless the plan explicitly marked that subtree as operational residue
+             - If a directory still exists afterward, it should contain only operational/generated files or non-markdown assets
+             - If note-like markdown remains outside canonical groups, the migration is incomplete
+             - Root `spikes/` is allowed when the plan marked it as a canonical spike-note convention rather than a legacy tree
+
+          ## Output Format
+
+          Write `.deepwork/tmp/migration_log.md`:
+
+          ```markdown
+          # Migration Log
+
+          ## Source Format
+
+          (Obsidian / Apple Notes / Plain Markdown)
+
+          ## Transformations
+
+          | #   | Old Path              | New Path                            | Type      | ID           | Commit  |
+          | --- | --------------------- | ----------------------------------- | --------- | ------------ | ------- |
+          | 1   | journal/2026-03-15.md | notes/202603151200 daily-journal.md | permanent | 202603151200 | abc1234 |
+
+          ## Format-Specific Conversions
+
+          - Dataview blocks commented out: N
+          - HTML tags stripped: N
+          - Inline tags extracted: N
+          - Obsidian callouts preserved: N
+
+          ## VCS Ref Field Normalization
+
+          - Files with ref fields normalized: N
+          - Field renames applied: (e.g., `issue:` -> `issue_ref:`, N files)
+          - URL-to-prefix conversions: (e.g., `https://github.com/...` -> `gh:...`, N files)
+          - Bare-number expansions: N files
+
+          ## Project Tag Updates
+
+          - Files given missing project tags: N
+          - Ambiguous project-tag candidates left for manual review: N
+
+          ## Summary
+
+          - Files migrated: N
+          - Commits created: N
+          - Batches processed: N (if applicable)
+          - Errors: 0
+          ```
+
+          ## Important Notes
+
+          - ONE COMMIT PER FILE — this is critical for reversibility (`git revert <hash>` undoes one file)
+          - NEVER delete note content — only add frontmatter, rename, and move
+          - Preserve existing frontmatter fields — merge, don't replace
+          - Skip operational files (TASKS.yaml, SOUL.md, etc.) entirely
+          - If a file already conforms to the standard, skip it and note "already compliant" in the log
+          - Obsidian callouts are PRESERVED — they are valid markdown
+          - Prefer `rg` over `grep` when searching for project-name matches and old link paths
+          - For large repos, use batch processing with periodic sanity checks
+          - The migration log is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+          - Do not declare success while `projects/`, `workflow/`, `spikes/`, or similar legacy directories still contain note-like markdown that should have been migrated.
+        inputs:
+          migration_plan:
+            required: true
+          scaffold_report:
+            required: true
+        outputs:
+          migration_log:
+            required: true
+
+      - name: verify_doctor
+        instructions: |
+          # Verify Migration
+
+          ## Objective
+
+          Run post-migration health checks to confirm the notebook is valid and no data was lost.
+
+          ## Task
+
+          1. **Index check**: Run `zk index` — should complete without errors.
+
+          2. **Frontmatter coverage**: Check all markdown files in `notes/`, `literature/`, `decisions/`, and `index/` have valid frontmatter:
+
+             ```bash
+             # List files missing frontmatter
+             for f in notes/*.md literature/*.md decisions/*.md index/*.md reports/*.md; do
+               [ -f "$f" ] && head -1 "$f" | grep -q "^---" || echo "MISSING: $f"
+             done
+             ```
+
+          3. **Required fields**: Spot-check 5-10 migrated files for all required fields (id, title, type, created, author, tags).
+
+          4. **Orphan check**: Find permanent notes with no links:
+
+             ```bash
+             zk list notes/ --orphan --format json
+             ```
+
+             Report the count. Orphans are acceptable post-migration but should be addressed over time.
+
+          5. **Dead link check**: Search for wikilinks pointing to non-existent notes:
+
+             ```bash
+             # zk lsp diagnostics can detect this, or:
+             rg -o '\[\[[0-9]{12}\]\]' notes/ literature/ decisions/ index/ reports/ | sort -u | while read link; do
+               id=$(echo "$link" | tr -d '[]')
+               zk list --format json --match "id: $id" | grep -q "$id" || echo "DEAD: $link"
+             done
+             ```
+
+          6. **Operational files intact**: Verify TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml are unchanged:
+
+             ```bash
+             git diff HEAD~N -- TASKS.yaml PROJECTS.yaml SCHEDULES.yaml
+             ```
+
+             (where N = number of migration commits)
+
+          7. **Content preservation**: Verify total markdown content is preserved:
+
+             ```bash
+             # Compare word count before/after (approximate check)
+             git stash  # or compare against pre-migration commit
+             ```
+
+          8. **Stray note tree check**: Verify that noncanonical directories do not still contain note-like markdown requiring migration:
+
+             ```bash
+             find projects workflow research talks people journal ideas spikes _archive -name "*.md" 2>/dev/null
+             ```
+
+             Classify any remaining markdown as either:
+             - operational/generated residue that is intentionally excluded, or
+             - missed notebook content, which should fail verification
+
+          9. **Project hub and spike convention check**:
+             - If `index/` contains project hub notes, confirm they remain in `index/` and are not mixed with stray spike prototypes or migrated artifact docs
+             - If the repo uses root `spikes/`, confirm canonical spike notes live at `spikes/<slug>/README.md`
+             - Confirm spike support docs such as `scope.md`, `research.md`, and `prototype/README.md` are either intentionally ignored by `.zk/config.toml` or explicitly treated as support artifacts
+
+          10. **VCS ref field compliance check**: Verify all notes use canonical ref field names and formats:
+
+             ```bash
+             # Any remaining raw GitHub/Forgejo URLs in frontmatter
+             rg -n "^(repo_ref|issue_ref|milestone_ref|pr_ref):\s+https://" <notes_path> -g '*.md'
+
+             # Any remaining non-standard field names
+             rg -n "^(issue|pr|milestone|repo|github_issue|github_pr|forgejo_issue|issue_url|pr_url):" <notes_path> -g '*.md'
+
+             # Canonical fields missing the required prefix
+             rg -n "^(repo_ref|issue_ref|milestone_ref|pr_ref):\s+(?!gh:|fj:)" <notes_path> -g '*.md' -P
+             ```
+
+             - PASS: zero raw URLs and zero non-standard field names remain
+             - FAIL: any raw URL or non-standard field name found in frontmatter
+
+          11. **Missing project tag check**:
+
+          - Run `scripts/find_missing_project_tags.py .` from the repo root, or reproduce its logic with `rg`
+          - Report likely missing project tags in `notes/`, `literature/`, `reports/`, `index/`, and canonical spike README files
+          - Distinguish between:
+            - strong misses that should fail verification
+            - ambiguous matches that should be called out for manual follow-up
+
+          ## Output Format
+
+          Write `.deepwork/tmp/doctor_report.md`:
+
+          ```markdown
+          # Doctor Report
+
+          ## Index Status
+
+          - `zk index`: OK (N notes indexed)
+
+          ## Frontmatter Coverage
+
+          - notes/: N/N files have valid frontmatter
+          - literature/: N/N
+          - decisions/: N/N
+          - index/: N/N
+          - reports/: N/N
+          - inbox/: N/N (frontmatter optional for fleeting)
+
+          ## Orphan Notes
+
+          - Count: N orphan permanent notes
+          - (list if < 10)
+
+          ## Dead Links
+
+          - Count: N dead wikilinks
+          - (list if any)
+
+          ## Remaining Noncanonical Markdown
+
+          - `projects/`: migrated / operational-only / failed
+          - `workflow/`: migrated / operational-only / failed
+          - Other legacy trees: ...
+
+          ## Project hubs and spikes
+
+          - Project hubs in `index/`: OK / FAIL
+          - Canonical spike README notes: OK / FAIL
+          - Spike support docs: intentionally ignored / explicit artifacts / failed
+
+          ## VCS ref field compliance
+
+          - Raw URLs remaining in ref fields: N (PASS if 0)
+          - Non-standard field names remaining: N (PASS if 0)
+          - Malformed `gh:`/`fj:` refs: N (PASS if 0)
+
+          ## Missing project tags
+
+          - Strong misses: N
+          - Ambiguous candidates: N
+          - (list strong misses; summarize ambiguous ones)
+
+          ## Operational Files
+
+          - TASKS.yaml: unchanged
+          - PROJECTS.yaml: unchanged
+          - SCHEDULES.yaml: unchanged
+
+          ## Overall: PASS / FAIL
+          ```
+
+          ## Important Notes
+
+          - The doctor report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+          - The workflow should FAIL if substantial note-like markdown still lives outside canonical groups without an explicit operational-residue justification.
+          - The workflow should also FAIL if there are obvious missing project tags on clearly project-owned notes after migration.
+        inputs:
+          migration_log:
+            required: true
+        outputs:
+          doctor_report:
+            required: true
+
+  init:
+    summary: "Initialize a new notes repo with the zk Zettelkasten structure"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job manages Zettelkasten-structured notes repositories using the `zk` CLI.
+      It applies to both human user notes repos and OS agent notes repos (agent-space).
+
+      ## Keystone Notes Architecture
+
+      Notes repos are git-backed repositories synced via `repo-sync` on systemd timers.
+      Human users: `keystone.notes` (home-manager module, syncs to `~/notes`).
+      OS agents: `keystone.os.agents.<name>.notes` (NixOS module, syncs to `/home/agent-{name}/notes`).
+
+      ## Zettelkasten Structure (standardized by process.knowledge-management convention)
+
+      ```
+      notes-repo/
+        .zk/
+          config.toml             # zk configuration (ID format, groups, wikilinks)
+          templates/
+            fleeting.md           # Template for inbox notes
+            literature.md         # Template for source summaries
+            permanent.md          # Template for atomic ideas
+            decision.md           # Template for ADRs
+            index.md              # Template for Maps of Content
+        inbox/                    # Fleeting notes (ephemeral, to be processed)
+        literature/               # Literature notes (source summaries)
+        notes/                    # Permanent notes (atomic, linked)
+        decisions/                # Decision records (context, decision, consequences)
+        index/                    # Maps of Content and project hub notes
+        reports/                  # Optional report notes when the repo uses a report group
+        spikes/                   # Optional spike trees with canonical README notes plus support artifacts
+        TASKS.yaml                # Agent task state (existing, untouched)
+        PROJECTS.yaml             # Agent project config (existing, untouched)
+        SCHEDULES.yaml            # Agent schedules (existing, untouched)
+      ```
+
+      ## Note ID Schema
+
+      Format: `YYYYMMDDHHmm` (12-digit timestamp, minute precision).
+      Filename: `{id} {title-slug}.md` (e.g., `202603201430 zfs-encryption-key-loading.md`).
+
+      ## Required Frontmatter
+
+      ```yaml
+      ---
+      id: "202603201430"
+      title: "Note title"
+      type: fleeting | literature | permanent | decision | index | report
+      created: 2026-03-20T14:30:00-05:00
+      author: ncrmro
+      tags: [topic1, topic2]
+      ---
+      ```
+
+      ## Key zk Commands
+
+      - `zk init` — Initialize notebook (creates .zk/)
+      - `zk new <group>/ --title "Title" --no-input --print-path` — Create note (non-interactive)
+      - `zk list --format json --match "query"` — Search notes
+      - `zk list --orphan --format json` — Find unlinked notes
+      - `zk list --linked-by <path> --format json` — Find outgoing links
+      - `zk index` — Rebuild note index
+
+      ## Operational Files
+
+      YAML files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml) and identity files (SOUL.md,
+      AGENTS.md) are NOT notes and MUST NOT be modified by this job. The zk indexer
+      ignores non-markdown files automatically.
+
+      ## Transient Workflow Outputs
+
+      Step outputs such as scaffold reports, seed reports, and init reports are transient
+      workflow artifacts. Write them under `.deepwork/tmp/` and pass those paths back to the
+      workflow engine. They MUST NOT be written at the repo root or committed to git.
+    steps:
+      - name: scaffold
+        instructions: |
+          # Scaffold Notebook
+
+          ## Objective
+
+          Create the `.zk/` configuration, templates, and directory structure for a Zettelkasten notebook.
+
+          ## Task
+
+          1. Check if `.zk/` already exists at the target path. If it does, skip initialization and report "already scaffolded."
+
+          2. Run `zk init --no-input <notes_path>` to create the `.zk/` directory.
+
+          3. Write `.zk/config.toml` with the canonical configuration:
+             - Note ID format: `{{format-date now '%Y%m%d%H%M'}}`
+             - Filename pattern: `{{id}} {{slug title}}`
+             - Wikilink format enabled
+             - Groups configured: fleeting (inbox/), literature (literature/), permanent (notes/), decision (decisions/), index (index/)
+             - Each group maps to its template file
+
+          4. Create `.zk/templates/` with five template files:
+             - `fleeting.md` — Minimal: id, title, type, created, author, tags, then content
+             - `literature.md` — Includes source, source_url fields + Summary/Key Points/Links sections
+             - `permanent.md` — Single idea + Links section
+             - `decision.md` — Includes status, supersedes fields + Context/Decision/Consequences/Links sections
+             - `index.md` — Includes index tag + Notes section for curated links
+
+          5. Create note directories with `.gitkeep` files:
+             - `inbox/`
+             - `literature/`
+             - `notes/`
+             - `decisions/`
+             - `index/`
+
+          6. Verify with `zk index` — should complete without errors.
+
+          ## Output Format
+
+          Write `.deepwork/tmp/scaffold_report.md` listing every file and directory created, e.g.:
+
+          ```markdown
+          # Scaffold Report
+
+          ## Created
+
+          - .zk/config.toml
+          - .zk/templates/fleeting.md
+          - .zk/templates/literature.md
+          - .zk/templates/permanent.md
+          - .zk/templates/decision.md
+          - .zk/templates/index.md
+          - inbox/.gitkeep
+          - literature/.gitkeep
+          - notes/.gitkeep
+          - decisions/.gitkeep
+          - index/.gitkeep
+
+          ## Verification
+
+          - `zk index`: OK
+          ```
+
+          ## Important Notes
+
+          - Do NOT modify existing files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml, SOUL.md, AGENTS.md)
+          - If the repo has an existing `.zk/` directory, report it and skip — do not overwrite
+          - Template content uses `zk` template syntax (`{{id}}`, `{{title}}`, `{{format-date ...}}`, `{{env "USER"}}`)
+          - The scaffold report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          notes_path:
+            required: true
+        outputs:
+          scaffold_report:
+            required: true
+
+      - name: seed
+        instructions: |
+          # Seed Index Notes
+
+          ## Objective
+
+          Create initial Maps of Content (index notes) for the notebook's primary topics.
+
+          ## Task
+
+          1. Examine the repo to understand its context:
+             - If PROJECTS.yaml exists, use project names as initial topics
+             - If SOUL.md exists, derive topics from the agent's responsibilities
+             - For a human user's repo, ask what their primary knowledge domains are
+             - If no context is available, create a minimal set: one index note for "Getting Started"
+
+          2. For each topic, create an index note:
+
+             ```bash
+             zk new index/ --title "<Topic Name>" --no-input --print-path
+             ```
+
+          3. Each index note should have:
+             - Correct frontmatter (type: index, tags: [index])
+             - A brief description of what this topic covers
+             - A placeholder `## Notes` section (will be populated as permanent notes are created)
+
+          4. Do NOT create excessive index notes — start with 3-5 at most. More will emerge organically.
+
+          ## Output Format
+
+          Write `seed_report.md`:
+
+          ```markdown
+          # Seed Report
+
+          ## Index Notes Created
+
+          | ID           | Title               | File                                      |
+          | ------------ | ------------------- | ----------------------------------------- |
+          | 202603201430 | NixOS Configuration | index/202603201430 nixos-configuration.md |
+          | 202603201431 | Infrastructure      | index/202603201431 infrastructure.md      |
+          ```
+        inputs:
+          scaffold_report:
+            required: true
+        outputs:
+          seed_report:
+            required: true
+
+      - name: verify_init
+        instructions: |
+          # Verify Initialization
+
+          ## Objective
+
+          Confirm the notebook structure is valid and functional.
+
+          ## Task
+
+          1. Run `zk index` — should complete without errors.
+
+          2. Test each group resolves:
+
+             ```bash
+             zk list inbox/ --format json 2>&1
+             zk list literature/ --format json 2>&1
+             zk list notes/ --format json 2>&1
+             zk list decisions/ --format json 2>&1
+             zk list index/ --format json 2>&1
+             ```
+
+             Each should return an empty array or results — no errors.
+
+          3. Test template creation for each group:
+
+             ```bash
+             zk new inbox/ --title "Test fleeting" --no-input --print-path --dry-run
+             ```
+
+             If `--dry-run` is not supported, create a test note, verify frontmatter, then delete it.
+
+          4. Verify the index notes from the seed step exist and have valid frontmatter.
+
+          ## Output Format
+
+          Write `init_report.md`:
+
+          ```markdown
+          # Initialization Report
+
+          ## Index Status
+
+          - `zk index`: OK (N notes indexed)
+
+          ## Group Resolution
+
+          | Group      | Status | Note Count |
+          | ---------- | ------ | ---------- |
+          | inbox      | OK     | 0          |
+          | literature | OK     | 0          |
+          | notes      | OK     | 0          |
+          | decisions  | OK     | 0          |
+          | index      | OK     | 3          |
+
+          ## Template Verification
+
+          - fleeting: OK (id, title, type, created, author, tags present)
+          - literature: OK (includes source, source_url)
+          - permanent: OK
+          - decision: OK (includes status, supersedes)
+          - index: OK (includes index tag)
+
+          ## Overall: PASS
+          ```
+        inputs:
+          scaffold_report:
+            required: true
+          seed_report:
+            required: true
+        outputs:
+          init_report:
+            required: true
+
+  doctor:
+    summary: "Diagnose and migrate an existing notes repo to standardized zk structure"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job manages Zettelkasten-structured notes repositories using the `zk` CLI.
+      It applies to both human user notes repos and OS agent notes repos (agent-space).
+
+      ## Keystone Notes Architecture
+
+      Notes repos are git-backed repositories synced via `repo-sync` on systemd timers.
+      Human users: `keystone.notes` (home-manager module, syncs to `~/notes`).
+      OS agents: `keystone.os.agents.<name>.notes` (NixOS module, syncs to `/home/agent-{name}/notes`).
+
+      ## Zettelkasten Structure (standardized by process.knowledge-management convention)
+
+      ```
+      notes-repo/
+        .zk/
+          config.toml             # zk configuration (ID format, groups, wikilinks)
+          templates/
+            fleeting.md           # Template for inbox notes
+            literature.md         # Template for source summaries
+            permanent.md          # Template for atomic ideas
+            decision.md           # Template for ADRs
+            index.md              # Template for Maps of Content
+        inbox/                    # Fleeting notes (ephemeral, to be processed)
+        literature/               # Literature notes (source summaries)
+        notes/                    # Permanent notes (atomic, linked)
+        decisions/                # Decision records (context, decision, consequences)
+        index/                    # Maps of Content and project hub notes
+        reports/                  # Optional report notes when the repo uses a report group
+        spikes/                   # Optional spike trees with canonical README notes plus support artifacts
+        TASKS.yaml                # Agent task state (existing, untouched)
+        PROJECTS.yaml             # Agent project config (existing, untouched)
+        SCHEDULES.yaml            # Agent schedules (existing, untouched)
+      ```
+
+      ## Note ID Schema
+
+      Format: `YYYYMMDDHHmm` (12-digit timestamp, minute precision).
+      Filename: `{id} {title-slug}.md` (e.g., `202603201430 zfs-encryption-key-loading.md`).
+
+      ## Required Frontmatter
+
+      ```yaml
+      ---
+      id: "202603201430"
+      title: "Note title"
+      type: fleeting | literature | permanent | decision | index | report
+      created: 2026-03-20T14:30:00-05:00
+      author: ncrmro
+      tags: [topic1, topic2]
+      ---
+      ```
+
+      ## Key zk Commands
+
+      - `zk init` — Initialize notebook (creates .zk/)
+      - `zk new <group>/ --title "Title" --no-input --print-path` — Create note (non-interactive)
+      - `zk list --format json --match "query"` — Search notes
+      - `zk list --orphan --format json` — Find unlinked notes
+      - `zk list --linked-by <path> --format json` — Find outgoing links
+      - `zk index` — Rebuild note index
+
+      ## Operational Files
+
+      YAML files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml) and identity files (SOUL.md,
+      AGENTS.md) are NOT notes and MUST NOT be modified by this job. The zk indexer
+      ignores non-markdown files automatically.
+
+      ## Transient Workflow Outputs
+
+      Step outputs such as audit reports, migration plans, scaffold reports, migration logs,
+      and doctor reports are transient workflow artifacts. Write them under `.deepwork/tmp/`
+      and pass those paths back to the workflow engine. They MUST NOT be written at the repo
+      root or committed to git.
+
+      ## Source Format Detection
+
+      The `setup` and `doctor` workflows handle repos that may originate from different
+      note-taking systems. Detection markers:
+
+      - **Obsidian vault**: `.obsidian/` directory present. May contain Obsidian-specific
+        syntax (callouts `> [!note]`, dataview queries `\`\`\`dataview`, embedded files
+        `![[file]]`, aliases in frontmatter, folder-based organization).
+      - **Apple Notes export**: Typically flat or shallow directory structure, HTML fragments
+        in markdown, exported attachments in separate folders, no frontmatter.
+      - **Plain markdown**: No app-specific markers. May have arbitrary structure.
+      - **Keystone agent repo**: Contains TASKS.yaml, AGENTS.md, SOUL.md, or SCHEDULES.yaml.
+        When detected, keystone conventions apply silently (operational files excluded,
+        agent identity preserved).
+
+      ## Project hub and spike conventions
+
+      Some repos adopt two extra conventions beyond the core zk groups:
+
+      - `index/` may contain project hub notes. These are still `type: index`, but they act as
+        the canonical entry point for a project and often carry tags such as `project` plus the
+        project slug.
+      - `spikes/<slug>/README.md` may be the canonical spike note, while sibling files such as
+        `scope.md`, `research.md`, or `prototype/README.md` remain support artifacts that are
+        intentionally ignored by `zk` via `.zk/config.toml`.
+
+      When those conventions are present, the doctor workflow must preserve them instead of
+      forcing all spike content into `notes/` or treating project hubs as stray notes.
+    steps:
+      - name: audit
+        instructions: |
+          # Audit Existing Repo
+
+          ## Objective
+
+          Inventory an existing notes repo to understand its current structure before migration.
+
+          ## Task
+
+          1. **File inventory**: Count all markdown files, grouped by directory:
+
+             ```bash
+             rg --files <notes_path> -g '*.md' -g '!.zk/**' -g '!.git/**' -g '!.obsidian/**' -g '!.deepwork/**' -g '!.claude/**' | wc -l
+             rg --files <notes_path> -g '*.md' -g '!.zk/**' -g '!.git/**' -g '!.obsidian/**' -g '!.deepwork/**' -g '!.claude/**' | xargs -r -n1 dirname | sort | uniq -c | sort -rn
+             ```
+
+          2. **Structure detection**: Is the repo flat, shallow (1 level of dirs), or deeply nested?
+
+          3. **Frontmatter analysis**: Sample 10-20 markdown files and check:
+             - Do they have YAML frontmatter (`---` delimiters)?
+             - What fields are present? (title, date, tags, etc.)
+             - What format are dates in?
+             - Is there any existing ID scheme?
+
+          4. **Link format detection**: Search for existing links:
+
+             ```bash
+             # Wikilinks (standard and Obsidian-style)
+             rg -n '\[\[' <notes_path> -g '*.md' | head -20
+             # Markdown links to local files
+             rg -n '\[.*\]\((?!http)' <notes_path> -g '*.md' -P | head -20
+             # Obsidian embedded files
+             rg -n '!\[\[' <notes_path> -g '*.md' | head -10
+             ```
+
+          5. **Naming convention**: Are files named with dates, slugs, titles, or randomly?
+
+          6. **Format-specific analysis** (based on detection_report.md if available):
+
+             **Obsidian vaults:**
+             - Count files using callout syntax (`> [!`)
+             - Count files with dataview blocks
+             - Check for Obsidian-specific frontmatter fields (aliases, cssclass, publish)
+             - List Obsidian plugins that affect content format (dataview, templater, etc.)
+             - Check for `_archive/` or other Obsidian-convention dirs
+
+             **Apple Notes exports:**
+             - Count files with HTML fragments
+             - Check for attachment references
+             - Identify date patterns from filenames
+
+          7. **Operational files**: Identify and list files that MUST NOT be migrated:
+             - TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml
+             - SOUL.md, AGENTS.md, CLAUDE.md, HUMAN.md
+             - SERVICES.md, ARCHITECTURE.md, REQUIREMENTS.md
+             - Any dotfiles/directories (.git, .zk, .agents, .deepwork, .envrc, .repos)
+             - Build/config files: flake.nix, flake.lock, pyproject.toml, uv.lock, etc.
+
+          8. **Canonical hub and spike conventions**: Identify whether the repo already uses:
+             - `index/` for project hub notes (`type: index`, usually tagged with `project` plus a project slug)
+             - `reports/` as an extra canonical note group
+             - `spikes/<slug>/README.md` as the canonical spike note, with sibling `scope.md`, `research.md`, or `prototype/` files treated as support artifacts
+             - `.zk/config.toml` ignore rules that intentionally exclude spike support docs from indexing
+
+             If these conventions exist, record them explicitly. Do not treat canonical project hubs or canonical spike README notes as stray legacy content.
+
+          9. **Legacy tree inventory**: Explicitly identify noncanonical directories that still contain note-like markdown:
+             - Check common legacy trees such as `projects/`, `workflow/`, `research/`, `talks/`, `people/`, `journal/`, `ideas/`, `spikes/`, and `_archive/`
+             - Separate them into:
+               - note-like markdown that still needs migration
+               - operational or generated markdown that should remain excluded
+             - If `spikes/` is present, distinguish canonical spike README notes from support docs and from truly stray spike content
+             - If a large legacy tree remains, do not stop at the canonical groups — call it out clearly in the audit
+
+          10. **VCS ref field audit**: Detect non-normalized repository, issue, milestone, and PR references in frontmatter:
+
+             Canonical field names: `repo_ref`, `issue_ref`, `milestone_ref`, `pr_ref`.
+             Canonical formats:
+             - Repo-only: `gh:<owner>/<repo>` or `fj:<owner>/<repo>`
+             - With number: `gh:<owner>/<repo>#<number>` or `fj:<owner>/<repo>#<number>`
+
+             Search for notes that need normalization:
+
+             ```bash
+             # Raw GitHub/Forgejo URLs in frontmatter
+             rg -n "https://github\.com|https://git\.ncrmro\.com" <notes_path> -g '*.md' | head -20
+
+             # Bare issue/PR/milestone numbers (e.g., `issue: 225`)
+             rg -n "^(issue|pr|milestone|repo):\s+[0-9]" <notes_path> -g '*.md' | head -20
+
+             # Non-standard field names that should be canonical refs
+             rg -n "^(github_issue|github_pr|github_repo|forgejo_issue|pr_number|issue_number|issue_url|pr_url):" <notes_path> -g '*.md' | head -20
+
+             # Existing canonical fields with wrong format (should match gh:/fj: prefix)
+             rg -n "^(repo_ref|issue_ref|milestone_ref|pr_ref):\s+(?!gh:|fj:)" <notes_path> -g '*.md' -P | head -20
+             ```
+
+             Record:
+             - Count of files with non-normalized refs
+             - What non-standard field names exist
+             - What raw URL patterns are present
+
+          11. **Project tag gap audit**: Look for files that likely need project tags:
+
+          - Derive project names and aliases from project hub notes in `index/` (title, slug tag, and `subprojects:` if present)
+          - Search across `notes/`, `literature/`, `reports/`, `index/`, and canonical spike `README.md` files for project-name mentions using `rg`
+          - Prefer `scripts/find_missing_project_tags.py <notes_path>` when available, or reproduce its logic manually with `rg`
+          - Record the files that appear to reference a project strongly but do not carry the corresponding project tag yet
+
+          ## Output Format
+
+          Write `.deepwork/tmp/audit_report.md` with sections (add `## VCS Ref Field Audit` between `## Naming Conventions` and `## Canonical hub and spike conventions`):
+
+          ```markdown
+          # Audit Report
+
+          ## Summary
+
+          - Total markdown files: N
+          - Files with frontmatter: N
+          - Files without frontmatter: N
+          - Existing link format: wikilinks / markdown / mixed / none
+          - Source format: Obsidian / Apple Notes / Plain Markdown
+          - Keystone repo: yes / no
+
+          ## Directory Structure
+
+          (tree or listing)
+
+          ## Frontmatter Analysis
+
+          (field frequency table)
+
+          ## Link Analysis
+
+          (existing link patterns)
+
+          ## Format-Specific Findings
+
+          (Obsidian callouts count, dataview usage, Apple Notes HTML fragments, etc.)
+
+          ## Naming Conventions
+
+          (observed patterns)
+
+          ## VCS Ref Field Audit
+
+          - Files with raw GitHub/Forgejo URLs in frontmatter: N
+          - Files with bare issue/PR/milestone numbers: N
+          - Non-standard field names found: (list, e.g., `issue:`, `github_issue:`)
+          - Canonical fields with wrong format: N
+          - Files already using correct `gh:`/`fj:` prefixed canonical fields: N
+
+          ## Canonical hub and spike conventions
+
+          (project hub notes in `index/`, report group usage, spike README conventions, `.zk/config.toml` ignore rules)
+
+          ## Legacy Trees Requiring Migration
+
+          (noncanonical directories that still contain note-like markdown, plus which content is operational residue)
+
+          ## Probable missing project tags
+
+          (files that mention projects but are missing the corresponding project tags)
+
+          ## Excluded Files (not to be migrated)
+
+          (list of operational/identity/config files)
+          ```
+
+          ## Important Notes
+
+          - Do NOT modify any files during audit — this is read-only
+          - Do NOT read personal note content in detail — only scan structure and metadata
+          - Sample files for frontmatter analysis rather than reading every file
+          - Exclude `.obsidian/`, `.deepwork/`, `.claude/` from file counts and analysis
+          - Prefer `rg` over `grep` for content discovery and for project-name searches
+          - The audit report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          notes_path:
+            required: true
+        outputs:
+          audit_report:
+            required: true
+
+      - name: plan_migration
+        instructions: |
+          # Plan Migration
+
+          ## Objective
+
+          Based on the audit report, propose a concrete migration plan that converts the existing repo to standardized zk structure, with format-specific strategies.
+
+          ## Task
+
+          1. **File classification**: For each markdown file (excluding operational files), determine:
+             - Target note type: fleeting, literature, permanent, decision, index, or report
+             - Target directory: inbox/, literature/, notes/, decisions/, index/, reports/, or an explicitly preserved spike/support path
+             - Classification rationale (brief)
+
+             Classification heuristics:
+             - Files with structured analysis or ADR-like format -> `decisions/`
+             - Files that summarize external sources (articles, docs) -> `literature/`
+             - Files that summarize work done or outcomes captured for a project -> `reports/` if the repo already uses a report group
+             - Files that curate links to other files -> `index/`
+             - Project hub notes belong in `index/`, even when they are project-specific
+             - Files with developed, standalone ideas -> `notes/`
+             - Short, unstructured captures -> `inbox/`
+             - Canonical spike notes may stay at `spikes/<slug>/README.md` when the repo already uses root spike trees
+             - Spike support docs such as `spikes/<slug>/scope.md`, `research.md`, or `prototype/README.md` may remain as artifacts instead of being forced into canonical zk groups
+
+             **Obsidian-specific heuristics:**
+             - `_archive/` or `Archive/` contents -> `inbox/` (to be triaged)
+             - `_archive/Clippings/` -> `literature/` (web clippings are source summaries)
+             - `journal/` or `daily/` -> `notes/` (permanent, timestamped)
+             - `people/` -> `notes/` (person notes are permanent knowledge)
+             - `projects/` -> preserve as-is or flatten to `notes/` with project tags
+             - `ideas/` -> `inbox/` (fleeting captures to be promoted)
+             - `research/` -> `literature/` (source-based research)
+             - `talks/` -> `literature/` (external content summaries)
+             - old spike/prototype notes in `notes/` or `index/` -> consolidate into canonical `spikes/<slug>/README.md` plus support files where the repo already follows that convention
+
+             **Apple Notes heuristics:**
+             - Flat files with HTML fragments -> strip HTML, classify by content length
+             - Short notes (< 100 words) -> `inbox/`
+             - Longer notes -> `notes/`
+
+          2. **ID assignment strategy**: Decide how to assign IDs:
+             - **Preferred**: Backdate from git history (`git log --follow --diff-filter=A --format=%ai -- <file>`)
+             - **Fallback**: Use file modification time (`stat -c %Y <file>`)
+             - **Last resort**: Generate new timestamps (only for files with no git history)
+             - Handle collisions: if two files share the same minute, offset by 1 minute
+
+          3. **Frontmatter plan**: For each file, specify:
+             - Fields to add (id, title, type, created, author, tags)
+             - How to derive `title` (from existing frontmatter, filename, or first heading)
+             - How to derive `tags` (from existing frontmatter, directory name, project hubs, or content keywords)
+             - **Obsidian**: Preserve `aliases` field if present; convert Obsidian tags (#tag) to frontmatter tags
+             - **Apple Notes**: Derive title from first line of content
+             - For project tags, derive the project slug from project hub notes in `index/`, then use `rg`-based matching across note bodies to find files that should inherit that project tag
+             - Preserve the repo's existing project tag style if one already exists (`project, catalyst` and `project/catalyst` are both valid house styles; do not rewrite styles unnecessarily)
+
+          4. **Directory moves**: Map current paths to target paths.
+
+          5. **Link conversion**: Plan conversion to wikilinks:
+             - Standard markdown links: `[text](file.md)` -> `[[id]]`
+             - Obsidian wikilinks: `[[filename]]` -> `[[id]]` (resolve by filename match)
+             - Obsidian embeds: `![[filename]]` -> `![[id]]` (preserve embed syntax)
+             - Obsidian block refs: `[[note#^block]]` -> preserve as-is (zk supports these)
+
+          6. **Format-specific content conversion plan**:
+             - **Obsidian callouts**: Preserve `> [!type]` syntax (widely supported in markdown renderers)
+             - **Dataview queries**: Convert to static content or wrap in HTML comments with a TODO marker
+             - **Apple Notes HTML**: Strip `<div>`, `<br>`, `<span>` tags, preserve content
+             - **Obsidian-specific plugins**: Document which plugin features will lose functionality
+
+          7. **Batch strategy for large repos** (> 500 files):
+             - Group files by directory for batch processing
+             - Prioritize: operational files exclusion -> structure migration -> frontmatter -> links
+             - Consider processing in batches of 50-100 files per commit group to avoid huge diffs
+
+          8. **Legacy tree disposition**:
+             - For every noncanonical directory found in the audit that still contains note-like markdown, specify one of:
+               - migrate into canonical zk groups
+               - keep in place as operational residue
+               - delete only after note content has been preserved elsewhere
+             - `projects/` and `workflow/` are not automatically exempt. The plan must explicitly decide whether their markdown is notebook content or operational residue.
+             - If the repo already uses root `spikes/` with canonical README notes, classify that as an intentional convention, not a failed migration
+
+          9. **VCS ref field normalization plan**: Based on the audit's ref field findings:
+
+             - For each non-standard field name (e.g., `issue: 225`, `github_issue: foo/bar#3`):
+               - Map to the canonical field name (`issue_ref`, `repo_ref`, etc.)
+               - Convert raw URLs to `gh:<owner>/<repo>#<number>` or `fj:<owner>/<repo>#<number>`
+               - Drop the old field and add the normalized one
+
+             Conversion rules:
+             - `https://github.com/<owner>/<repo>/issues/<N>` -> `issue_ref: gh:<owner>/<repo>#<N>`
+             - `https://github.com/<owner>/<repo>/pull/<N>` -> `pr_ref: gh:<owner>/<repo>#<N>`
+             - `https://github.com/<owner>/<repo>/milestone/<N>` -> `milestone_ref: gh:<owner>/<repo>#<N>`
+             - `https://github.com/<owner>/<repo>` -> `repo_ref: gh:<owner>/<repo>`
+             - Forgejo (`git.ncrmro.com`): same patterns with `fj:` prefix
+             - Bare number fields (e.g., `issue: 225` with no repo context): derive the repo from
+               `repo_ref` if present in the same frontmatter, or from project hub notes
+
+             Record each file that needs ref field corrections so the migrate step can apply them.
+
+          10. **Project tag remediation plan**:
+             - Use the audit's ripgrep-based findings to list files that likely need project tags
+             - Decide whether each gap should be fixed during migration or left as ambiguous/manual follow-up
+             - For ambiguous matches, explain why the project ownership is not strong enough to tag automatically
+
+          ## Output Format
+
+          Write `.deepwork/tmp/migration_plan.md`:
+
+          ```markdown
+          # Migration Plan
+
+          ## Source Format
+
+          (Obsidian / Apple Notes / Plain Markdown — from audit)
+
+          ## ID Assignment Strategy
+
+          (backdating method + collision handling)
+
+          ## File Mappings
+
+          | Current Path          | Target Path                         | Type      | ID           | Notes             |
+          | --------------------- | ----------------------------------- | --------- | ------------ | ----------------- |
+          | journal/2026-03-15.md | notes/202603151200 daily-journal.md | permanent | 202603151200 | Backdate from git |
+
+          ## Frontmatter Additions
+
+          (summary of what needs to be added per file or batch)
+
+          ## Link Conversions
+
+          (before/after examples for each link type found)
+
+          ## Format-Specific Conversions
+
+          (callout handling, dataview handling, HTML stripping, etc.)
+
+          ## Batch Strategy
+
+          (for large repos: processing order, batch sizes)
+
+          ## Legacy Tree Disposition
+
+          (explicit per-directory treatment for `projects/`, `workflow/`, `spikes/`, etc.)
+
+          ## VCS ref field normalization
+
+          (list of files with non-canonical refs, proposed field name mappings, and conversion approach for each URL/bare-number pattern found)
+
+          ## Project tag remediation
+
+          (files or batches that will receive missing project tags, plus any ambiguous leftovers)
+
+          ## Excluded (no action)
+
+          (list of operational files skipped)
+          ```
+
+          ## Important Notes
+
+          - NEVER plan to delete content — only add frontmatter, move files, and convert links
+          - Files already conforming to the standard should be left as-is
+          - Obsidian callouts (`> [!type]`) should be PRESERVED, not stripped
+          - Use `rg`-based project-name discovery instead of ad hoc filename guessing when deciding missing project tags
+          - The plan must be reviewable before execution (next step is the actual migration)
+          - For repos > 500 files, include a batch strategy to keep commits manageable
+          - The migration plan is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          audit_report:
+            required: true
+        outputs:
+          migration_plan:
+            required: true
+
+      - name: scaffold
+        instructions: |
+          # Scaffold Notebook
+
+          ## Objective
+
+          Create the `.zk/` configuration, templates, and directory structure for a Zettelkasten notebook.
+
+          ## Task
+
+          1. Check if `.zk/` already exists at the target path. If it does, skip initialization and report "already scaffolded."
+
+          2. Run `zk init --no-input <notes_path>` to create the `.zk/` directory.
+
+          3. Write `.zk/config.toml` with the canonical configuration:
+             - Note ID format: `{{format-date now '%Y%m%d%H%M'}}`
+             - Filename pattern: `{{id}} {{slug title}}`
+             - Wikilink format enabled
+             - Groups configured: fleeting (inbox/), literature (literature/), permanent (notes/), decision (decisions/), index (index/)
+             - Each group maps to its template file
+
+          4. Create `.zk/templates/` with five template files:
+             - `fleeting.md` — Minimal: id, title, type, created, author, tags, then content
+             - `literature.md` — Includes source, source_url fields + Summary/Key Points/Links sections
+             - `permanent.md` — Single idea + Links section
+             - `decision.md` — Includes status, supersedes fields + Context/Decision/Consequences/Links sections
+             - `index.md` — Includes index tag + Notes section for curated links
+
+          5. Create note directories with `.gitkeep` files:
+             - `inbox/`
+             - `literature/`
+             - `notes/`
+             - `decisions/`
+             - `index/`
+
+          6. Verify with `zk index` — should complete without errors.
+
+          ## Output Format
+
+          Write `.deepwork/tmp/scaffold_report.md` listing every file and directory created, e.g.:
+
+          ```markdown
+          # Scaffold Report
+
+          ## Created
+
+          - .zk/config.toml
+          - .zk/templates/fleeting.md
+          - .zk/templates/literature.md
+          - .zk/templates/permanent.md
+          - .zk/templates/decision.md
+          - .zk/templates/index.md
+          - inbox/.gitkeep
+          - literature/.gitkeep
+          - notes/.gitkeep
+          - decisions/.gitkeep
+          - index/.gitkeep
+
+          ## Verification
+
+          - `zk index`: OK
+          ```
+
+          ## Important Notes
+
+          - Do NOT modify existing files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml, SOUL.md, AGENTS.md)
+          - If the repo has an existing `.zk/` directory, report it and skip — do not overwrite
+          - Template content uses `zk` template syntax (`{{id}}`, `{{title}}`, `{{format-date ...}}`, `{{env "USER"}}`)
+          - The scaffold report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+        inputs:
+          notes_path:
+            required: true
+        outputs:
+          scaffold_report:
+            required: true
+
+      - name: migrate
+        instructions: |
+          # Execute Migration
+
+          ## Objective
+
+          Execute the migration plan: add frontmatter, assign IDs, move files to correct directories, and convert links. Each transformation is a separate commit for reversibility.
+
+          ## Task
+
+          1. **Read the migration plan** from `migration_plan.md`.
+
+          2. **For each file to migrate**, execute in order:
+
+             a. **Format-specific content conversion** (before frontmatter/move):
+             - **Obsidian callouts**: Keep as-is (`> [!type]` is widely supported)
+             - **Dataview queries**: Wrap in HTML comment with TODO marker:
+               ````
+               <!-- TODO: dataview query removed during migration
+               ```dataview
+               LIST FROM #tag
+               ````
+               -->
+               ```
+
+               ```
+             - **Apple Notes HTML**: Strip HTML tags, preserve text content:
+               ```bash
+               sed -i 's/<br>/\n/g; s/<[^>]*>//g' "$file"
+               ```
+             - **Obsidian inline tags**: Extract `#tag-name` from body text, add to frontmatter tags array, remove from body
+
+             b. **Add/update YAML frontmatter**:
+             - Insert `---` delimiters if absent
+             - Add required fields: id, title, type, created, author, tags
+             - Preserve any existing frontmatter fields
+             - **Obsidian**: Keep `aliases` field if present
+
+             c. **Rename and move the file**:
+             - New filename: `{id} {title-slug}.md`
+             - Move to target directory (inbox/, literature/, notes/, decisions/, or index/)
+
+             d. **Convert links** (if applicable):
+             - Standard markdown links to local files: `[text](file.md)` -> `[[id]]`
+             - Obsidian wikilinks by filename: `[[filename]]` -> `[[id]]` (match by old filename)
+             - Obsidian embeds: `![[filename]]` -> `![[id]]`
+             - Update links in OTHER files that reference this file's old path
+
+             e. **Normalize VCS ref fields** (from the migration plan's ref normalization list):
+             - Rename non-standard fields to canonical names (`issue_ref`, `pr_ref`, `milestone_ref`, `repo_ref`)
+             - Convert raw GitHub/Forgejo URLs to `gh:<owner>/<repo>#<N>` / `fj:<owner>/<repo>#<N>` format
+             - Convert bare issue/PR numbers to include the repo prefix, deriving the repo from `repo_ref` in the same frontmatter or from the project hub note
+             - Preserve all other frontmatter fields — this is a rename+reformat only, no content deletion
+             - Example transformation:
+               ```yaml
+               # Before
+               issue: 225
+               repo: https://github.com/ncrmro/keystone
+
+               # After
+               repo_ref: gh:ncrmro/keystone
+               issue_ref: gh:ncrmro/keystone#225
+               ```
+
+             f. **Apply project ownership tags where the evidence is strong**:
+             - Derive project names and aliases from project hub notes in `index/`
+             - Search with `rg` or `scripts/find_missing_project_tags.py` to find migrated files that mention a project but still lack that project tag
+             - Add the missing project tag when the file has a clear project owner
+             - Leave ambiguous ownership untouched and record it in the migration log instead of guessing
+
+             g. **Respect project hub and spike conventions**:
+             - Keep project hub notes in `index/`
+             - If the repo uses root spike trees, keep `spikes/<slug>/README.md` as the canonical spike note
+             - Do not force spike support docs such as `scope.md`, `research.md`, or `prototype/README.md` into `notes/` just because they are markdown
+             - If `.zk/config.toml` intentionally ignores spike support docs, preserve that behavior
+
+             h. **Commit this single file's changes**:
+
+             ```bash
+             git add -A
+             git commit -m "chore(notes): migrate {old-filename} to {type}/{new-filename}"
+             ```
+
+          3. **Batch mode for large repos** (> 500 files):
+             - Group files by source directory
+             - Process each batch, committing per-file within the batch
+             - After each batch of 50 files, run `zk index` as a sanity check
+             - If errors, stop and report — do not continue with broken state
+
+          4. **After all files are migrated**, do a final commit for any remaining changes (e.g., deleted empty directories, updated cross-references).
+
+          5. **Clean up format artifacts** (final pass):
+             - Remove `.obsidian/` directory if present (commit separately: `chore(notes): remove obsidian config`)
+             - Remove Apple Notes export artifacts (empty attachment dirs, etc.)
+             - Do NOT remove `.deepwork/`, `.claude/`, or other tool directories
+
+          6. **Resolve legacy note trees**:
+             - Revisit every noncanonical directory identified in the migration plan
+             - Migrate all note-like markdown into canonical zk groups unless the plan explicitly marked that subtree as operational residue
+             - If a directory still exists afterward, it should contain only operational/generated files or non-markdown assets
+             - If note-like markdown remains outside canonical groups, the migration is incomplete
+             - Root `spikes/` is allowed when the plan marked it as a canonical spike-note convention rather than a legacy tree
+
+          ## Output Format
+
+          Write `.deepwork/tmp/migration_log.md`:
+
+          ```markdown
+          # Migration Log
+
+          ## Source Format
+
+          (Obsidian / Apple Notes / Plain Markdown)
+
+          ## Transformations
+
+          | #   | Old Path              | New Path                            | Type      | ID           | Commit  |
+          | --- | --------------------- | ----------------------------------- | --------- | ------------ | ------- |
+          | 1   | journal/2026-03-15.md | notes/202603151200 daily-journal.md | permanent | 202603151200 | abc1234 |
+
+          ## Format-Specific Conversions
+
+          - Dataview blocks commented out: N
+          - HTML tags stripped: N
+          - Inline tags extracted: N
+          - Obsidian callouts preserved: N
+
+          ## VCS Ref Field Normalization
+
+          - Files with ref fields normalized: N
+          - Field renames applied: (e.g., `issue:` -> `issue_ref:`, N files)
+          - URL-to-prefix conversions: (e.g., `https://github.com/...` -> `gh:...`, N files)
+          - Bare-number expansions: N files
+
+          ## Project Tag Updates
+
+          - Files given missing project tags: N
+          - Ambiguous project-tag candidates left for manual review: N
+
+          ## Summary
+
+          - Files migrated: N
+          - Commits created: N
+          - Batches processed: N (if applicable)
+          - Errors: 0
+          ```
+
+          ## Important Notes
+
+          - ONE COMMIT PER FILE — this is critical for reversibility (`git revert <hash>` undoes one file)
+          - NEVER delete note content — only add frontmatter, rename, and move
+          - Preserve existing frontmatter fields — merge, don't replace
+          - Skip operational files (TASKS.yaml, SOUL.md, etc.) entirely
+          - If a file already conforms to the standard, skip it and note "already compliant" in the log
+          - Obsidian callouts are PRESERVED — they are valid markdown
+          - Prefer `rg` over `grep` when searching for project-name matches and old link paths
+          - For large repos, use batch processing with periodic sanity checks
+          - The migration log is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+          - Do not declare success while `projects/`, `workflow/`, `spikes/`, or similar legacy directories still contain note-like markdown that should have been migrated.
+        inputs:
+          migration_plan:
+            required: true
+          scaffold_report:
+            required: true
+        outputs:
+          migration_log:
+            required: true
+
+      - name: verify_doctor
+        instructions: |
+          # Verify Migration
+
+          ## Objective
+
+          Run post-migration health checks to confirm the notebook is valid and no data was lost.
+
+          ## Task
+
+          1. **Index check**: Run `zk index` — should complete without errors.
+
+          2. **Frontmatter coverage**: Check all markdown files in `notes/`, `literature/`, `decisions/`, and `index/` have valid frontmatter:
+
+             ```bash
+             # List files missing frontmatter
+             for f in notes/*.md literature/*.md decisions/*.md index/*.md reports/*.md; do
+               [ -f "$f" ] && head -1 "$f" | grep -q "^---" || echo "MISSING: $f"
+             done
+             ```
+
+          3. **Required fields**: Spot-check 5-10 migrated files for all required fields (id, title, type, created, author, tags).
+
+          4. **Orphan check**: Find permanent notes with no links:
+
+             ```bash
+             zk list notes/ --orphan --format json
+             ```
+
+             Report the count. Orphans are acceptable post-migration but should be addressed over time.
+
+          5. **Dead link check**: Search for wikilinks pointing to non-existent notes:
+
+             ```bash
+             # zk lsp diagnostics can detect this, or:
+             rg -o '\[\[[0-9]{12}\]\]' notes/ literature/ decisions/ index/ reports/ | sort -u | while read link; do
+               id=$(echo "$link" | tr -d '[]')
+               zk list --format json --match "id: $id" | grep -q "$id" || echo "DEAD: $link"
+             done
+             ```
+
+          6. **Operational files intact**: Verify TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml are unchanged:
+
+             ```bash
+             git diff HEAD~N -- TASKS.yaml PROJECTS.yaml SCHEDULES.yaml
+             ```
+
+             (where N = number of migration commits)
+
+          7. **Content preservation**: Verify total markdown content is preserved:
+
+             ```bash
+             # Compare word count before/after (approximate check)
+             git stash  # or compare against pre-migration commit
+             ```
+
+          8. **Stray note tree check**: Verify that noncanonical directories do not still contain note-like markdown requiring migration:
+
+             ```bash
+             find projects workflow research talks people journal ideas spikes _archive -name "*.md" 2>/dev/null
+             ```
+
+             Classify any remaining markdown as either:
+             - operational/generated residue that is intentionally excluded, or
+             - missed notebook content, which should fail verification
+
+          9. **Project hub and spike convention check**:
+             - If `index/` contains project hub notes, confirm they remain in `index/` and are not mixed with stray spike prototypes or migrated artifact docs
+             - If the repo uses root `spikes/`, confirm canonical spike notes live at `spikes/<slug>/README.md`
+             - Confirm spike support docs such as `scope.md`, `research.md`, and `prototype/README.md` are either intentionally ignored by `.zk/config.toml` or explicitly treated as support artifacts
+
+          10. **VCS ref field compliance check**: Verify all notes use canonical ref field names and formats:
+
+             ```bash
+             # Any remaining raw GitHub/Forgejo URLs in frontmatter
+             rg -n "^(repo_ref|issue_ref|milestone_ref|pr_ref):\s+https://" <notes_path> -g '*.md'
+
+             # Any remaining non-standard field names
+             rg -n "^(issue|pr|milestone|repo|github_issue|github_pr|forgejo_issue|issue_url|pr_url):" <notes_path> -g '*.md'
+
+             # Canonical fields missing the required prefix
+             rg -n "^(repo_ref|issue_ref|milestone_ref|pr_ref):\s+(?!gh:|fj:)" <notes_path> -g '*.md' -P
+             ```
+
+             - PASS: zero raw URLs and zero non-standard field names remain
+             - FAIL: any raw URL or non-standard field name found in frontmatter
+
+          11. **Missing project tag check**:
+
+          - Run `scripts/find_missing_project_tags.py .` from the repo root, or reproduce its logic with `rg`
+          - Report likely missing project tags in `notes/`, `literature/`, `reports/`, `index/`, and canonical spike README files
+          - Distinguish between:
+            - strong misses that should fail verification
+            - ambiguous matches that should be called out for manual follow-up
+
+          ## Output Format
+
+          Write `.deepwork/tmp/doctor_report.md`:
+
+          ```markdown
+          # Doctor Report
+
+          ## Index Status
+
+          - `zk index`: OK (N notes indexed)
+
+          ## Frontmatter Coverage
+
+          - notes/: N/N files have valid frontmatter
+          - literature/: N/N
+          - decisions/: N/N
+          - index/: N/N
+          - reports/: N/N
+          - inbox/: N/N (frontmatter optional for fleeting)
+
+          ## Orphan Notes
+
+          - Count: N orphan permanent notes
+          - (list if < 10)
+
+          ## Dead Links
+
+          - Count: N dead wikilinks
+          - (list if any)
+
+          ## Remaining Noncanonical Markdown
+
+          - `projects/`: migrated / operational-only / failed
+          - `workflow/`: migrated / operational-only / failed
+          - Other legacy trees: ...
+
+          ## Project hubs and spikes
+
+          - Project hubs in `index/`: OK / FAIL
+          - Canonical spike README notes: OK / FAIL
+          - Spike support docs: intentionally ignored / explicit artifacts / failed
+
+          ## VCS ref field compliance
+
+          - Raw URLs remaining in ref fields: N (PASS if 0)
+          - Non-standard field names remaining: N (PASS if 0)
+          - Malformed `gh:`/`fj:` refs: N (PASS if 0)
+
+          ## Missing project tags
+
+          - Strong misses: N
+          - Ambiguous candidates: N
+          - (list strong misses; summarize ambiguous ones)
+
+          ## Operational Files
+
+          - TASKS.yaml: unchanged
+          - PROJECTS.yaml: unchanged
+          - SCHEDULES.yaml: unchanged
+
+          ## Overall: PASS / FAIL
+          ```
+
+          ## Important Notes
+
+          - The doctor report is transient workflow state. Store it under `.deepwork/tmp/` and do not commit it.
+          - The workflow should FAIL if substantial note-like markdown still lives outside canonical groups without an explicit operational-residue justification.
+          - The workflow should also FAIL if there are obvious missing project tags on clearly project-owned notes after migration.
+        inputs:
+          migration_log:
+            required: true
+        outputs:
+          doctor_report:
+            required: true
+
+  process_inbox:
+    summary: "Review fleeting notes in inbox/, promote or discard, link to knowledge graph"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job manages Zettelkasten-structured notes repositories using the `zk` CLI.
+      It applies to both human user notes repos and OS agent notes repos (agent-space).
+
+      ## Keystone Notes Architecture
+
+      Notes repos are git-backed repositories synced via `repo-sync` on systemd timers.
+      Human users: `keystone.notes` (home-manager module, syncs to `~/notes`).
+      OS agents: `keystone.os.agents.<name>.notes` (NixOS module, syncs to `/home/agent-{name}/notes`).
+
+      ## Zettelkasten Structure (standardized by process.knowledge-management convention)
+
+      ```
+      notes-repo/
+        .zk/
+          config.toml             # zk configuration (ID format, groups, wikilinks)
+          templates/
+            fleeting.md           # Template for inbox notes
+            literature.md         # Template for source summaries
+            permanent.md          # Template for atomic ideas
+            decision.md           # Template for ADRs
+            index.md              # Template for Maps of Content
+        inbox/                    # Fleeting notes (ephemeral, to be processed)
+        literature/               # Literature notes (source summaries)
+        notes/                    # Permanent notes (atomic, linked)
+        decisions/                # Decision records (context, decision, consequences)
+        index/                    # Maps of Content and project hub notes
+        reports/                  # Optional report notes when the repo uses a report group
+        spikes/                   # Optional spike trees with canonical README notes plus support artifacts
+        TASKS.yaml                # Agent task state (existing, untouched)
+        PROJECTS.yaml             # Agent project config (existing, untouched)
+        SCHEDULES.yaml            # Agent schedules (existing, untouched)
+      ```
+
+      ## Note ID Schema
+
+      Format: `YYYYMMDDHHmm` (12-digit timestamp, minute precision).
+      Filename: `{id} {title-slug}.md` (e.g., `202603201430 zfs-encryption-key-loading.md`).
+
+      ## Required Frontmatter
+
+      ```yaml
+      ---
+      id: "202603201430"
+      title: "Note title"
+      type: fleeting | literature | permanent | decision | index | report
+      created: 2026-03-20T14:30:00-05:00
+      author: ncrmro
+      tags: [topic1, topic2]
+      ---
+      ```
+
+      ## Key zk Commands
+
+      - `zk init` — Initialize notebook (creates .zk/)
+      - `zk new <group>/ --title "Title" --no-input --print-path` — Create note (non-interactive)
+      - `zk list --format json --match "query"` — Search notes
+      - `zk list --orphan --format json` — Find unlinked notes
+      - `zk list --linked-by <path> --format json` — Find outgoing links
+      - `zk index` — Rebuild note index
+
+      ## Operational Files
+
+      YAML files (TASKS.yaml, PROJECTS.yaml, SCHEDULES.yaml) and identity files (SOUL.md,
+      AGENTS.md) are NOT notes and MUST NOT be modified by this job. The zk indexer
+      ignores non-markdown files automatically.
+
+      ## Transient Workflow Outputs
+
+      Step outputs such as inbox reviews, promotion logs, link reports, and sync status
+      are transient workflow artifacts. Write them under `.deepwork/tmp/` and pass those
+      paths back to the workflow engine. They MUST NOT be written at the repo root or
+      committed to git.
+    steps:
+      - name: review_inbox
+        instructions: |
+          # Review Inbox
+
+          ## Objective
+
+          List all fleeting notes in `inbox/`, read each, and classify them for promotion or discard.
+
+          ## Task
+
+          1. List all notes in inbox:
+
+             ```bash
+             zk list inbox/ --format json
+             ```
+
+          2. If inbox is empty, report "Inbox empty — nothing to process" and output an empty classification.
+
+          3. For each note, read its content and classify:
+             - **promote-to-permanent**: Contains a standalone idea worth preserving as an atomic note
+             - **promote-to-literature**: Summarizes or references an external source
+             - **discard**: Stale, duplicate, or no longer relevant
+             - **keep**: Not ready to process yet (needs more thought)
+
+          4. For promotable notes, draft a brief target title and suggested tags.
+
+          ## Output Format
+
+          Write `inbox_review.md`:
+
+          ```markdown
+          # Inbox Review
+
+          ## Classification
+
+          | ID           | Title              | Action  | Target Type | Suggested Title                       | Tags        |
+          | ------------ | ------------------ | ------- | ----------- | ------------------------------------- | ----------- |
+          | 202603201430 | CI failure pattern | promote | permanent   | CI failures from missing flake inputs | [ci, nix]   |
+          | 202603201445 | Quick thought      | discard | -           | -                                     | -           |
+          | 202603201500 | NixOS manual notes | promote | literature  | NixOS module system overview          | [nix, docs] |
+
+          ## Summary
+
+          - Total inbox notes: N
+          - Promote to permanent: N
+          - Promote to literature: N
+          - Discard: N
+          - Keep: N
+          ```
+        inputs: {}
+        outputs:
+          inbox_review:
+            required: true
+
+      - name: promote
+        instructions: |
+          # Promote Notes
+
+          ## Objective
+
+          Create permanent or literature notes from promotable fleeting notes, then delete the originals.
+
+          ## Task
+
+          1. Read `inbox_review.md` for the list of notes to promote.
+
+          2. For each note classified as "promote":
+
+             a. Read the fleeting note's full content.
+
+             b. Create the new note in the target directory:
+
+             ```bash
+             zk new notes/ --title "<suggested title>" --no-input --print-path
+             # or
+             zk new literature/ --title "<suggested title>" --no-input --print-path
+             ```
+
+             c. Edit the new note:
+             - Expand and refine the content from the fleeting note
+             - For permanent notes: distill to one atomic idea, write clearly
+             - For literature notes: add source/source_url, write summary in your own words
+             - Add suggested tags to frontmatter
+             - Add a `## Links` section (will be populated in the next step)
+
+             d. Delete the original fleeting note from `inbox/`:
+
+             ```bash
+             rm inbox/<fleeting-note-filename>.md
+             ```
+
+             e. Commit:
+
+             ```bash
+             git add -A
+             git commit -m "chore(notes): promote <fleeting-id> to <type>/<new-id>"
+             ```
+
+          3. For notes classified as "discard":
+             ```bash
+             rm inbox/<note-filename>.md
+             git add -A
+             git commit -m "chore(notes): discard fleeting note <id>"
+             ```
+
+          ## Output Format
+
+          Write `promotion_log.md`:
+
+          ```markdown
+          # Promotion Log
+
+          ## Promoted
+
+          | Fleeting ID  | New ID       | Type      | New Path                                               | Commit  |
+          | ------------ | ------------ | --------- | ------------------------------------------------------ | ------- |
+          | 202603201430 | 202603201600 | permanent | notes/202603201600 ci-failures-missing-flake-inputs.md | abc1234 |
+
+          ## Discarded
+
+          | ID           | Title         | Commit  |
+          | ------------ | ------------- | ------- |
+          | 202603201445 | Quick thought | def5678 |
+
+          ## Summary
+
+          - Promoted: N
+          - Discarded: N
+          ```
+        inputs:
+          inbox_review:
+            required: true
+        outputs:
+          promotion_log:
+            required: true
+
+      - name: link_notes
+        instructions: |
+          # Link Notes
+
+          ## Objective
+
+          Ensure newly promoted notes are properly linked to the knowledge graph.
+
+          ## Task
+
+          1. Read `promotion_log.md` for the list of newly promoted notes.
+
+          2. For each promoted note:
+
+             a. Search for related existing notes:
+
+             ```bash
+             zk list --related <new-note-path> --format json
+             zk list --match "<key terms from title>" --format json
+             ```
+
+             b. Add wikilinks in the new note's `## Links` section to the most relevant existing notes.
+
+             c. Optionally add backlinks in the related notes pointing to the new note.
+
+          3. Update relevant index notes:
+
+             a. Find index notes whose topic matches the new note:
+
+             ```bash
+             zk list index/ --format json --match "<topic>"
+             ```
+
+             b. Add a wikilink to the new note in the index's `## Notes` section.
+
+          4. Commit all link additions:
+             ```bash
+             git add -A
+             git commit -m "chore(notes): link newly promoted notes to knowledge graph"
+             ```
+
+          ## Output Format
+
+          Write `link_report.md`:
+
+          ```markdown
+          # Link Report
+
+          ## Links Added
+
+          | Note                       | Links To                        | Linked From                         |
+          | -------------------------- | ------------------------------- | ----------------------------------- |
+          | 202603201600 (CI failures) | [[202603101430]] (Nix patterns) | index/202603201430 (Infrastructure) |
+
+          ## Index Notes Updated
+
+          - index/202603201430 (Infrastructure): added [[202603201600]]
+
+          ## Orphan Check
+
+          - Permanent notes without links: 0
+          ```
+        inputs:
+          promotion_log:
+            required: true
+        outputs:
+          link_report:
+            required: true
+
+      - name: sync
+        instructions: |
+          # Sync Changes
+
+          ## Objective
+
+          Commit and push all remaining changes via the repo's git workflow.
+
+          ## Task
+
+          1. Check for any uncommitted changes:
+
+             ```bash
+             git status
+             ```
+
+          2. If there are uncommitted changes, stage and commit:
+
+             ```bash
+             git add -A
+             git commit -m "chore(notes): inbox processing complete"
+             ```
+
+          3. Push to remote:
+
+             ```bash
+             git push
+             ```
+
+             If push fails due to upstream changes, pull with rebase first:
+
+             ```bash
+             git pull --rebase
+             git push
+             ```
+
+          4. Report sync status.
+
+          ## Output Format
+
+          Write `sync_status.md`:
+
+          ```markdown
+          # Sync Status
+
+          - Uncommitted changes: yes/no
+          - Commit: <hash> (if any)
+          - Push: OK / failed (reason)
+          - Remote: <remote-url>
+          ```
+        inputs:
+          link_report:
+            required: true
+        outputs:
+          sync_status:
+            required: true

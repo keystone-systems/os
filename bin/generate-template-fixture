@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+OUTPUT_DIR=""
+KEYSTONE_USER="keystone"
+KEYSTONE_SOURCE="path:${REPO_ROOT}"
+GIT_NAME="Keystone CI"
+GIT_EMAIL="ci@keystone.invalid"
+
+log_info() {
+    printf 'INFO: %s\n' "$*" >&2
+}
+
+log_error() {
+    printf 'ERROR: %s\n' "$*" >&2
+}
+
+show_help() {
+    cat <<EOF
+Generate a committed Keystone template fixture repo for CI or release builds.
+
+Usage: $(basename "$0") --output DIR [OPTIONS]
+
+Options:
+  -o, --output DIR           Output directory for the generated fixture repo
+  -u, --keystone-user USER   Admin username to write into the scaffold (default: ${KEYSTONE_USER})
+  -s, --keystone-source REF  Flake ref to lock as the fixture's keystone input
+                             (default: ${KEYSTONE_SOURCE})
+      --git-name NAME        Git author name for the initial fixture commit
+      --git-email EMAIL      Git author email for the initial fixture commit
+  -h, --help                 Show this help
+
+The generated repo is scaffolded from the default template, rewritten to use
+the requested admin username, locked to the requested Keystone source, then
+committed so template-local build scripts can operate on a clean git repo.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o|--output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -u|--keystone-user)
+            KEYSTONE_USER="$2"
+            shift 2
+            ;;
+        -s|--keystone-source)
+            KEYSTONE_SOURCE="$2"
+            shift 2
+            ;;
+        --git-name)
+            GIT_NAME="$2"
+            shift 2
+            ;;
+        --git-email)
+            GIT_EMAIL="$2"
+            shift 2
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z "$OUTPUT_DIR" ]]; then
+    log_error "--output is required"
+    show_help
+    exit 1
+fi
+
+if [[ -e "$OUTPUT_DIR" ]] && [[ -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 2>/dev/null)" ]]; then
+    log_error "Output directory already exists and is not empty: $OUTPUT_DIR"
+    exit 1
+fi
+
+mkdir -p "$(dirname "$OUTPUT_DIR")"
+rm -rf "$OUTPUT_DIR"
+
+log_info "Scaffolding fixture from template into $OUTPUT_DIR"
+nix flake new -t "path:${REPO_ROOT}#default" "$OUTPUT_DIR" >/dev/null
+
+log_info "Rewriting admin username to ${KEYSTONE_USER}"
+sed -i '0,/username = "admin";/s//username = "'"${KEYSTONE_USER}"'";/' "$OUTPUT_DIR/flake.nix"
+
+if ! grep -q "username = \"${KEYSTONE_USER}\";" "$OUTPUT_DIR/flake.nix"; then
+    log_error "Failed to rewrite admin username in generated flake"
+    exit 1
+fi
+
+if [[ -f "$OUTPUT_DIR/bin/test-iso" ]]; then
+    chmod +x "$OUTPUT_DIR/bin/test-iso"
+fi
+
+log_info "Locking generated fixture to Keystone source ${KEYSTONE_SOURCE}"
+(
+    cd "$OUTPUT_DIR"
+    nix flake lock --override-input keystone "$KEYSTONE_SOURCE" >/dev/null
+)
+
+log_info "Initializing fixture git repo"
+git -C "$OUTPUT_DIR" init -b main >/dev/null
+git -C "$OUTPUT_DIR" config user.name "$GIT_NAME"
+git -C "$OUTPUT_DIR" config user.email "$GIT_EMAIL"
+git -C "$OUTPUT_DIR" add -A
+git -C "$OUTPUT_DIR" commit -m "chore: initialize keystone template fixture" >/dev/null
+
+printf '%s\n' "$OUTPUT_DIR"

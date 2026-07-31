@@ -1,0 +1,58 @@
+# =====================================================================
+# Conventions: Format, Cross-Linking, Naming, and DRY
+# When convention files change, verify RFC 2119 format, check for
+# duplicated rules across conventions, and ensure cross-references.
+# =====================================================================
+conventions_review:
+  description: "Verify convention files follow RFC 2119 format, are DRY across the convention set, use correct naming prefixes, and cross-reference related conventions."
+  match:
+    include:
+      - "*.md"
+      - "archetypes.yaml"
+    exclude:
+      - "AGENTS.md"
+      - "AGENTS_TEMPLATE.md"
+      - "examples/**"
+  review:
+    strategy: matches_together
+    instructions: |
+      When convention files change, review them for format, deduplication, naming, and cross-linking.
+
+      **Format checks (per conventions/AGENTS.md rules):**
+      1. H1 title MUST follow format: `# Convention: {Display Name} ({prefix.name})`
+      2. Rules MUST be numbered within each section
+      3. Rules MUST use RFC 2119 keywords (MUST, SHOULD, MAY, etc.) correctly
+      4. Each rule SHOULD be specific and actionable — no vague aspirational statements
+      5. If the convention covers a non-trivial pattern, a golden example section SHOULD exist
+
+      **Naming prefix checks:**
+      6. Keystone-specific conventions (those that only apply to the keystone platform
+         and its modules) MUST use the `process.keystone-*` prefix.
+      7. Generic engineering conventions (applicable to any software project) MUST NOT
+         use the `process.keystone-*` prefix.
+
+      **DRY checks (cross-convention deduplication):**
+      8. Read the changed convention AND scan all other conventions in conventions/ for
+         overlapping rules. Specifically:
+         - Search for rules that cover the same topic in different conventions
+         - Flag any rule that is substantially duplicated in another convention
+         - Suggest which convention should own the rule and where to add a cross-reference
+      9. Related conventions MUST cross-reference each other. For example, if
+         tool.cloudflare-workers mentions CI pipelines, it SHOULD reference
+         process.continuous-integration. Use format: "See process.continuous-integration
+         for CI gating rules."
+
+      **Archetypes wiring checks:**
+      10. If a new convention file is added, verify it appears in the appropriate
+          archetype(s) in archetypes.yaml (either inlined or referenced)
+      11. If archetypes.yaml changes, verify all referenced convention files exist
+
+      **What to flag:**
+      - Missing H1 title or wrong format
+      - Unnumbered rules
+      - Keystone-specific convention without `process.keystone-*` prefix
+      - Generic convention using `process.keystone-*` prefix
+      - Duplicated rules across conventions (cite both files and rule numbers)
+      - Missing cross-references between related conventions
+      - New conventions not wired into any archetype
+      - Conventions referenced in archetypes.yaml that don't exist as files

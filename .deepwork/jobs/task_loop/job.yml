@@ -1,0 +1,810 @@
+name: task_loop
+summary: "Ingest tasks from sources, prioritize by project, and execute tasks individually"
+
+step_arguments:
+  - name: source_json
+    description: "Pre-fetched source data as JSON, written to .deepwork/sources.json by the task loop orchestrator"
+    type: string
+
+  - name: task_name
+    description: "The name of the task to execute (passed via prompt by the task loop orchestrator)"
+    type: string
+
+  - name: task_description
+    description: "The description of the task (passed via prompt by the task loop orchestrator)"
+    type: string
+
+  - name: tasks_yaml
+    description: "Updated TASKS.yaml with task entries"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify that new tasks have name, description, status, source, and source_ref fields.
+        Check that no duplicate tasks were created for items already tracked.
+        Every new task has status set to pending.
+        Tasks are associated with a project from PROJECTS.yaml when the relationship is clear from the source data.
+        Core rules defined in the parse_sources step (e.g., Ping/Pong) are applied.
+        Reply emails are evaluated for new task content in the reply body above the quoted text.
+        TASKS.yaml has exactly one top-level key ('tasks') containing a list. No other top-level keys exist.
+        Task fields use canonical names (name, description, status, project, source, source_ref, model, workflow, needs).
+        Pending tasks are ordered by their project's position in PROJECTS.yaml (first project = highest priority).
+        Completed, blocked, and in_progress tasks are not reordered or removed.
+        Unaffiliated tasks appear after all project-associated pending tasks.
+        Every pending task has a model field assigned by complexity.
+        Schema is preserved with no renamed or invented fields.
+        If task status changed, verify concrete evidence of work performed.
+        If blocked, a corresponding entry exists in ISSUES.yaml with the reason.
+        Conventions were followed for external tool usage.
+
+  - name: ingest_report
+    description: "Summary of ingestion: new tasks created, existing tasks updated, duplicates skipped"
+    type: file_path
+
+  - name: priority_report
+    description: "Brief explanation of ordering decisions"
+    type: file_path
+
+  - name: issues_yaml
+    description: "Updated ISSUES.yaml if a task was blocked"
+    type: file_path
+
+  - name: task_report_json
+    description: "Execution report in JSON format: what was done, outcome, issues, PRs, issues created"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read TASKS.yaml and ISSUES.yaml to verify the report accurately reflects the task outcome.
+        Ensure the output is strictly valid JSON matching the schema.
+        The report correctly states whether the task was completed or blocked.
+        If blocked, the report includes enough detail for a human to understand and resolve the blocker.
+
+  - name: note_status
+    description: "Path of the note created, or reason it was skipped"
+    type: file_path
+
+workflows:
+  ingest:
+    summary: "Parse pre-fetched source JSON and create/update tasks in TASKS.yaml"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      TASKS.yaml in the working directory tracks work items with fields: name, description, status,
+      project, source, source_ref, model, workflow, needs. Status values: pending, in_progress, completed, blocked.
+      Tasks with a workflow field should invoke that DeepWork workflow instead of interpreting the description freely.
+      Tasks with a needs field (array of task names) MUST NOT execute until all named tasks are completed.
+
+      PROJECTS.yaml in the working directory defines active projects (listed in priority order, first = highest)
+      and declarative source commands that output JSON.
+
+      ISSUES.yaml in the working directory documents blockers discovered during task execution.
+
+      Model separation: Ingest and prioritize run with haiku (cheap, just parsing/organizing).
+      The prioritize step assigns a model field to every pending task based on complexity:
+      haiku for simple mechanical tasks, sonnet for standard multi-step work, opus for advanced
+      tasks requiring deep reasoning or complex architecture. The keystone task loop reads this field
+      and selects the model for each task's execution session. Tasks MAY have their model pre-set
+      (e.g., by ingest or manually); prioritize preserves those.
+    steps:
+      - name: parse_sources
+        instructions: |
+          # Parse Sources
+
+          ## Objective
+
+          Parse pre-fetched source data and create or update tasks in TASKS.yaml. This step bridges external sources (email, GitHub) with the internal task tracking system.
+
+          ## Task
+
+          The task loop orchestrator has already run declarative shell commands to fetch source data and written the JSON to `.deepwork/sources.json`. Read that file, compare it against the current TASKS.yaml, and add any new tasks while avoiding duplicates.
+
+          ### Process
+
+          1. **Read the current state**
+             - Read TASKS.yaml from the working directory
+             - Read PROJECTS.yaml from the working directory to understand project associations
+             - If TASKS.yaml does not exist, create it with `tasks: []`
+
+          2. **Parse the source JSON**
+             - Read the source JSON from `.deepwork/sources.json` in the working directory (written by the task loop orchestrator before invoking this workflow)
+             - If the file is missing or empty, report zero items ingested and finish
+             - Each source section is labeled with its source name (e.g., "email", "github-issues")
+             - Email source JSON includes envelope metadata AND a `body` field with full message text
+             - Use BOTH the subject and body fields when determining if an email is actionable (subjects may be empty)
+             - Parse each source's JSON output
+
+          3. **Identify new tasks from sources**
+             - For each source item (email, issue, PR), determine if it represents actionable work
+             - Skip items that are purely informational (newsletters, automated notifications, CI status emails)
+             - Skip items that already have a corresponding task in TASKS.yaml (match by `source_ref`)
+             - For GitHub issues/PRs: use the issue/PR URL as `source_ref`
+             - For email: use the format `email-{id}-{sender_address}` as `source_ref` (e.g., `email-10-nicholas.romero@ncrmro.com`)
+
+          4. **Create task entries for new items**
+             - Set `status: pending`
+             - Set `source` to the source type (email, github-issue, github-pr)
+             - Set `source_ref` to the unique identifier from the source
+             - Set `project` if the source item clearly maps to a project in PROJECTS.yaml (e.g., a GitHub issue from a repo listed under a project)
+             - Write a clear, actionable `description` derived from the source content
+             - Choose a descriptive kebab-case `name`
+
+          5. **Write updated TASKS.yaml**
+             - Follow the schema in `steps/shared/tasks_schema.md` exactly. The only top-level key is `tasks`. Do NOT add `summary:`, `metadata:`, or any other top-level keys.
+             - Append new tasks to the existing list
+             - Do NOT modify existing tasks in any way — preserve their exact status, description, and all fields verbatim
+             - Do NOT change the status of any existing task (e.g., do not change `pending` to `completed` or vice versa)
+             - Do NOT rename fields (e.g., do not change `name` to `id`, `description` to `title`, etc.)
+             - Do not reorder existing tasks
+             - When writing the file, copy existing task entries character-for-character and only append new entries at the end
+             - After writing, validate with `yq e '.' TASKS.yaml` to confirm the file is valid YAML
+
+          6. **Write the ingest report**
+
+          ### Core rules
+
+          - **Ping/Pong**: Any message containing "ping" (from any source) MUST always create a task to reply with "pong". This is a standing requirement that applies regardless of sender or context. The reply subject MUST contain the word `pong` so subject-based assertions pass — when the source is an email with subject `[ping] <tag>`, the reply subject MUST be `Re: [pong] <tag>` (keep the `Re:` prefix so mail threading is preserved, but flip `ping` → `pong`). The reply body MUST also contain `pong`.
+
+          ### Scheduled tasks
+
+          Scheduled tasks (with `source: "schedule"`) are created by the `agent-scheduler` timer (see process.agent-cronjobs.md), not by ingest. Ingest MUST preserve these tasks and MUST NOT treat them as duplicates of source items.
+
+          ### Guidelines for task creation
+
+          - **Email**: Not every email is a task. Look for requests, action items, questions that need answers, or assignments. Ignore automated notifications, marketing, and FYI-only messages.
+          - **Reply emails**: Replies to agent-sent emails (e.g., replies to the daily status digest, replies to task confirmations) frequently contain NEW task requests from the human. When an email is a reply (`Re: ...`), focus on the new content above the quoted text — that is likely a new instruction, not a repeat of the original. Never dismiss a reply as "not actionable" just because it is part of an existing thread.
+          - **GitHub Issues**: Open issues assigned to the agent or unassigned in watched repos are potential tasks. Closed issues are not.
+          - **GitHub PRs**: PRs requesting review are tasks. PRs the agent authored that need updates are tasks. Merged/closed PRs are not.
+          - **GitHub/Forgejo PR Reviews** (`github-pr-reviews`, `forgejo-pr-reviews`): Reviews on agent-authored PRs. These are high-priority — the agent's PR is blocked until feedback is addressed.
+            - Reviews with state `CHANGES_REQUESTED` (GitHub) or `REQUEST_CHANGES` (Forgejo) MUST always create a task.
+            - Reviews with state `COMMENTED` SHOULD create a task only if comments contain actionable feedback (not purely informational or approving).
+            - Use `source: "github-pr-review"` or `source: "forgejo-pr-review"`.
+            - Use `source_ref: "{pr_url}#reviews"` (keyed by PR URL to consolidate multiple reviews on the same PR into one task).
+            - The task `description` MUST include: repo name, PR number, branch name (`pr_branch`), reviewer name, review state, and a summary of each comment (file path + comment body). Preserve enough context for the executing agent to act without re-fetching.
+            - Example task name: `address-review-fix-login-bug-42`
+          - **Deduplication**: Always check `source_ref` against existing tasks. If a task already exists for a source item, skip it even if the source data has changed.
+
+          ## Output Format
+
+          ### TASKS.yaml
+
+          Updated task file with any new tasks appended.
+
+          **Structure**:
+
+          ```yaml
+          tasks:
+            - name: "existing-task"
+              description: "An existing task"
+              status: completed
+            - name: "reply-to-nicholas-email"
+              description: "Reply to Nicholas's email about deployment timeline"
+              status: pending
+              project: "agent-space"
+              source: "email"
+              source_ref: "email-42-nicholas.romero@ncrmro.com"
+            - name: "fix-login-bug"
+              description: "Fix the login redirect bug reported in issue #42"
+              status: pending
+              project: "notes"
+              source: "github-issue"
+              source_ref: "https://github.com/ncrmro/notes/issues/42"
+          ```
+
+          ### ingest_report.md
+
+          Summary of what was ingested.
+
+          **Structure**:
+
+          ```markdown
+          # Ingest Report
+
+          **Date**: [current date]
+
+          ## Sources Processed
+
+          | Source        | Items Found | New Tasks | Skipped (duplicate) | Skipped (not actionable) |
+          | ------------- | ----------- | --------- | ------------------- | ------------------------ |
+          | email         | [n]         | [n]       | [n]                 | [n]                      |
+          | github-issues | [n]         | [n]       | [n]                 | [n]                      |
+
+          ## New Tasks Created
+
+          - **[task-name]**: [description] (from [source])
+
+          ## Skipped Items
+
+          - [item description]: [reason skipped]
+
+          ## Summary
+
+          [1-2 sentences: X new tasks created from Y source items. Z items skipped.]
+          ```
+
+          **Concrete example**:
+
+          ```markdown
+          # Ingest Report
+
+          **Date**: 2026-02-19
+
+          ## Sources Processed
+
+          | Source        | Items Found | New Tasks | Skipped (duplicate) | Skipped (not actionable) |
+          | ------------- | ----------- | --------- | ------------------- | ------------------------ |
+          | email         | 8           | 1         | 0                   | 7                        |
+          | github-issues | 3           | 2         | 1                   | 0                        |
+
+          ## New Tasks Created
+
+          - **reply-to-nicholas-timeline**: Reply to Nicholas about deployment timeline (from email)
+          - **fix-login-redirect**: Fix login redirect bug from issue #42 (from github-issues)
+          - **review-api-docs-pr**: Review PR #15 updating API documentation (from github-issues)
+
+          ## Skipped Items
+
+          - Email from "GitHub Notifications": automated notification, not actionable
+          - Email from "Newsletter": marketing content, not actionable
+          - Issue #38 (ncrmro/notes): already tracked as task "update-search-index"
+
+          ## Summary
+
+          3 new tasks created from 11 source items. 8 items skipped (7 not actionable, 1 duplicate).
+          ```
+
+          ## Quality Criteria
+
+          - No duplicate tasks created for source items already tracked in TASKS.yaml
+          - Every new task has required fields: name, description, status (pending), source, source_ref
+          - Tasks are associated with projects from PROJECTS.yaml when the relationship is clear
+          - Existing tasks are preserved and not modified
+          - The ingest report accurately reflects what was processed
+
+          ## Context
+
+          This is the first step in the task loop pipeline. The task loop orchestrator runs declarative shell commands to fetch source data before invoking this workflow, writing the JSON to `.deepwork/sources.json`. Read that file to get the pre-fetched data. The output feeds into the prioritize workflow, which orders tasks by project priority.
+        inputs:
+          source_json: { required: true }
+        outputs:
+          tasks_yaml: { required: true }
+          ingest_report: { required: true }
+
+  prioritize:
+    summary: "Order pending tasks by project priority from PROJECTS.yaml"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      TASKS.yaml in the working directory tracks work items with fields: name, description, status,
+      project, source, source_ref, model, workflow, needs. Status values: pending, in_progress, completed, blocked.
+      Tasks with a workflow field should invoke that DeepWork workflow instead of interpreting the description freely.
+      Tasks with a needs field (array of task names) MUST NOT execute until all named tasks are completed.
+
+      PROJECTS.yaml in the working directory defines active projects (listed in priority order, first = highest)
+      and declarative source commands that output JSON.
+
+      ISSUES.yaml in the working directory documents blockers discovered during task execution.
+
+      Model separation: Ingest and prioritize run with haiku (cheap, just parsing/organizing).
+      The prioritize step assigns a model field to every pending task based on complexity:
+      haiku for simple mechanical tasks, sonnet for standard multi-step work, opus for advanced
+      tasks requiring deep reasoning or complex architecture. The keystone task loop reads this field
+      and selects the model for each task's execution session. Tasks MAY have their model pre-set
+      (e.g., by ingest or manually); prioritize preserves those.
+    steps:
+      - name: reorder_tasks
+        instructions: |
+          # Reorder Tasks by Priority
+
+          ## Objective
+
+          Read TASKS.yaml and PROJECTS.yaml, then reorder pending tasks so that higher-priority project tasks come first. This step runs with haiku for cheap, fast ordering.
+
+          ## Task
+
+          Reorder the pending tasks in TASKS.yaml based on project priority defined in PROJECTS.yaml. Projects are listed in priority order (first = highest). Tasks associated with higher-priority projects should appear before tasks from lower-priority projects. Tasks without a project association go last.
+
+          ### Process
+
+          1. **Read both files**
+             - Read TASKS.yaml from the working directory
+             - Read PROJECTS.yaml from the working directory
+             - Extract the project priority order from PROJECTS.yaml (list position = priority rank)
+
+          2. **Categorize tasks**
+             - Separate tasks into: pending, in_progress, completed, blocked
+             - Only pending tasks will be reordered
+             - All other tasks retain their current position
+
+          3. **Assign model for each pending task**
+             - For each pending task that does NOT already have a `model` field, assess its complexity from the description and assign a model:
+               - `haiku` — Simple, mechanical tasks: replying "pong", forwarding a message, simple lookups, single-command operations
+               - `sonnet` — Standard tasks: research, multi-step work, coding, email composition, system interaction, browser automation, anything requiring judgment or tool chaining
+               - `opus` — Advanced tasks: complex architectural decisions, multi-system debugging, workflow design, tasks requiring deep reasoning across many files or systems, novel problem-solving with no clear precedent
+             - If a task already has a `model` field, leave it unchanged (it was set intentionally)
+             - Write the `model` field on the task entry in TASKS.yaml
+
+          4. **Sort pending tasks by project priority**
+             - For each pending task, look up its `project` field
+             - Map the project to its position in PROJECTS.yaml (index 0 = highest priority)
+             - Sort pending tasks by this priority rank (ascending = highest priority first)
+             - Tasks with the same project priority maintain their relative order
+             - Tasks without a `project` field or with a project not in PROJECTS.yaml go after all project-associated tasks
+
+          5. **Reconstruct TASKS.yaml**
+             - Write the reordered task list back to TASKS.yaml
+             - Non-pending tasks remain in their original positions
+             - Pending tasks are inserted in their new priority order
+
+          6. **Write the priority report**
+             - Explain the ordering decisions briefly
+             - Note any tasks that couldn't be associated with a project
+             - List the model assigned to each pending task and why
+
+          ### Important guidelines
+
+          - **Follow the schema exactly.** See `steps/shared/tasks_schema.md` for the canonical TASKS.yaml schema. Do NOT rename fields, add new fields (like `id`, `priority`, `urgency`, `effort`, `depends_on`), or add sections (like `summary:`). The only top-level key is `tasks`.
+          - **Do not change any task fields** other than position in the list and the `model` field. Copy every existing task entry character-for-character, only changing list order and adding/updating `model`.
+          - **Do not change task statuses** — this step only reorders and assigns models
+          - **Preserve all tasks** — every task in the input MUST appear in the output. No tasks should be added or removed.
+          - **Handle missing projects gracefully** — if a task references a project not in PROJECTS.yaml, place it after project-associated tasks
+          - **Validate after writing.** After writing TASKS.yaml, run `yq e '.' TASKS.yaml` to verify it's valid YAML. If invalid, re-read the original file and try again.
+
+          ## Output Format
+
+          ### TASKS.yaml
+
+          The reordered task file.
+
+          **Structure**:
+
+          ```yaml
+          tasks:
+            # Completed/blocked tasks stay in place
+            - name: "setup-email"
+              description: "Configure email access"
+              status: completed
+            # Pending tasks reordered by project priority, with model assigned
+            - name: "high-priority-task"
+              description: "Task from the highest priority project"
+              status: pending
+              project: "agent-space"
+              model: "sonnet"
+            - name: "reply-pong"
+              description: "Reply with pong to a ping email"
+              status: pending
+              project: "agent-space"
+              model: "haiku"
+            - name: "unaffiliated-task"
+              description: "Task without a project"
+              status: pending
+              model: "sonnet"
+          ```
+
+          ### priority_report.md
+
+          Brief explanation of the ordering.
+
+          **Structure**:
+
+          ```markdown
+          # Priority Report
+
+          **Date**: [current date]
+
+          ## Project Priority Order
+
+          1. [project-name] — [n] pending tasks
+          2. [project-name] — [n] pending tasks
+             ...
+
+          ## Reordering Summary
+
+          - [n] pending tasks reordered
+          - [n] tasks associated with projects
+          - [n] tasks without project association (placed last)
+
+          ## Model Assignments
+
+          | Task        | Model  | Reason                         |
+          | ----------- | ------ | ------------------------------ |
+          | [task-name] | opus   | Complex multi-system debugging |
+          | [task-name] | sonnet | Multi-step system interaction  |
+          | [task-name] | haiku  | Simple reply                   |
+
+          ## Changes
+
+          - Moved **[task-name]** up (project: [project-name], priority: [n])
+          - **[task-name]** remains last (no project association)
+          ```
+
+          ## Quality Criteria
+
+          - Pending tasks are ordered by their project's position in PROJECTS.yaml (first project = highest priority)
+          - Completed, blocked, and in_progress tasks are not reordered or removed
+          - Tasks without a project association appear after all project-associated pending tasks
+          - Every pending task has a `model` field (either pre-existing or newly assigned)
+          - No task fields other than position and `model` are modified
+          - All tasks from the original file are present in the output
+          - The priority report accurately describes what was reordered and why, and lists model assignments
+
+          ## Context
+
+          This step runs between ingest and execution. By ordering tasks by project priority and assigning execution models, the task loop orchestrator can process tasks top-to-bottom, with the most important work first. Each task runs with the model specified in its `model` field. This step uses haiku since the logic is straightforward sorting and classification.
+        inputs: {}
+        outputs:
+          tasks_yaml: { required: true }
+          priority_report: { required: true }
+
+  run:
+    summary: "Execute a single pending task"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      TASKS.yaml in the working directory tracks work items with fields: name, description, status,
+      project, source, source_ref, model, workflow, needs. Status values: pending, in_progress, completed, blocked.
+      Tasks with a workflow field should invoke that DeepWork workflow instead of interpreting the description freely.
+      Tasks with a needs field (array of task names) MUST NOT execute until all named tasks are completed.
+
+      PROJECTS.yaml in the working directory defines active projects (listed in priority order, first = highest)
+      and declarative source commands that output JSON.
+
+      ISSUES.yaml in the working directory documents blockers discovered during task execution.
+
+      Model separation: Ingest and prioritize run with haiku (cheap, just parsing/organizing).
+      The prioritize step assigns a model field to every pending task based on complexity:
+      haiku for simple mechanical tasks, sonnet for standard multi-step work, opus for advanced
+      tasks requiring deep reasoning or complex architecture. The keystone task loop reads this field
+      and selects the model for each task's execution session. Tasks MAY have their model pre-set
+      (e.g., by ingest or manually); prioritize preserves those.
+    steps:
+      - name: execute
+        instructions: |
+          # Execute Task
+
+          ## Objective
+
+          Perform the work for a single task specified in the prompt, then update TASKS.yaml with the outcome and document any blockers in ISSUES.yaml.
+
+          ## Task
+
+          The task loop orchestrator has read the next pending task from TASKS.yaml and passed its name and description into this prompt. Execute the work described by the task. This session handles exactly one task — when done, exit so the orchestrator can start the next task in a fresh session.
+
+          ### Process
+
+          1. **Read current state**
+             - Read TASKS.yaml from the working directory
+             - Read ISSUES.yaml from the working directory (create with `issues: []` if missing)
+             - Locate the specified task by name
+
+          2. **Update status to in_progress**
+             - Edit TASKS.yaml, setting the task's status to `in_progress`
+
+          3. **Assess feasibility**
+             - Before committing to execution, verify the task is doable
+             - Check that required tools, services, or files are available
+             - If clearly blocked (e.g., a required service is unreachable, a dependency isn't installed), skip to step 4
+
+          4. **Perform the work**
+             - If the task has a `workflow` field, invoke that DeepWork workflow using `/deepwork {workflow}` instead of interpreting the task description freely. Pass the task description as the goal.
+             - Otherwise, read the task description and execute the work it describes
+             - This may involve: writing code, running commands, researching topics, configuring systems, editing files, sending emails, interacting with APIs, browser automation, or any other operational task
+             - For browser UI tasks (signing into websites, filling forms, clicking through web flows): use the chrome-devtools MCP tools (`mcp__chrome-devtools__*`) to navigate, click, fill, and take screenshots. These are NOT the same as CLI commands — do not confuse browser sign-in with CLI auth tools like `gh auth login`.
+             - Use available tools (Bash, Read, Write, Edit, WebSearch, chrome-devtools MCP, etc.) as appropriate
+
+          5. **Verify the work was done**
+             - Before marking any task as completed, confirm you actually performed the work
+             - You MUST be able to cite concrete evidence: commands you ran and their output, files you created or modified, responses you received, repos you cloned, etc.
+             - "Completed" means the work described in the task description has been fully performed and the result is observable in the system (a file exists, an email was sent, a repo was cloned, etc.)
+             - If you cannot point to a specific action you took and its result, you have NOT completed the task -- go back to step 4
+             - NEVER mark a task as completed just because you read or understood the description
+
+          6. **Handle the outcome**
+
+             **If the task completes successfully:**
+             - Update the task's status to `completed` in TASKS.yaml
+
+             **If the task is blocked by an external issue:**
+             - Update the task's status to `blocked` in TASKS.yaml
+             - Add an entry to ISSUES.yaml:
+               ```yaml
+               - name: "descriptive-issue-name"
+                 description: "Clear description of the blocking issue and what would resolve it"
+                 discovered_during: "task-name"
+                 status: open
+               ```
+             - If the blocker is infrastructure-related (not project-specific), also file on keystone via `/deepwork agent_builder.issue`
+
+             **If the task fails for a non-external reason:**
+             - Retry once with a different approach if possible
+             - If still failing, mark as `blocked` and document the issue
+
+          ### Important guidelines
+
+          - **Single task only.** This session handles one task. Do not process other pending tasks.
+          - **Keep TASKS.yaml consistent.** Follow the schema in `steps/shared/tasks_schema.md`. Only valid statuses: `pending`, `in_progress`, `completed`, `blocked`. Do NOT rename fields, add new fields, or restructure the file.
+          - **Never mark completed without evidence.** If you cannot describe what you did and what changed in the system, the task is not complete. Go back and do the work.
+          - **Issues are for external blockers only.** A coding bug in your own work is not an issue — fix it. An issue is something like "package X is not installed" or "cannot reach service Y".
+          - **Infrastructure issues go to keystone.** When you encounter a non-project infrastructure problem (auth expired, NixOS config error, missing dev shell, service permission denied, etc.), file it on the admin's repo using `/deepwork agent_builder.issue` with a description of the problem. This creates a tracked GitHub issue on ncrmro/keystone assigned to the admin. Do NOT silently swallow infrastructure issues or only document them locally in ISSUES.yaml — the admin needs visibility.
+          - **Preserve existing entries.** Do not remove or reorder other tasks. Only update the status of the task you're working on.
+          - **Validate after writing.** After modifying TASKS.yaml, run `yq e '.' TASKS.yaml` to confirm valid YAML.
+          - **Nix-managed configs are immutable.** This system uses NixOS and home-manager. Config files in `/nix/store/` or symlinked from it cannot be edited directly. If a task requires config changes to Nix-managed files, mark it as blocked, document in ISSUES.yaml, and file on keystone via `/deepwork agent_builder.issue`.
+
+          ## Output Format
+
+          ### TASKS.yaml
+
+          The updated task file with this task's status changed.
+
+          **Structure**:
+
+          ```yaml
+          tasks:
+            - name: "previous-task"
+              description: "A previously completed task"
+              status: completed
+            - name: "this-task"
+              description: "The task that was just executed"
+              status: completed # or blocked
+              project: "agent-space"
+              source: "github-issue"
+              source_ref: "https://github.com/ncrmro/agent-space/issues/5"
+          ```
+
+          ### ISSUES.yaml
+
+          Updated only if the task was blocked.
+
+          ```yaml
+          issues:
+            - name: "descriptive-issue-name"
+              description: "Cannot send email — himalaya SMTP config uses wrong outgoing folder name"
+              discovered_during: "send-weekly-report"
+              status: open
+          ```
+
+          If no issues:
+
+          ```yaml
+          issues: []
+          ```
+
+          ## Quality Criteria
+
+          - The specified task's status has been changed from pending/in_progress to completed or blocked
+          - If blocked, a corresponding entry exists in ISSUES.yaml with a clear description
+          - No other tasks were modified or removed
+          - TASKS.yaml and ISSUES.yaml are valid YAML
+
+          ## Context
+
+          This is the core execution step. Each task runs in its own isolated Claude Code session. The model is pre-assigned by the prioritize step (stored in the task's `model` field in TASKS.yaml). Task logs are saved to per-task log files by the orchestrator. The report step follows to document what happened.
+        inputs:
+          task_name: { required: true }
+          task_description: { required: true }
+        outputs:
+          tasks_yaml: { required: true }
+          issues_yaml: { required: false }
+
+      - name: report
+        instructions: |
+          # Report Results
+
+          ## Objective
+
+          Write a brief execution report documenting what happened with the task: what was done, the outcome, and any issues encountered.
+
+          ## Task
+
+          Read the updated TASKS.yaml and ISSUES.yaml from the execute step and produce a concise report for this single task. This report serves as a log entry for the task execution and MUST be formatted as valid JSON to allow downstream parsing.
+
+          ### Process
+
+          1. **Read the updated files**
+             - Read TASKS.yaml from the working directory
+             - Read ISSUES.yaml from the working directory
+             - Identify the task that was just processed (it should be the one with status `completed` or `blocked` that was most recently changed)
+
+          2. **Write the report**
+             - Provide the requested JSON object detailing what was attempted, the outcome, and any related artifacts created.
+             - Do NOT wrap the JSON in markdown code blocks, do not add introductory text. Only return the valid JSON string.
+
+          ## Output Format
+
+          ### task_report.json
+
+          A JSON object matching the following schema.
+
+          **Structure**:
+
+          ```json
+          {
+            "task_name": "string (the name of the task)",
+            "status": "completed | blocked",
+            "message": "string (Detailed description of what was done or what went wrong)",
+            "issues_or_blockers": [
+              "string (Descriptions of issues encountered or IDs from ISSUES.yaml)"
+            ],
+            "pull_requests_created": [
+              "string (URLs or branch names of PRs created during this task)"
+            ],
+            "issues_created": ["string (URLs or titles of any new issues opened)"]
+          }
+          ```
+
+          **Concrete example (completed)**:
+
+          ```json
+          {
+            "task_name": "reply-to-nicholas-timeline",
+            "status": "completed",
+            "message": "Read the original email via himalaya. Composed a reply with the updated timeline and sent it to nicholas.romero@ncrmro.com.",
+            "issues_or_blockers": [],
+            "pull_requests_created": [],
+            "issues_created": []
+          }
+          ```
+
+          **Concrete example (blocked)**:
+
+          ```json
+          {
+            "task_name": "deploy-grafana-dashboards",
+            "status": "blocked",
+            "message": "Attempted to authenticate to Grafana API at grafana.ncrmro.com but no credentials or API key were found in environment variables or config files.",
+            "issues_or_blockers": [
+              "grafana-credentials-missing: No API key found for Grafana. Needs to be provisioned."
+            ],
+            "pull_requests_created": [],
+            "issues_created": []
+          }
+          ```
+
+          ## Quality Criteria
+
+          - The output MUST be strictly valid, parsable JSON without markdown wrapping (no ` ```json ` tags).
+          - The report correctly states whether the task was completed or blocked.
+          - If blocked, the report includes enough detail for a human to understand and resolve the blocker.
+          - The `message` property accurately reflects what was done during execution.
+          - Any references to ISSUES.yaml entries are properly included in the `issues_or_blockers` array.
+
+          ## Context
+
+          This is the final step in a single-task run. The JSON report provides a machine-parsable record of what happened, allowing dashboards and orchestrators to index blockers, PRs, and completion states natively.
+        inputs:
+          tasks_yaml: { required: true }
+          issues_yaml: { required: false }
+        outputs:
+          task_report_json: { required: true }
+
+      - name: write_note
+        instructions: |
+          # Write Note
+
+          ## Objective
+
+          Record the completed task as a report note in the configured notes dir (`$NOTES_DIR`,
+          which resolves to `~/notes` for human users on Keystone systems) so the agent's work
+          is permanently visible in the knowledge base and synced to the remote notes repo.
+
+          ## Task
+
+          ### 1. Check whether a notes repo is available
+
+          ```bash
+          NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+          if [ -d "$NOTES_DIR/.zk" ]; then
+            echo "notes repo found"
+          else
+            echo "no notes repo — skipping"
+          fi
+          ```
+
+          If `$NOTES_DIR/.zk` does not exist, write `note_status.md` with the single line
+          `Skipped: configured notes dir is not a zk notebook.` and stop — do not treat this as an error.
+
+          ### 2. Read the task report
+
+          Read `task_report.json` from the previous step. Extract:
+          - `task_name`
+          - `status` (completed or blocked)
+          - `message`
+          - `issues_or_blockers` (array)
+          - `pull_requests_created` (array)
+          - `issues_created` (array)
+
+          Also read the task's `project` field from TASKS.yaml (match by `task_name`).
+
+          ### 3. Determine report metadata
+
+          - **report_kind**: `task-execution`
+          - **title**: `Task: <task_name>` (e.g., `Task: reply-to-nicholas-timeline`)
+          - **tags**: always include `source/agent`, `source/deepwork`, `report/task-execution`.
+            If a project slug is known, also add `project/<slug>`.
+          - **author**: use the current user (`$USER` or the value from SOUL.md if present)
+
+          ### 4. Search for a prior report of the same task
+
+          ```bash
+          NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+          zk list --notebook-dir "$NOTES_DIR" docs/reports/ \
+            --match "task-execution $task_name" --format json | head -5
+          ```
+
+          If a prior note is found, record its `id` as `previous_report`.
+
+          ### 5. Create the note
+
+          ```bash
+          NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+          note_path=$(zk new --notebook-dir "$NOTES_DIR" docs/reports/ \
+            --title "Task: <task_name>" --no-input --print-path)
+          ```
+
+          Write the note body to the path returned:
+
+          ```markdown
+          ---
+          id: "<YYYYMMDDHHmm>"
+          title: "Task: <task_name>"
+          type: report
+          created: <ISO-8601 timestamp>
+          author: <author>
+          tags: [source/agent, source/deepwork, report/task-execution, project/<slug>]
+          report_kind: task-execution
+          source_ref: <task_name>
+          previous_report: "<prior note ID>"   # omit this line entirely if no prior report
+          ---
+
+          ## Outcome
+
+          **Status**: <completed | blocked>
+
+          <message from task_report.json>
+
+          ## Artifacts
+
+          - Pull requests: <list URLs, or "none">
+          - Issues created: <list URLs, or "none">
+          - Blockers: <list, or "none">
+          ```
+
+          Omit the `previous_report` frontmatter line entirely if no prior report was found.
+          Omit empty artifact entries (e.g., if `pull_requests_created` is empty, write "none").
+
+          ### 6. Commit the note
+
+          ```bash
+          NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+          cd "$NOTES_DIR"
+          git add docs/reports/
+          git commit -m "chore(notes): task-execution report for <task_name>"
+          ```
+
+          Do not push — the systemd `repo-sync` timer handles that automatically.
+
+          ### 7. Rebuild the zk index
+
+          ```bash
+          NOTES_DIR="${NOTES_DIR:-$HOME/notes}"
+          zk index --notebook-dir "$NOTES_DIR"
+          ```
+
+          ## Output Format
+
+          Write `note_status.md`:
+
+          ```markdown
+          # Note Status
+
+          - Path: <notes-dir>/docs/reports/<id> task-<slug>.md
+          - Note ID: <id>
+          - Committed: yes
+          - Skipped: no
+          ```
+
+          Or if skipped:
+
+          ```markdown
+          # Note Status
+
+          - Skipped: configured notes dir is not a zk notebook.
+          ```
+        inputs:
+          task_report_json: { required: true }
+        outputs:
+          note_status: { required: true }

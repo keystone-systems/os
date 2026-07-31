@@ -1,0 +1,15 @@
+// dev layout — 4 tabs for software development workflows
+layout {
+    tab name="code" focus=true {
+        pane
+    }
+    tab name="build" {
+        pane
+    }
+    tab name="agent" {
+        pane
+    }
+    tab name="shell" {
+        pane
+    }
+}

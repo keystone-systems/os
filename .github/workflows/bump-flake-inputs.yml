@@ -1,0 +1,85 @@
+name: Bump flake inputs
+
+# Sundays 08:00 UTC: refresh llm-agents (claude-code et al), browser-previews
+# (google-chrome), and nixpkgs (chromium + fleet-wide). Opens a PR with the
+# lock diff; closes last week's PR if still open. Manual merge.
+#
+# Uses secrets.GH_FINEGRANED_CI_TOKEN (a fine-grained PAT scoped to this repo)
+# rather than the default GITHUB_TOKEN. Two reasons:
+#   1. GITHUB_TOKEN cannot create pull requests unless the org/repo enables
+#      "Allow GitHub Actions to create and approve pull requests" — a setting
+#      that varies between repos. A PAT makes this workflow portable.
+#   2. PRs opened by GITHUB_TOKEN do not trigger `pull_request` workflows
+#      (validate.yml). A PAT-opened PR triggers them normally.
+#
+# Token shape (set at https://github.com/settings/personal-access-tokens):
+#   - Repository access:  only `ncrmro/keystone`
+#   - Contents:           Read and write   (for git push)
+#   - Pull requests:      Read and write   (gh pr create/list/close)
+#   - Issues:             Read and write   (gh label create — labels live
+#                                            under the Issues API)
+#   - Expiration:         max 366d — rotate annually
+
+on:
+  schedule:
+    - cron: "0 8 * * 0"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Hard-gate to main. The job mutates main's flake.lock and opens a PR
+    # against main — running from another ref is never the intent and would
+    # also fail silently to read GH_FINEGRANED_CI_TOKEN unless that ref is
+    # in the release env's deployment policy. Better to skip with a clear
+    # log line than fail mid-run with empty-token errors.
+    if: github.ref == 'refs/heads/main'
+    # `release` env scopes GH_FINEGRANED_CI_TOKEN to workflows whose ref is
+    # allowed by the env's deployment policy. Combined with the `if:` above,
+    # only scheduled runs and manual dispatches from main can read the PAT —
+    # a PR-authored workflow file can't exfil it.
+    environment: release
+    env:
+      GH_TOKEN: ${{ secrets.GH_FINEGRANED_CI_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GH_FINEGRANED_CI_TOKEN }}
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: experimental-features = nix-command flakes
+
+      - name: Bump and open PR
+        run: |
+          set -euo pipefail
+          # Targeted updates per tool.nix rule 4 — never bare `nix flake update`.
+          nix flake update llm-agents browser-previews nixpkgs
+          git diff --quiet flake.lock && { echo "No lock changes."; exit 0; }
+
+          WEEK="$(date -u +%G-W%V)"
+          BR="automated/flake-bump-${WEEK}-${{ github.run_id }}"
+
+          gh label create automated/flake-bump --color FBCA04 \
+            --description "Weekly automated flake.lock bump" 2>/dev/null || true
+
+          for pr in $(gh pr list --label automated/flake-bump --state open --json number --jq '.[].number'); do
+            gh pr close "$pr" --comment "Superseded by this week's bump." --delete-branch || true
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "${BR}"
+          git commit -am "chore(deps): weekly flake bump (${WEEK})"
+          git push origin "${BR}"
+
+          gh pr create --base main --head "${BR}" \
+            --label automated/flake-bump --label chore \
+            --title "chore(deps): weekly flake bump (${WEEK})" \
+            --body "Automated weekly refresh of \`llm-agents\` (claude-code et al), \`browser-previews\` (google-chrome), and \`nixpkgs\` (chromium + fleet-wide). Downstream flakes pick this up via \`nix flake update keystone\` after merge."

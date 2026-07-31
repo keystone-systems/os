@@ -1,0 +1,6 @@
+# Only track .claude/CLAUDE.md as the canonical fixture.
+# Everything else is generated at runtime and excluded.
+*
+!.gitignore
+!.claude/
+!.claude/CLAUDE.md

@@ -1,0 +1,232 @@
+name: daily_status
+summary: "Compile and send a daily status digest email to the human operator"
+
+step_arguments:
+  - name: status_draft
+    description: "Draft email body in plain text, ready to send"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read TASKS.yaml, PROJECTS.yaml, and ISSUES.yaml to verify the draft accurately reflects current state.
+
+        Quality criteria:
+        - Accurate Priorities: Pending and blocked tasks listed match what is in TASKS.yaml, ordered by project priority. Blocked tasks are annotated with their blocker.
+        - PRs Included: Open PRs authored by the agent are listed, or the draft explicitly states there are none.
+        - Blockers Surfaced: Open issues from ISSUES.yaml are mentioned, or the draft states there are none.
+        - Concise and Scannable: The email is concise, uses short sections with headers, and can be scanned in under 30 seconds.
+        - ASCII Only: The draft contains only plain ASCII characters - no em dashes, curly quotes, or other non-ASCII. Use - instead of em dash, ' instead of curly quote.
+
+  - name: send_confirmation
+    description: "Confirmation that the email was sent, including any errors"
+    type: file_path
+
+workflows:
+  send:
+    summary: "Gather status data, compose digest, and send email to the human operator"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job produces a daily status email sent from the agent to its human operator
+      each morning. Read SOUL.md for the agent's identity (name, email) and HUMAN.md for the recipient.
+
+      The email summarizes:
+      - Current priorities (pending tasks from TASKS.yaml, ordered by project priority)
+      - Open PRs created by the agent across all project repos (via gh CLI)
+      - Recently completed tasks
+      - Open blockers/issues from ISSUES.yaml
+
+      Priorities include both pending AND blocked tasks (blocked tasks are still active work).
+
+      Data sources:
+      - TASKS.yaml: task list with status (pending, in_progress, completed, blocked)
+      - PROJECTS.yaml: project definitions with priority ordering and repo list
+      - ISSUES.yaml: open blockers discovered during task execution
+      - GitHub CLI (gh): PRs on GitHub repos
+      - Forgejo CLI (fj): PRs on git.ncrmro.com repos
+      If a CLI tool is not authenticated, skip that source gracefully and note it in the output.
+
+      Email convention (CRITICAL -- read CLAUDE.md before sending):
+      Emails MUST be sent via: printf "From: ...\r\nTo: ...\r\n\r\nBody" | himalaya message send
+      Never use himalaya message write, reply, or template send -- they hang without a TTY.
+      Use PLAIN ASCII ONLY in subject and body -- no em dashes, curly quotes, or other non-ASCII.
+      Non-ASCII causes MIME type to default to application/octet-stream, breaking email display.
+    steps:
+      - name: gather_status
+        instructions: |
+          # Gather Status Data
+
+          ## Objective
+
+          Read all data sources (TASKS.yaml, PROJECTS.yaml, ISSUES.yaml, PRs from GitHub/Forgejo) and compose a concise daily status digest as a plain-text email body.
+
+          ## Task
+
+          Collect the agent's current operational state from local YAML files and git forges, then format it as a scannable email body ready to send to the human operator (see HUMAN.md).
+
+          ### Process
+
+          1. **Read local data files**
+             - Read TASKS.yaml from the repo root
+             - Read PROJECTS.yaml from the repo root
+             - Read ISSUES.yaml from the repo root (if it exists)
+
+          2. **Query for open PRs**
+             - For each repo listed under projects in PROJECTS.yaml, determine the host:
+               - GitHub repos: `gh pr list --repo {owner/repo} --author @me --state open --json number,title,url,createdAt,isDraft`
+               - Forgejo repos (git.ncrmro.com): `fj pr list --repo {owner/repo} --state open`
+             - If a CLI tool is not authenticated or not available, skip that source and note "Unable to query - [tool] not authenticated" in the output
+             - Collect all open PRs across all project repos
+
+          3. **Compose the status digest**
+
+             Organize the email body into these sections:
+
+             **Priorities** - List all pending AND blocked tasks from TASKS.yaml, ordered by project priority (project order in PROJECTS.yaml). Include the task name and description. For blocked tasks, append `[BLOCKED - reason]` from ISSUES.yaml. If no pending or blocked tasks, say "No active priorities."
+
+             **Open PRs** - List each open PR with repo, number, title, and URL. Flag any that are drafts. If no open PRs or unable to query, state why.
+
+             **Recently Completed** - List tasks with status `completed`, limited to the most recent 5. Include name and description. If the task has an `artifact` field, include it as a link. If none, say "No recently completed tasks."
+
+             **Blockers** - List any open issues from ISSUES.yaml with name and description. If none or ISSUES.yaml doesn't exist, say "No open blockers."
+
+          4. **Write the draft to status_draft.md**
+
+          ## Output Format
+
+          ### status_draft.md
+
+          Plain-text email body. No HTML, no markdown formatting - just clean text with simple section headers that reads well in any email client.
+
+          **Structure**:
+
+          ```
+          Daily Status - [YYYY-MM-DD]
+
+          PRIORITIES
+          - [task-name]: [description]
+          - [task-name]: [description] [BLOCKED - reason]
+
+          OPEN PRS
+          - [owner/repo] #[number]: [title]
+            [url]
+
+          RECENTLY COMPLETED
+          - [task-name]: [description]
+            [artifact link if available]
+
+          BLOCKERS
+          - [issue-name]: [description]
+
+          --
+          {agent name} (automated daily status)  <-- read SOUL.md for agent name
+          ```
+
+          **Concrete example**:
+
+          ```
+          Daily Status - 2026-02-20
+
+          PRIORITIES
+          - fix-login-redirect: Fix the login redirect bug reported in issue #42
+          - daily-priorities-2026-02-19: Summarize daily priorities [BLOCKED - missing digest_notes DeepWork job]
+
+          OPEN PRS
+          - ncrmro/agent-space #3: Add recurring scheduled tasks
+            https://github.com/ncrmro/agent-space/pull/3
+
+          RECENTLY COMPLETED
+          - reply-pong-to-ping-13: Reply with 'pong' to a ping email
+          - setup-scheduler: Create agent-scheduler timer
+
+          BLOCKERS
+          - missing-digest-notes-job: The digest_notes DeepWork job does not exist but is referenced by SCHEDULES.yaml
+
+          --
+          {agent name} (automated daily status)  <-- read SOUL.md for agent name
+          ```
+
+          ## Quality Criteria
+
+          - Pending and blocked tasks match TASKS.yaml, ordered by project priority; blocked tasks annotated with reason
+          - Open PRs are listed, or the draft explains why they couldn't be queried
+          - Open issues from ISSUES.yaml are mentioned, or the draft states there are none
+          - The email is concise, uses short sections, and can be scanned in under 30 seconds
+          - No markdown formatting - plain text only
+          - ASCII characters only - no em dashes, curly quotes, or other non-ASCII characters
+
+          ## Context
+
+          This is step 1 of the daily status email workflow. The draft produced here is sent by the next step (send_email) to the human operator (see HUMAN.md). The email gives the human a quick morning overview of what the agent is working on, what's blocked, and what PRs need attention.
+        inputs: {}
+        outputs:
+          status_draft:
+            required: true
+
+      - name: send_email
+        instructions: |
+          # Send Status Email
+
+          ## Objective
+
+          Send the composed status digest email to the human operator using himalaya.
+
+          ## Task
+
+          Read the draft email body from status_draft.md (produced by the gather_status step) and send it to the human operator.
+
+          ### Process
+
+          1. **Read the draft**
+             - Read status_draft.md from the gather_status step
+
+          2. **Send the email**
+             - Read SOUL.md for the agent's name and email (From address)
+             - Read HUMAN.md for the recipient's email (To address)
+             - Follow the himalaya email convention from the common job info
+             - Subject line: `Daily Status - YYYY-MM-DD` (today's date)
+             - Body: contents of status_draft.md
+
+          3. **Write confirmation**
+             - Record whether the send succeeded or failed in send_confirmation.md
+             - If it failed, include the error output
+
+          ## Output Format
+
+          ### send_confirmation.md
+
+          **Structure (success)**:
+
+          ```markdown
+          # Send Confirmation
+
+          **Status**: Sent
+          **To**: [recipient from HUMAN.md]
+          **Subject**: Daily Status - [YYYY-MM-DD]
+          **Sent at**: [timestamp]
+          ```
+
+          **Structure (failure)**:
+
+          ```markdown
+          # Send Confirmation
+
+          **Status**: Failed
+          **To**: [recipient from HUMAN.md]
+          **Subject**: Daily Status - [YYYY-MM-DD]
+          **Error**: [error message from himalaya]
+          ```
+
+          ## Quality Criteria
+
+          - Email was sent using the himalaya pipe-stdin convention
+          - Confirmation file accurately reflects the send outcome
+          - Subject line includes today's date
+
+          ## Context
+
+          This is the final step. The email has already been composed and reviewed for accuracy in gather_status. This step handles delivery only.
+        inputs:
+          status_draft:
+            required: true
+        outputs:
+          send_confirmation:
+            required: true

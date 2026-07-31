@@ -1,0 +1,58 @@
+layout {
+    tab {
+        floating_panes {
+            zide_rename
+        }
+        pane split_direction="vertical" {
+            filepicker size=40 name="picker"
+            editor
+        }
+        compact_bar size=1
+    }
+
+    swap_tiled_layout name="compact" {
+        tab exact_panes=4 {
+            pane split_direction="vertical" {
+                filepicker size=40 name="picker"
+                pane split_direction="horizontal" {
+                    editor size="75%"
+                    pane
+                }
+            }
+            compact_bar size=1
+        }
+    }
+
+    swap_tiled_layout name="wide" {
+        tab exact_panes=4 {
+            pane split_direction="vertical" {
+                filepicker size=40 name="picker"
+                editor
+                pane split_direction="horizontal" size=80 {
+                    pane
+                }
+            }
+            compact_bar size=1
+        }
+    }
+
+    pane_template name="compact_bar" {
+        borderless true
+        plugin location="compact-bar"
+    }
+
+    pane_template name="filepicker" {
+        command "zide-pick"
+    }
+
+    pane_template name="editor" {
+        command "$EDITOR"
+    }
+
+    pane_template name="zide_rename" command="zide-rename" close_on_exit=true
+
+    new_tab_template {
+        pane
+        compact_bar size=1
+    }
+}

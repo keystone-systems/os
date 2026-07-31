@@ -1,0 +1,24 @@
+---
+source: tests/render.rs
+expression: output
+---
+                                   my-infra                                     
+────────────────────────────────────────────────────────────────────────────────
+ Hosts       │                          No hosts found                          
+ Services    │                                                                  
+ Secrets     │                         Press 'a' to add                         
+ Security    │                                                                  
+ Installer   │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+             │                                                                  
+                      1-5: sections • a: add host • q: quit

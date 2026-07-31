@@ -1,0 +1,159 @@
+name: risk_management
+summary: "Audit project risk posture, detect missing business functions, and produce a stakeholder reprioritization brief"
+
+step_arguments:
+  - name: project_hint
+    description: "Optional project name, slug, repo path, or URL. Leave blank to infer the project from the current repository and linked notes hubs."
+    type: string
+
+  - name: project_context
+    description: "Grounded project snapshot covering repo state, notes hub evidence, current priorities, active channels, KPIs, customer signals, and missing context"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify:
+        - Project Identified: The output clearly identifies the project under review, including the evidence used to resolve ambiguity.
+        - Repo And Notes Grounding: The snapshot uses both repository evidence and project-hub evidence from ~/notes when available. Missing sources are called out explicitly.
+        - Cross-Functional Coverage: The snapshot covers engineering, product, marketing, social/media presence, distribution/growth, KPI/measurement, and customer/onboarding state.
+        - Evidence Over Guessing: Claims are tied to concrete artifacts such as files, issues, commits, notes, websites, or explicitly marked as unknown.
+
+  - name: risk_register
+    description: "Structured assessment of project risks, imbalances, and neglected functions, with severity, confidence, and supporting evidence"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read project_context first. Verify:
+        - Material Risks Identified: The assessment captures the most important execution and business risks rather than generic advice.
+        - Functional Imbalance Checked: The output explicitly checks for over-indexing on engineering and under-investment in marketing, growth, KPI definition, customer onboarding, and stakeholder communication.
+        - Priorities Corrected: Each major risk includes a statement about whether current project priorities are misaligned.
+        - Severity Defensible: Severity and urgency are justified with evidence from the project context.
+        - Unknowns Separated: Unknown or weakly-supported concerns are marked as assumptions or evidence gaps rather than asserted as facts.
+
+  - name: stakeholder_brief
+    description: "Stakeholder-facing brief with reprioritized next actions, sequencing, tradeoffs, and recommended follow-up work"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Read risk_register first. Verify:
+        - Audience Fit: The brief is written for project stakeholders, not just engineers.
+        - Clear Reprioritization: Recommendations change priorities in response to the risks rather than merely restating them.
+        - Actionable Sequencing: Next actions are ordered, time-bounded where possible, and separated into immediate, near-term, and later work.
+        - Business Coverage: The plan includes non-engineering actions where needed, such as KPI definition, positioning work, social/media presence, customer interviews, onboarding, or growth validation.
+        - Diagnosis Only: The brief recommends work but does not assume the workflow executed follow-up tasks or mutated project state.
+
+workflows:
+  risk_management:
+    summary: "Discover project context, assess cross-functional risk, and publish a stakeholder reprioritization brief"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This workflow audits whether a project is pursuing the right priorities for its current stage.
+
+      It is specifically designed to catch a common failure mode: the team keeps shipping engineering work while neglecting the rest of the business system. That includes weak or absent positioning, little social or press presence, no growth motion, undefined KPIs, poor customer onboarding, weak customer evidence, or a lack of stakeholder-visible progress.
+
+      The workflow is diagnosis-first. It MUST inspect current evidence, identify risk concentration and neglected functions, and produce a clear recommendation for what should be prioritized next. It MUST NOT automatically create tasks, mutate milestones, or rewrite project artifacts as part of the assessment.
+
+      The workflow should infer the project from the current repository when possible. If the project is ambiguous, it should use the optional project_hint plus any discoverable project metadata. It should look for corroborating context in ~/notes project hubs when available, using those notes as durable context rather than the sole source of truth.
+
+      Evaluate the project across these dimensions:
+      - Product clarity and target customer
+      - Engineering execution and delivery momentum
+      - Marketing, messaging, and press/readiness
+      - Social/media presence and audience-building
+      - Distribution, growth, and adoption loops
+      - KPI definition and measurement discipline
+      - Customer discovery, onboarding, retention, and operational risk
+      - Evidence gaps, hidden assumptions, and stakeholder visibility
+
+      Prefer concrete evidence over generic startup advice. The final output should help stakeholders decide what to stop over-investing in, what to start investing in, and what information is still missing before committing further effort.
+    steps:
+      - name: discover_project_context
+        instructions: |
+          Identify the project being reviewed.
+
+          Start by using the current working directory as the default project context. If project_hint is provided, use it to resolve ambiguity or locate the matching project. Gather evidence from:
+          - the current repository and nearby project files
+          - issue, milestone, or PR history when available
+          - README, docs, changelogs, landing pages, and release material
+          - project hubs and related notes under ~/notes when available
+
+          Produce a grounded snapshot of the project's current state. Cover:
+          - what the project is, who it is for, and what promise it makes
+          - recent activity and what functions appear to receive most effort
+          - signs of customer discovery, onboarding, support, or retention work
+          - signs of KPI definition and measurement discipline
+          - signs of marketing, social/media presence, launch narrative, or growth work
+          - important unknowns or missing evidence
+
+          Save the output to `risk_management/[resolved_project_slug]/project_context.md`, where `[resolved_project_slug]` is the canonical slug or short identifier you resolved for the project.
+        inputs:
+          project_hint:
+            required: false
+        outputs:
+          project_context:
+            required: true
+        process_requirements:
+          "Grounded discovery": "The step MUST inspect real project artifacts before making claims about priorities or risk."
+          "Notes corroboration": "The step SHOULD inspect ~/notes project hubs when the project can be mapped to a notes hub."
+
+      - name: assess_risk_balance
+        instructions: |
+          Read project_context and assess whether the project's priorities are balanced for its stage and goals.
+
+          Build a risk register that identifies:
+          - the top execution, market, customer, and measurement risks
+          - where the project is over-indexing or under-indexing effort
+          - what evidence supports each risk
+          - what assumptions remain unvalidated
+          - which neglected functions are likely to become bottlenecks
+
+          The assessment must explicitly test for this pattern: strong engineering activity combined with weak marketing, weak social/media presence, weak press or launch narrative, missing growth work, no KPI framework, or weak customer onboarding and feedback loops.
+
+          For each risk, include:
+          - category
+          - severity
+          - urgency
+          - confidence
+          - evidence
+          - why the current priority mix is or is not incorrect
+
+          Save the output to `risk_management/[resolved_project_slug]/risk_register.md`, using the same resolved slug chosen in the previous step.
+        inputs:
+          project_context:
+            required: true
+        outputs:
+          risk_register:
+            required: true
+        process_requirements:
+          "Risk specificity": "The step MUST produce project-specific risks, not generic template advice."
+          "Balanced evaluation": "The step MUST evaluate both engineering and non-engineering functions before recommending reprioritization."
+
+      - name: write_stakeholder_brief
+        instructions: |
+          Read risk_register and write a stakeholder-facing brief that reprioritizes the next phase of work.
+
+          The brief should:
+          - summarize the current imbalance in plain language
+          - name the highest-risk neglected functions
+          - recommend what stakeholders should prioritize immediately, next, and later
+          - call out work that should slow down or pause if it is crowding out higher-risk gaps
+          - describe what evidence should be gathered next to reduce uncertainty
+          - separate recommendations for product/engineering, marketing/growth, and customer/operations when relevant
+
+          Keep the tone direct and decision-oriented. This is a diagnosis and reprioritization artifact, not a project plan implementation step. Do not create follow-up tasks in this workflow; instead, recommend what work should happen after the workflow.
+
+          Save the output to `risk_management/[resolved_project_slug]/stakeholder_brief.md`, using the same resolved slug chosen in the earlier steps.
+        inputs:
+          risk_register:
+            required: true
+        outputs:
+          stakeholder_brief:
+            required: true
+        process_requirements:
+          "Decision usefulness": "The brief MUST give stakeholders a concrete basis for changing priorities."
+          "No hidden execution": "The brief MUST NOT imply that the workflow already completed follow-up work."
+    post_workflow_instructions: |
+      The workflow is complete when `risk_management/[resolved_project_slug]/stakeholder_brief.md` gives stakeholders a clear reprioritization recommendation grounded in repo and notes evidence.
+
+      If the user wants follow-through after this workflow, a separate workflow should execute the recommended work, such as KPI setup, project success review, milestone planning, press release creation, marketing setup, or engineering implementation.

@@ -1,0 +1,42 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+      - duplicate
+      - invalid
+      - question
+
+  categories:
+    - title: Breaking changes
+      labels:
+        - breaking
+        - breaking-change
+
+    - title: Features
+      labels:
+        - feat
+        - feature
+        - enhancement
+
+    - title: Fixes
+      labels:
+        - fix
+        - bug
+        - bugfix
+
+    - title: Infrastructure and platform
+      labels:
+        - ci
+        - infra
+        - platform
+        - nix
+
+    - title: Documentation
+      labels:
+        - docs
+
+    - title: Maintenance
+      labels:
+        - chore
+        - refactor
+        - dependencies

@@ -1,0 +1,9 @@
+// write layout — 2 tabs for writing and documentation
+layout {
+    tab name="editor" focus=true {
+        pane
+    }
+    tab name="preview" {
+        pane
+    }
+}

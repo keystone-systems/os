@@ -1,0 +1,17 @@
+---
+source: tests/render.rs
+expression: output
+---
+                Building: test-host (success)               
+                                                            
+────────────────────────────────────────────────────────────
+┌──────────────────────────────────────────────────────────┐
+│$ nixos-rebuild build --flake .#test-host                 │
+│                                                          │
+│building '/nix/store/...'                                 │
+│                                                          │
+│                                                          │
+│                                                          │
+│                                                          │
+└──────────────────────────────────────────────────────────┘
+                     Esc: back • q: quit

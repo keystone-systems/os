@@ -1,0 +1,8 @@
+{
+  "task_name": "document-tools-in-agent-environment",
+  "status": "completed",
+  "message": "Read Forgejo issue #13 (authored by Luce) which requested an ops.toolchain.md convention listing general-purpose tools in the agent Nix environment. Surveyed the environment to identify available tools (jq, yq, rg, fd, sd, bat, eza, pandoc, glow, make, nix, nixfmt, fzf, etc.) and confirmed absent POSIX tools (curl, sed, awk, grep, find, cat). Created conventions/ops.toolchain.md with 24 RFC 2119-numbered rules covering data processing, file viewing, networking, document conversion, build/automation, and disk/process inspection. Updated archetypes.yaml to add ops.toolchain to referenced_conventions for both engineer and product archetypes. Committed in two separate commits and pushed branch feat/ops-toolchain to origin. Opened PR #29 at https://git.ncrmro.com/ncrmro/agents/pulls/29.",
+  "issues_or_blockers": [],
+  "pull_requests_created": ["https://git.ncrmro.com/ncrmro/agents/pulls/29"],
+  "issues_created": []
+}

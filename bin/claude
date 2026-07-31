@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+
+"""
+Claude Code wrapper with Worktree support.
+
+Usage:
+  ./bin/claude [claude args...]                        # Run in current directory
+  ./bin/claude -wt specs/my-feature [claude args...]   # Run in worktree
+
+Worktree Flags:
+  -wt, --worktree  Enable worktree isolation mode. Takes optional path (e.g., specs/my-feature).
+                   Automatically runs 'make up' and 'make db_restore' in the worktree.
+  --noup           Skip running 'make up' and 'make db_restore' in worktree
+
+Environment Variables:
+  PLAYWRIGHT_EXECUTABLE_PATH  Path to Playwright browser executable (primarily for NixOS users)
+                             Can be set in .env file or as system environment variable
+"""
+
+import sys
+import subprocess
+import os
+import json
+import shutil
+import re
+from pathlib import Path
+
+
+def load_env_file(env_path):
+    """Load environment variables from .env file"""
+    env_vars = {}
+    if env_path.exists():
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+                # Parse KEY=VALUE
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    # Remove quotes if present
+                    value = value.strip().strip('"').strip("'")
+                    env_vars[key.strip()] = value
+    return env_vars
+
+
+def sluggify(value):
+    """
+    Normalizes string, converts to lowercase, removes non-alpha characters,
+    and converts spaces to hyphens.
+    """
+    value = str(value)
+    # Replace slashes with hyphens
+    value = value.replace('/', '-')
+    # Keep alphanumeric and hyphens, remove others
+    value = re.sub(r'[^\w\-]', '', value)
+    # Convert to lowercase
+    value = value.lower()
+    return value
+
+
+def command_exists(command):
+    """Check if a command exists in PATH"""
+    return shutil.which(command) is not None
+
+
+def print_warning(message):
+    """Print warning message in yellow"""
+    print(f"\033[1;33mWarning: {message}\033[0m", file=sys.stderr)
+
+
+def print_info(message):
+    """Print info message in cyan"""
+    print(f"\033[1;36m{message}\033[0m")
+
+
+def print_success(message):
+    """Print success message in green"""
+    print(f"\033[1;32m{message}\033[0m")
+
+
+def build_worktree_prompt(worktree_path):
+    """Build system prompt for worktree isolation"""
+    prompt = f"""
+# Git Worktree Context
+
+You are working in a git worktree. Your scope is strictly limited to this directory:
+
+**Worktree Directory:** `{worktree_path}`
+
+**INITIAL ACTION:**
+You MUST immediately `cd {worktree_path}` and verify your location before performing any other actions.
+
+**IMPORTANT RESTRICTIONS:**
+- Do NOT read or modify files outside this directory
+- Do NOT access the main repository or other worktrees
+- All file operations must be within: `{worktree_path}`
+
+**Development Instructions:**
+- You can run tests without starting the full server.
+
+**WAIT FOR INSTRUCTIONS:**
+DO NOT start any development tasks or modifications yet. After verifying your directory and environment, simply acknowledge and wait for further instructions from the user.
+"""
+    return prompt
+
+
+def build_dev_config():
+    """Build dev MCP configuration with playwright"""
+    return {
+        "mcpServers": {
+            "playwright": {
+                "command": "npx",
+                "args": ["@playwright/mcp@latest", "--browser=chromium"],
+                "env": {}
+            }
+        }
+    }
+
+
+def build_dev_system_prompt(project_root, env_vars):
+    """Build system prompt for dev mode by reading AGENTS.md"""
+    agents_md_path = project_root / "AGENTS.md"
+
+    base_prompt = ""
+
+    # Read root AGENTS.md
+    if agents_md_path.exists():
+        with open(agents_md_path, 'r') as f:
+            base_prompt = f.read()
+    else:
+        print_warning(f"AGENTS.md not found at {agents_md_path}")
+
+    # Add instruction to read folder-specific AGENTS.md files
+    agents_md_instruction = """
+
+# AGENTS.md Files
+
+When working in any directory, ALWAYS check for and read the AGENTS.md file in that directory first. These files contain folder-specific conventions, patterns, and instructions that must be followed.
+"""
+    base_prompt += agents_md_instruction
+
+    return base_prompt
+
+
+def main():
+    # Get project root directory (parent of bin/)
+    script_path = Path(__file__).resolve()
+    project_root = script_path.parent.parent
+    script_dir = script_path.parent
+
+    # Load .env file if it exists
+    env_file = project_root / ".env"
+    env_vars = load_env_file(env_file)
+
+    # Parse flags
+    worktree_target = None
+    claude_args = []
+
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == "-wt" or arg == "--worktree":
+            # Check for optional argument
+            if i + 1 < len(sys.argv) and not sys.argv[i+1].startswith("-"):
+                 worktree_target = sys.argv[i+1]
+                 i += 1
+            else:
+                 worktree_target = "auto"
+        elif arg == "--dev" or arg == "--ops":
+             print_warning(f"Flag {arg} is deprecated and ignored. Running in default mode.")
+        else:
+            claude_args.append(arg)
+        i += 1
+
+    # Handle Worktree logic early
+    workspace_path = project_root
+    worktree_path = None
+    spec_content = ""
+    is_spec = False
+    spec_dir = None  # Track the actual spec directory for later use
+
+    if worktree_target:
+        if worktree_target == "auto":
+            worktree_path = detect_worktree(project_root)
+        else:
+            # Check if it's a spec
+            if worktree_target.startswith("specs/"):
+                is_spec = True
+                spec_path = project_root / worktree_target
+
+                # If exact path doesn't exist, try to find matching spec directory
+                if not spec_path.exists():
+                    # Extract the spec name part (e.g., "001-decision-app-confidence-level")
+                    spec_name = worktree_target.replace("specs/", "")
+                    specs_root = project_root / "specs"
+                    if specs_root.exists():
+                        # Find spec directories that the name starts with
+                        for entry in specs_root.iterdir():
+                            if entry.is_dir() and spec_name.startswith(entry.name):
+                                spec_path = entry
+                                break
+
+                if spec_path.exists():
+                    spec_dir = spec_path if spec_path.is_dir() else spec_path.parent
+                    target_file = spec_path
+
+                    if spec_path.is_dir():
+                        target_file = spec_path / "spec.md"
+
+                    if target_file.is_file():
+                        try:
+                            with open(target_file, 'r') as f:
+                                spec_content = f.read()
+                        except Exception as e:
+                            print_warning(f"Failed to read spec file: {e}")
+                    elif spec_path.is_dir():
+                         print_warning(f"Spec target is a directory and spec.md was not found inside.")
+
+            # Strip specs/ if present and normalize name
+            clean_name = worktree_target.replace("specs/", "")
+            slug = sluggify(clean_name)
+            expected_path = project_root / "worktrees" / slug
+
+            # Ensure worktree and .env exist (bin/worktree add handles both cases)
+            try:
+                subprocess.run(
+                    [str(script_dir / "worktree"), "add", clean_name],
+                    check=True
+                )
+            except subprocess.CalledProcessError:
+                print(f"Error: Failed to setup worktree for {clean_name}", file=sys.stderr)
+                sys.exit(1)
+
+            worktree_path = expected_path
+
+        if worktree_path:
+            workspace_path = worktree_path
+            print_info(f"  Worktree:        {worktree_path}")
+            print()
+        else:
+            if worktree_target == "auto":
+                 print_warning("Worktree flag specified (auto) but no worktree detected")
+            else:
+                 print_warning(f"Failed to resolve worktree for {worktree_target}")
+            print()
+
+    # Prepare Spec Instructions if applicable
+    spec_instructions = ""
+    if is_spec and worktree_path and spec_dir:
+        tree_output = generate_tree(spec_dir)
+
+        spec_instructions = f"""
+# Spec-Driven Development Context
+
+**Spec Directory:** `{spec_dir}`
+
+**Functional Requirements:**
+The following requirements are sourced from `{spec_dir}`. You MUST keep these up to date as you progress.
+
+{spec_content}
+
+**Structure of Spec Directory:**
+```
+{tree_output}
+```
+
+**Directives:**
+1. **Maintain the Spec:** Update `{spec_dir}` to reflect changes, decisions, and progress.
+2. **Documentation:** Save any relevant research or documentation to the `specs/` directory.
+3. **Task Tracking:** Keep the task list in the spec up to date.
+4. **Commits:** Commit your changes as soon as a task from the spec is completed.
+"""
+
+    # Dev mode: playwright MCP server
+    print()
+    print_info("=" * 60)
+    print_info("Claude Code - Project Environment")
+    print_info("=" * 60)
+    print()
+    print_info("  MCP Servers:")
+    print_info("    • playwright")
+    print()
+    print_info("=" * 60)
+    print()
+
+    # Build dev MCP config
+    mcp_config = build_dev_config()
+    mcp_config_json = json.dumps(mcp_config)
+
+    # Build dev system prompt from copilot instructions
+    dev_prompt = build_dev_system_prompt(project_root, env_vars)
+
+    # Add worktree prompt if active
+    if worktree_path:
+        worktree_prompt = build_worktree_prompt(worktree_path)
+        dev_prompt += worktree_prompt
+
+    if spec_instructions:
+        dev_prompt += spec_instructions
+
+    # Run claude with dev config
+    print_success("✓ Launching Claude Code with development configuration...")
+    print()
+
+    if dev_prompt:
+        cmd = ["claude", "--mcp-config", mcp_config_json, "--append-system-prompt", dev_prompt]
+    else:
+        cmd = ["claude", "--mcp-config", mcp_config_json]
+
+    cmd.extend(claude_args)
+
+    # TODO: This should only be sent if an existing session doesn't exist (e.g. check for --resume or session files)
+    if worktree_path:
+            initial_message = f"Please cd into `{worktree_path}`, confirm you are in the correct directory, and wait for further instructions."
+            if spec_instructions:
+                initial_message += f"\n\nWe are working in @{worktree_target}"
+            cmd.append(initial_message)
+
+    # Run the command
+    try:
+        # Run direnv allow if in a worktree and direnv is installed
+        if worktree_path and shutil.which("direnv"):
+            print_info(f"Running 'direnv allow' in {worktree_path}...")
+            subprocess.run(["direnv", "allow", str(worktree_path)], check=False, capture_output=True)
+
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+    except FileNotFoundError:
+        print("Error: 'claude' command not found.", file=sys.stderr)
+        print("Please install Claude Code CLI: https://code.claude.com/download", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

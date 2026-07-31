@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+#
+# Keystone ISO Builder
+#
+# NOTE: This script is part of the automated testing procedure.
+#       Any changes here should be reflected in docs/testing-procedure.md
+#
+# See: docs/testing-procedure.md for complete testing workflows
+
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Default values
+SSH_KEYS_INPUT=""
+NO_SSH_KEYS=false
+OUTPUT_DIR="result"
+SHOW_HELP=false
+CONFIG_DIR=""
+
+# Help function
+show_help() {
+    cat << EOF
+Keystone ISO Builder
+
+Usage: $0 [OPTIONS]
+
+OPTIONS:
+    -k, --ssh-key INPUT     SSH public key as file path or key string directly
+    -c, --config-dir DIR    Directory containing NixOS config to embed in ISO
+                            (must contain flake.nix, configuration.nix, hardware.nix)
+    --no-ssh-key            Build ISO without SSH keys (⚠️  creates inaccessible installer)
+    -o, --output DIR        Output directory (default: result)
+    -h, --help              Show this help message
+
+NOTE: Either --ssh-key or --no-ssh-key MUST be specified.
+
+EXAMPLES:
+    # Build ISO with SSH key from file
+    $0 --ssh-key ~/.ssh/id_ed25519.pub
+    $0 --ssh-key /home/user/.ssh/authorized_keys
+
+    # Build ISO with SSH key string directly
+    $0 --ssh-key "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG... user@host"
+
+    # Build pre-baked ISO with embedded NixOS config
+    $0 --ssh-key ~/.ssh/id_ed25519.pub --config-dir ./my-machine-config
+
+    # Build with custom output directory
+    $0 --ssh-key ~/.ssh/id_ed25519.pub --output my-iso
+
+    # Build ISO without SSH keys (⚠️  creates inaccessible installer - only for testing)
+    $0 --no-ssh-key
+
+SSH KEY INPUT:
+    Can be either:
+    - File path (starts with /, ~, or .): File containing SSH public keys (one per line)
+    - Key string: SSH public key string directly
+    
+    Examples:
+    - ~/.ssh/id_ed25519.pub                              (file path)
+    - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG... user@host  (key string)
+
+EOF
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -k|--ssh-key)
+            SSH_KEYS_INPUT="$2"
+            shift 2
+            ;;
+        --no-ssh-key)
+            NO_SSH_KEYS=true
+            shift
+            ;;
+        -o|--output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            SHOW_HELP=true
+            shift
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option $1${NC}" >&2
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ "$SHOW_HELP" == "true" ]]; then
+    show_help
+    exit 0
+fi
+
+# Validate that either --ssh-key or --no-ssh-key is specified
+if [[ -n "$SSH_KEYS_INPUT" && "$NO_SSH_KEYS" == "true" ]]; then
+    echo -e "${RED}Error: Cannot specify both --ssh-key and --no-ssh-key${NC}" >&2
+    echo -e "${YELLOW}Use --ssh-key to include SSH keys, or --no-ssh-key to build without them${NC}" >&2
+    exit 1
+fi
+
+if [[ -z "$SSH_KEYS_INPUT" && "$NO_SSH_KEYS" == "false" ]]; then
+    echo -e "${RED}Error: Either --ssh-key or --no-ssh-key must be specified${NC}" >&2
+    echo -e "${YELLOW}Building without SSH keys creates an inaccessible installer!${NC}" >&2
+    echo "" >&2
+    echo -e "Examples:" >&2
+    echo -e "  ${BLUE}$0 --ssh-key ~/.ssh/id_ed25519.pub${NC}   # Recommended" >&2
+    echo -e "  ${BLUE}$0 --no-ssh-key${NC}                     # Only for testing" >&2
+    exit 1
+fi
+
+# Warn if building without SSH keys
+if [[ "$NO_SSH_KEYS" == "true" ]]; then
+    echo -e "${YELLOW}⚠️  Building ISO without SSH keys - this will create an inaccessible installer!${NC}" >&2
+    echo -e "${YELLOW}⚠️  This is only recommended for testing purposes.${NC}" >&2
+    echo "" >&2
+fi
+
+# Process SSH keys input if provided
+SSH_KEYS_FILE=""
+if [[ -n "$SSH_KEYS_INPUT" ]]; then
+    # Check if input looks like a file path (starts with /, ~, or .)
+    if [[ "$SSH_KEYS_INPUT" =~ ^[/~.] ]]; then
+        # Treat as file path
+        SSH_KEYS_FILE="$SSH_KEYS_INPUT"
+        
+        if [[ ! -f "$SSH_KEYS_FILE" ]]; then
+            echo -e "${RED}Error: SSH keys file '$SSH_KEYS_FILE' not found${NC}" >&2
+            exit 1
+        fi
+        
+        # Check if file has valid SSH keys
+        if ! grep -q "^ssh-" "$SSH_KEYS_FILE"; then
+            echo -e "${YELLOW}Warning: No SSH keys found in '$SSH_KEYS_FILE'${NC}" >&2
+            echo -e "${YELLOW}Expected format: one SSH public key per line${NC}" >&2
+        fi
+    else
+        # Treat as direct SSH key string
+        if [[ ! "$SSH_KEYS_INPUT" =~ ^ssh- ]]; then
+            echo -e "${RED}Error: SSH key string must start with 'ssh-'${NC}" >&2
+            echo -e "${YELLOW}Example: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIG... user@host${NC}" >&2
+            exit 1
+        fi
+        
+        # Create temporary file with the SSH key
+        SSH_KEYS_FILE=$(mktemp)
+        echo "$SSH_KEYS_INPUT" > "$SSH_KEYS_FILE"
+        
+        # Clean up temp file on exit
+        trap "rm -f $SSH_KEYS_FILE" EXIT
+    fi
+fi
+
+echo -e "${BLUE}🔨 Building Keystone ISO...${NC}"
+
+# Create temporary flake if SSH keys are provided
+if [[ -n "$SSH_KEYS_FILE" ]]; then
+    echo -e "${BLUE}📋 Using SSH keys from: $SSH_KEYS_FILE${NC}"
+    
+    # Store original working directory
+    ORIG_DIR=$(pwd)
+    
+    # Create temporary directory
+    TEMP_DIR=$(mktemp -d)
+    trap "rm -rf $TEMP_DIR" EXIT
+    
+    # Read SSH keys into array format for Nix
+    echo -e "${BLUE}🔑 Processing SSH keys...${NC}"
+    SSH_KEYS_ARRAY="["
+    while IFS= read -r line; do
+        # Skip empty lines and comments
+        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
+            # Escape quotes and add to array
+            ESCAPED_KEY=$(echo "$line" | sed 's/"/\\"/g')
+            SSH_KEYS_ARRAY="$SSH_KEYS_ARRAY\"$ESCAPED_KEY\" "
+        fi
+    done < "$SSH_KEYS_FILE"
+    SSH_KEYS_ARRAY="$SSH_KEYS_ARRAY]"
+    
+    # Create temporary flake
+    cat > "$TEMP_DIR/flake.nix" << EOF
+{
+  description = "Keystone ISO with custom SSH keys";
+  
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+  };
+  
+  outputs = { self, nixpkgs }: {
+    nixosConfigurations = {
+      keystoneIso = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          "\${nixpkgs}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+          $(pwd)/modules/iso-installer.nix
+          {
+            keystone.installer.sshKeys = $SSH_KEYS_ARRAY;
+          }
+        ];
+      };
+    };
+    
+    packages.x86_64-linux.default = 
+      self.nixosConfigurations.keystoneIso.config.system.build.isoImage;
+  };
+}
+EOF
+    
+    echo -e "${BLUE}🚀 Building ISO with SSH keys...${NC}"
+    cd "$TEMP_DIR"
+    nix build --impure --out-link "$ORIG_DIR/$OUTPUT_DIR"
+    cd - > /dev/null
+    
+else
+    echo -e "${BLUE}🚀 Building ISO without SSH keys...${NC}"
+    nix build ".#iso" --out-link "$OUTPUT_DIR"
+fi
+
+# Check if build was successful
+if [[ -L "$OUTPUT_DIR" && -d "$OUTPUT_DIR" ]]; then
+    # Look for any ISO file in the result directory tree
+    # Using ls instead of find due to Nix store filesystem quirks
+    ISO_PATH=$(ls "$OUTPUT_DIR"/iso/*.iso 2>/dev/null | head -1)
+    if [[ -n "$ISO_PATH" && -f "$ISO_PATH" ]]; then
+        ISO_SIZE=$(du -h "$ISO_PATH" | cut -f1)
+        ISO_NAME=$(basename "$ISO_PATH")
+        echo -e "${GREEN}✅ ISO built successfully!${NC}"
+        echo -e "${GREEN}📁 Location: $ISO_PATH${NC}"
+        echo -e "${GREEN}📄 Filename: $ISO_NAME${NC}"
+        echo -e "${GREEN}📦 Size: $ISO_SIZE${NC}"
+
+        # Link ISO to vms directory for VM testing
+        VM_ISO_PATH="vms/keystone-installer.iso"
+        if [[ -e "$VM_ISO_PATH" ]]; then
+            rm -f "$VM_ISO_PATH"
+        fi
+        ln -sf "../$ISO_PATH" "$VM_ISO_PATH"
+        echo -e "${GREEN}🔗 Linked to: $VM_ISO_PATH${NC}"
+
+        echo ""
+        echo -e "${BLUE}🔥 To write to USB:${NC}"
+        echo -e "${BLUE}   sudo dd if=\"$ISO_PATH\" of=/dev/sdX bs=4M status=progress${NC}"
+        echo -e "${YELLOW}   (Replace /dev/sdX with your USB device)${NC}"
+    else
+        echo -e "${RED}❌ Build completed but ISO file not found${NC}" >&2
+        echo -e "${YELLOW}Contents of $OUTPUT_DIR:${NC}" >&2
+        find "$OUTPUT_DIR" -type f >&2
+        exit 1
+    fi
+else
+    echo -e "${RED}❌ Build failed - $OUTPUT_DIR does not exist or is not a symlink${NC}" >&2
+    exit 1
+fi

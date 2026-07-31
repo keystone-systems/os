@@ -1,0 +1,180 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TEMPLATES_DIR="${AGENT_MAIL_TEMPLATES:-}"
+
+usage() {
+  cat <<'EOF'
+Usage: agent-mail <template> --to ADDRESS [--subject TITLE] [--dry-run]
+       agent-mail --list
+
+Send structured email templates to OS agents via himalaya.
+
+Options:
+  --to ADDRESS    Recipient email address (required)
+  --subject TITLE Override the title portion of the subject line
+  --dry-run       Print the email to stdout instead of sending
+  --list          List available templates
+  -h, --help      Show this help
+
+Examples:
+  agent-mail project.new --to drago@ncrmro.com
+  agent-mail task --to luce@ncrmro.com --subject "Fix CI pipeline"
+  agent-mail --list
+EOF
+}
+
+list_templates() {
+  if [[ -z "$TEMPLATES_DIR" || ! -d "$TEMPLATES_DIR" ]]; then
+    echo "error: templates directory not found" >&2
+    exit 1
+  fi
+
+  echo "Available templates:"
+  echo ""
+  for f in "$TEMPLATES_DIR"/*.md; do
+    name="$(basename "$f" .md)"
+    # Extract first heading as description
+    desc="$(head -1 "$f" | sed 's/^#\+ *//')"
+    printf "  %-16s %s\n" "$name" "$desc"
+  done
+}
+
+detect_sender() {
+  local email config
+
+  # Try himalaya config file (most reliable — has the email field)
+  config="${XDG_CONFIG_HOME:-$HOME/.config}/himalaya/config.toml"
+  if [[ -f "$config" ]]; then
+    email="$(grep -m1 '^email\s*=' "$config" | sed 's/^email\s*=\s*"\(.*\)"/\1/')" || true
+    if [[ -n "$email" ]]; then
+      echo "$email"
+      return
+    fi
+  fi
+
+  # Fall back to git config
+  email="$(git config user.email 2>/dev/null)" || true
+  if [[ -n "$email" ]]; then
+    echo "$email"
+    return
+  fi
+
+  echo "error: could not detect sender email (no himalaya config or git config)" >&2
+  exit 1
+}
+
+# Parse arguments
+TEMPLATE=""
+TO=""
+SUBJECT=""
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --list)
+      list_templates
+      exit 0
+      ;;
+    --to)
+      TO="$2"
+      shift 2
+      ;;
+    --subject)
+      SUBJECT="$2"
+      shift 2
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "error: unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      if [[ -z "$TEMPLATE" ]]; then
+        TEMPLATE="$1"
+      else
+        echo "error: unexpected argument: $1" >&2
+        usage >&2
+        exit 1
+      fi
+      shift
+      ;;
+  esac
+done
+
+# Validate required args
+if [[ -z "$TEMPLATE" ]]; then
+  echo "error: template name required" >&2
+  usage >&2
+  exit 1
+fi
+
+if [[ -z "$TO" ]]; then
+  echo "error: --to ADDRESS is required" >&2
+  usage >&2
+  exit 1
+fi
+
+# Resolve template
+TEMPLATE_FILE="$TEMPLATES_DIR/${TEMPLATE}.md"
+if [[ ! -f "$TEMPLATE_FILE" ]]; then
+  echo "error: template '$TEMPLATE' not found at $TEMPLATE_FILE" >&2
+  echo "Run 'agent-mail --list' to see available templates." >&2
+  exit 1
+fi
+
+# Detect sender
+FROM="$(detect_sender)"
+
+# Build subject line
+TEMPLATE_TAG="[${TEMPLATE}]"
+if [[ -n "$SUBJECT" ]]; then
+  FULL_SUBJECT="$TEMPLATE_TAG $SUBJECT"
+else
+  FULL_SUBJECT="$TEMPLATE_TAG "
+fi
+
+# Create temp file
+TMPFILE="$(mktemp /tmp/agent-mail-XXXXXX.eml)"
+trap 'rm -f "$TMPFILE"' EXIT
+
+# Write RFC 2822 email
+{
+  echo "From: $FROM"
+  echo "To: $TO"
+  echo "Subject: $FULL_SUBJECT"
+  echo "Date: $(date -R)"
+  echo "MIME-Version: 1.0"
+  echo "Content-Type: text/plain; charset=utf-8"
+  echo ""
+  cat "$TEMPLATE_FILE"
+} > "$TMPFILE"
+
+if [[ "$DRY_RUN" == true ]]; then
+  cat "$TMPFILE"
+  exit 0
+fi
+
+# Open in editor
+EDITOR="${EDITOR:-vi}"
+"$EDITOR" "$TMPFILE"
+
+# Confirm send
+echo ""
+read -rp "Send to $TO? [y/N] " confirm
+if [[ "$confirm" != [yY] ]]; then
+  echo "Aborted."
+  exit 0
+fi
+
+# Send via himalaya
+himalaya message send < "$TMPFILE"
+echo "Sent."

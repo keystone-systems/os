@@ -1,0 +1,90 @@
+# =====================================================================
+# Prefer systemd over activation scripts
+# Enforces os.systemd-over-activation: system.activationScripts must not
+# carry work that requires systemd ordering, external binaries, or
+# failure-state visibility. Such work belongs in a systemd oneshot unit.
+# =====================================================================
+systemd_over_activation:
+  description: "Flag system.activationScripts entries that should be systemd oneshot units per os.systemd-over-activation."
+  match:
+    include:
+      - "**/*.nix"
+    exclude:
+      - "desktop/home/**"
+      - "terminal/**"
+      - "notes/**"
+  review:
+    strategy: individual
+    instructions: |
+      This rule enforces `os.systemd-over-activation`. The default in NixOS
+      modules is a systemd oneshot; `system.activationScripts` is the narrow
+      exception. Work that needs ordering, failure visibility, or touches
+      external state MUST be a `systemd.services.<name>` oneshot instead.
+
+      ## What to look for in the diff
+
+      Scan the changed file for any new or modified `system.activationScripts.*`
+      entry. For each one, determine whether it violates any of the rule-1
+      disqualifiers in `conventions/os.systemd-over-activation.md`:
+
+      1. **Invokes a non-trivial external binary.** If the script text contains
+         calls to `zfs`, `zpool`, `mount`, `umount`, `systemctl`, `docker`,
+         `podman`, `nerdctl`, `curl`, `wget`, `openssl`, `ssh`, `scp`, `rsync`,
+         `git` (beyond config-only operations), `pg_dump`, `mysql`, `redis-cli`,
+         or any binary that performs I/O against a service → FLAG.
+      2. **Depends on a non-rpool ZFS pool, a mount point other than the
+         root filesystem, a network interface, or a service that comes up
+         later.** Look for references to pool names other than `rpool`
+         (e.g., `ocean`, `lake`, `tank`, `storage`), to mount points other
+         than the root filesystem, or to paths rooted somewhere other than
+         `/nix`, `/etc`, `/var`, `/run`, `/root`, or `/var/lib`, or to
+         URLs/hostnames → FLAG.
+      3. **Needs retry, manual re-trigger, or failure-state visibility.** If
+         the script uses `|| true` to swallow errors, retries in a loop, or
+         its failure would meaningfully break a dependent service → FLAG.
+         Activation-script failures are buried in rebuild output and have no
+         `systemctl status` equivalent.
+      4. **Expresses or requires ordering against a systemd unit.** If the
+         script comment, script text, or the surrounding module mentions
+         `After=`, `Before=`, `Requires=`, `Wants=`, `PartOf=`, or references
+         another service by name → FLAG. That ordering is inexpressible from
+         an activation script.
+
+      ## What to pass
+
+      Activation scripts that meet ALL of these are acceptable:
+
+      - Operate only on `/nix`, `/etc`, `/var/lib/<service>`, `/root`, or
+        a directory guaranteed by stage-1 boot.
+      - Do not invoke a service-touching external binary.
+      - Are idempotent and cheap on every rebuild.
+      - Do not need failure-state visibility.
+
+      Typical good fits: creating a directory that a service will own at
+      runtime, writing a static marker, regenerating a config template
+      consumed by a unit that is restarted by the module.
+
+      ## How to flag
+
+      For each violating activation script, report:
+
+      - The file and line of the `system.activationScripts.<name>` entry.
+      - Which disqualifier(s) from rules 1-4 above applies, with a quoted
+        excerpt from the script text.
+      - A concrete migration sketch: the equivalent `systemd.services.<name>`
+        oneshot skeleton with `Type = "oneshot"`, `RemainAfterExit = true`,
+        a reasonable `wantedBy`, and the specific `after`/`requires` edges
+        that were impossible to express in the activation script.
+      - A reference to the specific rule number in
+        `conventions/os.systemd-over-activation.md` that is being violated.
+
+      If the diff only modifies an existing acceptable activation script
+      (e.g., fixing a typo in a `mkdir -p /var/lib/foo` entry), return PASS.
+
+      ## Home-Manager exemption
+
+      `home.activation` and `home-manager.users.*.home.activation` are NOT
+      covered by this rule (they are governed by `tool.nix` rules 17-21).
+      If the file under review is a home-manager module, return PASS for
+      any activation entries — those are home-manager, not NixOS system
+      activation.

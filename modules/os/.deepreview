@@ -1,0 +1,106 @@
+# =====================================================================
+# Module Architecture: Option ownership and principal parity
+# Enforces two structural invariants in the OS modules:
+# 1. Agent types bridge to existing modules, not duplicate their options
+# 2. Agent and user provisioning stay symmetric
+# See conventions/process.keystone-principal-parity.md
+# =====================================================================
+module_architecture:
+  description: "Enforce option ownership (no duplication across modules) and principal parity (agent/user symmetry)."
+  match:
+    include:
+      - "users.nix"
+      - "default.nix"
+      - "agents/*.nix"
+      - "agents/scripts/*.sh"
+      - "git-server/**"
+      - "mail.nix"
+    exclude:
+      - "agents/dashboards/**"
+      - "agents/archetypes/**"
+  review:
+    strategy: matches_together
+    additional_context:
+      unchanged_matching_files: true
+    instructions: |
+      This rule enforces two architectural invariants in the OS modules.
+
+      ## 1. No redundant options
+
+      Keystone follows a layered module architecture where each concern has a
+      single owning module. Agent types (types.nix) declare agent-specific
+      identity and provisioning options; shared capabilities live in their own
+      modules (terminal, notes, desktop, mail, etc.) and are *bridged* via
+      home-manager.nix — not re-declared.
+
+      **Check for duplication:**
+      For every new or changed `mkOption` in types.nix, verify it is NOT
+      duplicating an option that already exists in one of these modules:
+      - `modules/terminal/` — editor, shell, AI tools, zk, git, mail, secrets
+      - `modules/notes/` — zk scaffolding, sync, notebook structure
+      - `modules/desktop/` — compositor, theming, components
+
+      **Correct pattern (bridge, don't duplicate):**
+      ```nix
+      # home-manager.nix — bridges agent config to the notes module
+      keystone.notes = mkIf agentCfg.terminal.enable {
+        enable = mkDefault true;
+        zk.enable = mkDefault true;  # terminal already provides zk binary + LSP
+      };
+      ```
+
+      **Anti-pattern (duplication):**
+      ```nix
+      # types.nix — DO NOT add options that duplicate module concerns
+      notes.zk.enable = mkOption { ... };  # BAD: notes module already owns zk.enable
+      ```
+
+      **When to flag:**
+      - A new option in types.nix mirrors an existing option path in terminal/,
+        notes/, or desktop/ modules
+      - home-manager.nix bridges an agent option that could use the module's
+        existing option directly
+      - An agent-level option controls behavior that is already gated by
+        `terminal.enable` or another module's enable flag
+
+      **Exceptions:**
+      - Agent-specific overrides with no module equivalent (e.g., `notes.syncOnCalendar`,
+        `notes.taskLoop.maxTasks`) — these are agent provisioning concerns
+      - Options that configure cross-module wiring (e.g., `git.provision`, `mail.provision`)
+
+      ## 2. Principal parity
+
+      Per `process.keystone-principal-parity`, Keystone manages two principal
+      types — human users (`keystone.os.users`) and agents (`keystone.os.agents`).
+      Both are first-class citizens, and infrastructure capabilities MUST be
+      designed for all principal types from the start.
+
+      **Option symmetry:**
+      For every option in agents/types.nix (e.g., `git.provision`, `mail.provision`,
+      `forgejo.*`), check that users.nix has an equivalent option with consistent
+      naming. If an agent option has no user equivalent, flag it unless there is a
+      documented reason for the divergence.
+
+      **Script parity:**
+      Provisioning scripts in agents/scripts/ and git-server/scripts/ MUST be
+      parameterized to serve both principal types. Flag any script that is
+      agent-specific with no shared equivalent for users. The correct pattern is
+      a single parameterized script with behavior driven by arguments/env vars.
+
+      **Home-manager bridge parity:**
+      Bridges in agents/home-manager.nix that flow agent config into terminal or
+      other modules MUST have equivalent bridges for human users in users.nix (or
+      the corresponding user home-manager integration). If agents get
+      `forgejo.{enable,domain,sshPort,username}` bridged, users must too.
+
+      **Divergence documentation:**
+      When behavior intentionally differs between principal types (e.g., agents
+      default to `must-change-password=false`), the divergence MUST be documented
+      in a code comment at the point of divergence. Flag undocumented asymmetries.
+
+      **What to flag:**
+      - Agent options without user equivalents (or vice versa)
+      - Scripts that exist only for one principal type
+      - Home-manager bridges that flow config for agents but not for users
+      - Undocumented behavioral differences between principal types
+      - New provisioning that serves only agents or only users

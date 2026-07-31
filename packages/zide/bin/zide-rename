@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: zide-rename [name]
+
+Rename the current Zellij tab using the provided name or ZIDE_TAB_NAME.
+EOF
+}
+
+case "${1:-}" in
+  -h | --help)
+    usage
+    exit 0
+    ;;
+esac
+
+name="${1:-${ZIDE_TAB_NAME:-}}"
+if [[ -z "$name" || -z "${ZELLIJ:-}" ]]; then
+  exit 0
+fi
+
+zellij action rename-tab "$name"

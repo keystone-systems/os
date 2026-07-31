@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fetch email envelopes and enrich with message bodies.
+# Outputs JSON array with envelope fields + "body" field.
+set -euo pipefail
+
+envelopes=$(himalaya envelope list -o json --page-size 50 2>/dev/null)
+ids=$(echo "$envelopes" | jq -r '.[].id')
+
+result="$envelopes"
+for id in $ids; do
+    body=$(himalaya message read -p "$id" 2>/dev/null || echo "")
+    result=$(echo "$result" | jq --arg id "$id" --arg body "$body" \
+        'map(if .id == $id then . + {body: $body} else . end)')
+done
+
+echo "$result"

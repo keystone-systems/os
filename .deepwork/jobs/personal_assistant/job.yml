@@ -1,0 +1,415 @@
+name: personal_assistant
+summary: "Personal assistant: reservations, birthdays, calendar prioritization, and photo memory search"
+
+step_arguments:
+  - name: request
+    description: "What the user needs — e.g., 'book a dinner for two on Friday' or 'find photos from the Paris trip'"
+    type: string
+
+  - name: requirements_file
+    description: "Gathered requirements: who, what, when, where, budget, and any constraints"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify all key parameters are captured: occasion, date/time, party size, location, budget, and any dietary or accessibility requirements. Flag any missing information that would block research."
+
+  - name: options_file
+    description: "Researched options with names, links or phone numbers, price range, and a brief reason each fits"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify at least 3 concrete options are presented. Each must include a name, contact or booking method, price indication, and a clear fit reason. No placeholder or invented details."
+
+  - name: plan_file
+    description: "Consolidated plan: chosen option, action checklist, key dates, and contacts"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify the plan is actionable: each item has a clear owner (agent vs human), a due date where relevant, and no unresolved ambiguities."
+
+  - name: calendar_audit_file
+    description: "Current calendar audit: upcoming events, identified conflicts, low-value slots, and missing priority blocks"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify the audit covers at least the next two weeks. Conflicts, gaps, and misaligned priorities must be explicitly listed, not implied."
+
+  - name: calendar_proposal_file
+    description: "Proposed calendar reorganization with reasoning for each change"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify every proposed change has a clear rationale tied to the user's stated priorities. Changes must not remove committed external obligations without user confirmation."
+
+  - name: memory_results_file
+    description: "Photo or memory search results: matching albums, dates, key moments, and direct Immich links"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: "Verify results are specific and traceable. Each result must include a date, album or location, and an Immich link or path. Negative results must say so explicitly."
+
+workflows:
+  reservation:
+    summary: "Research and coordinate a restaurant or venue reservation on behalf of the user"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Personal assistant workflow for the human operator. Act on their behalf
+      throughout — keep communication warm, personal, and concise.
+
+      Tools available:
+      - WebSearch / WebFetch for finding venues, menus, and booking details
+      - Email tools (himalaya) for drafting reservation request messages
+      - Calendar tools (calcurse via terminal module) for checking availability
+
+      Conventions:
+      - Always confirm requirements before researching
+      - Present options in a scannable list, not walls of text
+      - Prefer venues with online booking; fall back to phone/email templates
+      - Record the confirmed choice in a brief note via zk when the user accepts
+    steps:
+      - name: gather
+        instructions: |
+          # Gather Reservation Requirements
+
+          ## Objective
+
+          Collect everything needed to find the right venue. Do not guess — ask
+          the user for anything that is missing.
+
+          ## Required information
+
+          - Occasion (dinner, lunch, celebration, casual, business)
+          - Date and time (or flexibility window)
+          - Party size
+          - Location or neighbourhood preference
+          - Cuisine or venue type preference
+          - Budget per person (approximate)
+          - Dietary or accessibility requirements
+          - Any specific requests (private room, view, outdoor seating)
+
+          ## Output
+
+          Write a structured requirements summary to `requirements_file`. Use
+          short bullet sections, one per category above. Mark anything still
+          unconfirmed as `[TBD]`.
+        outputs:
+          requirements_file:
+            required: true
+
+      - name: research
+        instructions: |
+          # Research Options
+
+          ## Objective
+
+          Find 3–5 concrete venues matching the requirements. Use web search to
+          verify they are open, accepting reservations, and fit the budget.
+
+          ## For each option include
+
+          - Name and address
+          - Cuisine / venue type
+          - Price range (per person)
+          - Booking method: direct link, phone number, or email
+          - One sentence on why it fits the request
+          - Any notable caveats (requires advance booking, cash only, etc.)
+
+          ## Output
+
+          Write the options list to `options_file`. Order by best fit first.
+        outputs:
+          options_file:
+            required: true
+
+      - name: confirm
+        instructions: |
+          # Confirm and Coordinate
+
+          ## Objective
+
+          Present the top option to the user and, once approved, handle the
+          booking or draft the outreach message.
+
+          ## Steps
+
+          1. Summarise the top recommendation in 2–3 sentences.
+          2. Ask the user to confirm or choose an alternative.
+          3. If online booking is available, guide them through the steps or
+             provide the direct URL.
+          4. If phone or email is required, draft the message for the user to
+             send or offer to send it via himalaya.
+          5. Record the outcome (venue, date, confirmation number) in `plan_file`.
+
+          ## Output
+
+          Write the confirmed booking details and any next steps to `plan_file`.
+        outputs:
+          plan_file:
+            required: true
+
+  birthday:
+    summary: "Plan a birthday: gift research, reservation, and celebration checklist"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Personal assistant workflow for the human operator. Act on their behalf
+      throughout — keep tone warm and celebratory.
+
+      Tools available:
+      - WebSearch / WebFetch for gift ideas, venues, and delivery options
+      - Immich (via IMMICH_URL / IMMICH_API_KEY environment variables) for finding
+        shared photos to include in a card or slideshow
+      - Email tools for drafting invitations or order confirmations
+      - Calendar tools for checking the user's availability around the date
+
+      Conventions:
+      - Personalise suggestions based on what the user shares about the recipient
+      - Prefer options with reliable delivery or online booking over physical shopping
+      - Flag any items that need ordering more than a week in advance
+    steps:
+      - name: gather
+        instructions: |
+          # Gather Birthday Details
+
+          ## Objective
+
+          Learn enough about the recipient and occasion to make genuinely
+          personal recommendations.
+
+          ## Required information
+
+          - Who is the birthday for (relationship to user, age if relevant)
+          - Date of birthday
+          - Budget for gifts and/or celebration
+          - Any known interests, hobbies, or wishes
+          - Type of celebration: intimate dinner, party, surprise, low-key
+          - Whether a reservation or activity booking is needed
+          - Whether the user wants help finding a shared photo for a card
+
+          ## Output
+
+          Write a structured summary to `requirements_file`.
+        outputs:
+          requirements_file:
+            required: true
+
+      - name: research
+        instructions: |
+          # Research Gifts and Celebration Options
+
+          ## Objective
+
+          Produce a personalised shortlist of gift ideas and, if relevant, venue
+          or activity options for the celebration.
+
+          ## Gift ideas
+
+          - 3–5 ideas matched to the recipient's interests and the user's budget
+          - For each: item name, where to buy (with link), price, and why it fits
+          - Flag anything that needs ordering more than a week ahead
+
+          ## Celebration (if requested)
+
+          - 2–3 venue or activity options suited to the occasion
+          - Include booking details and price range
+
+          ## Photo card (if requested)
+
+          - Search Immich for photos featuring the recipient or shared memories
+          - List matching albums, date ranges, and a few standout photo IDs
+
+          Write all results to `options_file`.
+        outputs:
+          options_file:
+            required: true
+
+      - name: plan
+        instructions: |
+          # Consolidate the Birthday Plan
+
+          ## Objective
+
+          Produce a single, actionable birthday plan with a checklist.
+
+          ## Plan contents
+
+          - Chosen gift(s) with purchase link and order deadline
+          - Celebration: confirmed or shortlisted venue with booking next step
+          - Any card, message, or photo the user wants to prepare
+          - Checklist: each item, owner (agent vs human), and due date
+
+          Write the plan to `plan_file`.
+        outputs:
+          plan_file:
+            required: true
+
+  calendar_prioritize:
+    summary: "Review upcoming commitments and propose a prioritized calendar aligned to the user's goals"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Personal assistant workflow for the human operator. The goal is a calendar
+      that reflects the user's actual priorities, not just their obligations.
+
+      Tools available:
+      - Calendar tools (calcurse via terminal module) for reading upcoming events
+      - Notes repo (`$NOTES_DIR`) for reading stated goals or priorities if present
+      - Email tools for checking meeting invitations that may not be on-calendar yet
+
+      Conventions:
+      - Do not cancel or decline external commitments without explicit user approval
+      - Flag energy-draining blocks (back-to-back meetings, unproductive slots)
+      - Protect deep-work time as a priority alongside external commitments
+      - Propose changes as suggestions, not edits — the user confirms before acting
+    steps:
+      - name: audit
+        instructions: |
+          # Audit the Current Calendar
+
+          ## Objective
+
+          Map out the next two weeks and identify problems.
+
+          ## What to check
+
+          - All upcoming events in calcurse for the next 14 days
+          - Meeting density per day (flag days with more than 4 hours of meetings)
+          - Back-to-back blocks with no buffer
+          - Slots that could be consolidated or removed
+          - Missing time for stated priorities (check `$NOTES_DIR/PROJECTS.yaml` or
+            inbox notes if available)
+          - Any pending email invitations not yet accepted
+
+          Write the audit to `calendar_audit_file`. Include a short summary of the
+          top 3 issues found.
+        outputs:
+          calendar_audit_file:
+            required: true
+
+      - name: propose
+        instructions: |
+          # Propose Calendar Changes
+
+          ## Objective
+
+          Produce a concrete, prioritized set of calendar changes for the user to
+          review.
+
+          ## Format
+
+          For each proposed change:
+          - What: event name or slot
+          - Current state: date, time, duration
+          - Proposed change: move, shorten, decline, or add
+          - Reason: one sentence tied to the user's priorities
+
+          ## Protected blocks to add (if missing)
+
+          - Deep-work block (2+ hours, mornings preferred)
+          - Weekly review slot
+          - Buffer time between heavy meeting days
+
+          Write the proposal to `calendar_proposal_file`.
+        outputs:
+          calendar_proposal_file:
+            required: true
+
+      - name: apply
+        instructions: |
+          # Apply Approved Changes
+
+          ## Objective
+
+          Walk the user through the approved changes and help apply them.
+
+          ## Steps
+
+          1. Present the proposal summary (from `calendar_proposal_file`) to the user.
+          2. For each change, confirm approval before acting.
+          3. For approved additions, create the event in calcurse.
+          4. For approved removals or declines, draft the response email if needed.
+          5. Record any changes made in `plan_file` for the user's reference.
+        outputs:
+          plan_file:
+            required: true
+
+  memory_search:
+    summary: "Search Keystone Photos (Immich) to find specific memories, albums, or moments"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      Personal assistant workflow for the human operator. Help them rediscover
+      specific photos or memories from their Immich library.
+
+      Tools available:
+      - Immich REST API via IMMICH_URL and IMMICH_API_KEY environment variables
+      - WebFetch for querying the Immich API (search, albums, assets)
+      - File tools for saving result lists
+
+      Immich API notes:
+      - Search endpoint: POST /api/search/smart (semantic search)
+      - Albums: GET /api/albums
+      - Asset metadata: GET /api/assets/{id}
+      - Photo URLs: {IMMICH_URL}/photos/{assetId}
+
+      Conventions:
+      - Always confirm the search intent before querying
+      - Present results as a scannable list with dates and album context
+      - If no results are found, suggest broadening the search terms
+      - Do not download or share photos without the user's explicit request
+    steps:
+      - name: gather
+        instructions: |
+          # Understand the Memory Search Request
+
+          ## Objective
+
+          Clarify exactly what the user is looking for before searching.
+
+          ## Ask about
+
+          - Who is in the photos (people, pets)
+          - Where (location, venue, trip name)
+          - When (approximate date, year, or event)
+          - What (occasion: birthday, holiday, trip, milestone)
+          - Format needed (single photo, album, slideshow for a card)
+
+          Write a concise search brief to `requirements_file`.
+        outputs:
+          requirements_file:
+            required: true
+
+      - name: search
+        instructions: |
+          # Search Immich
+
+          ## Objective
+
+          Query Immich and return specific, traceable results.
+
+          ## Steps
+
+          1. Use the smart search endpoint with the user's key terms.
+          2. If relevant, list matching albums with their date ranges.
+          3. For each result include: asset ID, capture date, album name (if any),
+             and a direct Immich URL.
+          4. If fewer than 3 results, broaden the query and note what was tried.
+
+          Write results to `memory_results_file`.
+        outputs:
+          memory_results_file:
+            required: true
+
+      - name: present
+        instructions: |
+          # Present and Act on Results
+
+          ## Objective
+
+          Show the user what was found and help them do something with it.
+
+          ## Steps
+
+          1. Summarise the results: total count, date range, album names.
+          2. Highlight the 3–5 most relevant photos with their dates and context.
+          3. Ask what the user wants to do: download, share, use in a card or
+             presentation, or just browse.
+          4. If they want to use a photo in a presentation, hand off to the
+             `presentation` job with the asset details.
+          5. Record the final selection or outcome in `plan_file`.
+        outputs:
+          plan_file:
+            required: true

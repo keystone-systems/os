@@ -1,0 +1,1387 @@
+name: repo
+summary: "Ensure a repository follows all team conventions: labels, boards, branch protection, milestones"
+
+step_arguments:
+  - name: project_repo
+    description: "Repo slug (owner/repo) and platform (github or forgejo)"
+    type: string
+
+  - name: platform_context
+    description: "Platform, repo, default branch, auth status, existing labels, milestones, and boards"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the platform context file:
+        - The platform (GitHub or Forgejo) is correctly identified.
+        - CLI authentication has been verified and scopes are sufficient.
+        - The default branch name is recorded.
+        - Existing labels, milestones, and boards (if applicable) are listed.
+
+  - name: labels_report
+    description: "List of labels checked, created, or already present"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the labels report:
+        - All three required labels (product, engineering, plan) are accounted for.
+        - Any missing labels were created with appropriate colors and descriptions.
+
+  - name: branch_protection_report
+    description: "Current branch protection status and any missing protections"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the branch protection report:
+        - Branch protection rules on the default branch have been inspected.
+        - Any missing or insufficient protections are documented.
+
+  - name: milestones_report
+    description: "Milestone consistency findings: missing consolidated issues, label mismatches"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the milestones report:
+        - Every open milestone was inspected.
+        - Each milestone's issues are listed with state and label correctness.
+
+  - name: boards_report
+    description: "Board existence and item count verification per milestone"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the boards report:
+        - Each milestone was checked for a corresponding board.
+        - Board item counts are compared against milestone issue counts.
+        - If Forgejo, manual instructions are provided instead of CLI automation.
+
+  - name: setup_report
+    description: "Pass/fail readiness report covering labels, branch protection, milestones, and boards"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the setup report:
+        - Report covers labels, branch protection, milestones, and boards.
+        - Each concern has a clear pass or fail status with details.
+
+  - name: labels_audit
+    description: "Label audit findings: missing, duplicates, unused labels, and fixes applied"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the labels audit:
+        - All three required labels (product, engineering, plan) are verified.
+        - Case-insensitive duplicate labels are identified.
+        - Labels with zero issues are flagged.
+
+  - name: branch_protection_audit
+    description: "Branch protection audit with findings and fixes attempted"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the branch protection audit:
+        - All branch protection rules on the default branch have been inspected.
+        - Missing protections were attempted to be enabled via API.
+        - Any gaps that could not be fixed automatically are documented.
+
+  - name: milestones_audit
+    description: "Milestone audit findings: inconsistencies found and fixes applied"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the milestones audit:
+        - Every open milestone was deeply inspected.
+        - Issues with incorrect or missing labels were corrected.
+        - Milestone-issue relationships are consistent.
+
+  - name: boards_audit
+    description: "Board audit findings, fixes applied, and remaining issues"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the boards audit:
+        - Every milestone's board was inspected.
+        - Issues missing from boards were added.
+        - Wrong statuses were corrected based on issue/PR state.
+        - Board items not belonging to the milestone are flagged.
+        - If Forgejo, manual instructions are provided.
+
+  - name: doctor_report
+    description: "Summary of findings, fixes applied, and remaining issues across all concerns"
+    type: file_path
+    review:
+      strategy: individual
+      instructions: |
+        Verify the doctor report:
+        - Report covers labels, branch protection, milestones, and boards.
+        - All audit findings are summarized with counts.
+        - All fix actions taken are listed.
+        - Any issues that still need manual attention are documented.
+
+workflows:
+  setup:
+    summary: "Make a repo ready for work: labels, branch protection, milestones, boards"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job audits and configures repositories to follow team conventions. It supports two workflows:
+      `setup` (make a repo ready for work) and `doctor` (audit existing state and fix drift).
+
+      ## Platform Support
+
+      - **GitHub**: Full automation via `gh` CLI
+      - **Forgejo**: Partial automation via `fj` / `tea` CLI. No project board API — board steps
+        output manual web UI instructions.
+
+      ## Standard Labels
+
+      Every repo must have these labels:
+      - `product` — product/UX scope
+      - `engineering` — technical scope
+      - `plan` — planning/coordination
+
+      ## Standard Board Columns
+
+      GitHub Project V2 boards use these five status options:
+      - Backlog, To Do, In Progress, In Review, Done
+
+      ## Built-in Board Automations (GitHub)
+
+      - **Item closed** → status set to Done
+      - **PR merged** → status set to Done
+      - **Auto-add** → items from linked repos auto-added
+
+      Agents MUST NOT duplicate these automatic transitions.
+
+      ## Conventions to Read
+
+      - `process.project-board` — board lifecycle, transition rules, CLI reference
+      - `process.version-control` — branch protection expectations
+      - `tool.github` — GitHub CLI authentication and project board section
+      - `tool.forgejo` — Forgejo capabilities and limitations
+
+      ## Agents
+
+      Agent usernames differ by platform — read the correct column from `.agents/TEAM.md`.
+    steps:
+      - name: detect_platform
+        instructions: |
+          # Detect Platform
+
+          ## Objective
+
+          Identify the platform, verify CLI authentication, determine the default branch, and inventory existing labels, milestones, and boards.
+
+          ## Task
+
+          ### Process
+
+          1. **Determine the platform**
+             - Parse the `project_repo` input to identify the repo slug and platform
+             - If not explicit, check the repo's remote URL or ask the user
+             - Platforms: `github` or `forgejo`
+
+          2. **Verify CLI authentication**
+
+             **GitHub:**
+             - Run `gh auth status` to check current scopes
+             - If the `project` scope is missing, run `gh auth refresh -s project`
+             - Confirm the authenticated user matches the agent's GitHub username from TEAM.md
+
+             **Forgejo:**
+             - Run `fj auth status` or equivalent to verify token
+             - Confirm connectivity to `git.ncrmro.com`
+
+          3. **Get default branch**
+             - GitHub: `gh repo view {owner}/{repo} --json defaultBranchRef --jq '.defaultBranchRef.name'`
+             - Forgejo: `tea repo info --login forgejo {owner}/{repo}` or API call
+
+          4. **Inventory existing labels**
+             - GitHub: `gh label list --repo {owner}/{repo} --json name,color,description`
+             - Forgejo: `tea label list --login forgejo --repo {owner}/{repo}`
+
+          5. **Inventory milestones**
+             - GitHub: `gh api repos/{owner}/{repo}/milestones --jq '.[] | {title, number, state, open_issues, closed_issues}'`
+             - Forgejo: `tea milestone list --login forgejo --repo {owner}/{repo}`
+
+          6. **Inventory boards** (GitHub only)
+             - `gh project list --owner {owner} --format json`
+             - If Forgejo, note that board API is unavailable and record `boards_api: false`
+
+          ## Output Format
+
+          ### platform_context.md
+
+          ```markdown
+          # Platform Context
+
+          ## Platform
+
+          - **Platform**: [github | forgejo]
+          - **Repository**: [owner/repo]
+          - **Default Branch**: [main | master | etc.]
+          - **Auth Status**: [authenticated | needs refresh]
+          - **Boards API**: [true | false]
+
+          ## Existing Labels
+
+          | Name | Color | Description |
+          | ---- | ----- | ----------- |
+          | ...  | ...   | ...         |
+
+          ## Milestones
+
+          | Title | Number | State | Open | Closed |
+          | ----- | ------ | ----- | ---- | ------ |
+          | ...   | ...    | ...   | ...  | ...    |
+
+          ## Boards (GitHub only)
+
+          | Title | Number | URL |
+          | ----- | ------ | --- |
+          | ...   | ...    | ... |
+
+          [Or "N/A — Forgejo does not support project boards via API"]
+          ```
+
+          ## Quality Criteria
+
+          - Platform is correctly identified
+          - CLI authentication is verified and scopes are sufficient
+          - Default branch name is recorded
+          - Existing labels, milestones, and boards are inventoried
+        inputs:
+          project_repo:
+            required: true
+        outputs:
+          platform_context:
+            required: true
+
+      - name: ensure_labels
+        instructions: |
+          # Ensure Labels
+
+          ## Objective
+
+          Verify that the three required labels (`product`, `engineering`, `plan`) exist on the repository. Create any that are missing.
+
+          ## Task
+
+          ### Process
+
+          1. **Read existing labels** from `platform_context.md`
+
+          2. **Check for required labels**
+             - Required: `product`, `engineering`, `plan`
+             - Match case-insensitively against existing labels
+             - If an exact-case match exists, mark as present
+             - If a case-insensitive match exists but with wrong casing, note the discrepancy
+
+          3. **Create missing labels**
+
+             **GitHub:**
+
+             ```bash
+             gh label create "product" --repo {owner}/{repo} --color "7057ff" --description "Product/UX scope"
+             gh label create "engineering" --repo {owner}/{repo} --color "0075ca" --description "Technical scope"
+             gh label create "plan" --repo {owner}/{repo} --color "e4e669" --description "Planning/coordination"
+             ```
+
+             **Forgejo:**
+
+             ```bash
+             tea label create --login forgejo --repo {owner}/{repo} --name "product" --color "#7057ff" --description "Product/UX scope"
+             ```
+
+             (repeat for each missing label)
+
+          4. **Verify creation**
+             - Re-list labels to confirm the new labels exist
+
+          ## Output Format
+
+          ### labels_report.md
+
+          ```markdown
+          # Labels Report
+
+          ## Summary
+
+          - **Required Labels**: 3
+          - **Already Present**: [count]
+          - **Created**: [count]
+          - **Case Mismatches**: [count]
+
+          ## Details
+
+          | Label       | Status                                | Notes     |
+          | ----------- | ------------------------------------- | --------- |
+          | product     | [present \| created \| case mismatch] | [details] |
+          | engineering | [present \| created \| case mismatch] | [details] |
+          | plan        | [present \| created \| case mismatch] | [details] |
+          ```
+
+          ## Quality Criteria
+
+          - All three required labels are accounted for
+          - Missing labels were created with appropriate colors and descriptions
+          - Case mismatches are documented
+        inputs:
+          platform_context:
+            required: true
+        outputs:
+          labels_report:
+            required: true
+
+      - name: check_branch_protection
+        instructions: |
+          # Check Branch Protection
+
+          ## Objective
+
+          Check branch protection rules on the repository's default branch and report any missing or insufficient protections.
+
+          ## Task
+
+          ### Process
+
+          1. **Read platform context** from `platform_context.md`
+             - Get the default branch name and platform
+
+          2. **Fetch branch protection rules**
+
+             **GitHub:**
+
+             ```bash
+             gh api repos/{owner}/{repo}/branches/{default_branch}/protection
+             ```
+
+             - If 404, no protection rules are configured
+
+             **Forgejo:**
+
+             ```bash
+             tea api --login forgejo /repos/{owner}/{repo}/branch_protections
+             ```
+
+          3. **Check for expected protections**
+
+             Expected protections:
+             - **Require PR reviews**: At least 1 approval required before merge
+             - **Dismiss stale reviews**: Approvals dismissed when new commits are pushed
+             - **Require status checks**: CI must pass before merge (if CI is configured)
+             - **Restrict force pushes**: Force pushes to default branch are blocked
+             - **Restrict deletions**: Default branch cannot be deleted
+
+          4. **Report findings**
+             - For each expected protection, note whether it is enabled or missing
+             - Do NOT attempt to modify protections in the setup workflow — only report
+
+          ## Output Format
+
+          ### branch_protection_report.md
+
+          ```markdown
+          # Branch Protection Report
+
+          ## Repository
+
+          - **Repo**: [owner/repo]
+          - **Default Branch**: [branch name]
+          - **Platform**: [github | forgejo]
+
+          ## Protection Status
+
+          | Protection            | Status                              | Details                |
+          | --------------------- | ----------------------------------- | ---------------------- |
+          | Require PR reviews    | [enabled \| missing]                | [min approvals or N/A] |
+          | Dismiss stale reviews | [enabled \| missing]                |                        |
+          | Require status checks | [enabled \| missing \| N/A (no CI)] | [required checks]      |
+          | Restrict force pushes | [enabled \| missing]                |                        |
+          | Restrict deletions    | [enabled \| missing]                |                        |
+
+          ## Summary
+
+          - **Protections Enabled**: [count]/5
+          - **Missing Protections**: [list]
+          - **Overall**: [protected \| partially protected \| unprotected]
+          ```
+
+          ## Quality Criteria
+
+          - Branch protection rules on the default branch have been inspected
+          - Each expected protection is reported as enabled or missing
+          - Missing or insufficient protections are clearly documented
+        inputs:
+          platform_context:
+            required: true
+        outputs:
+          branch_protection_report:
+            required: true
+
+      - name: check_milestones
+        instructions: |
+          # Check Milestones
+
+          ## Objective
+
+          Verify milestone-issue consistency: each milestone's issues are properly labeled, states are correct, and milestone metadata is complete.
+
+          ## Task
+
+          ### Process
+
+          1. **Read milestones** from `platform_context.md`
+
+          2. **For each open milestone, verify:**
+
+             a. **Issues exist** — milestone has at least one issue
+             - GitHub: `gh issue list --repo {owner}/{repo} --milestone "{title}" --state all --json number,title,state,labels`
+             - Forgejo: `tea issue list --login forgejo --repo {owner}/{repo} --milestone "{title}"`
+
+             b. **Consolidated issue exists** — look for an issue whose title matches the milestone title
+             (this is the "tracking issue" pattern where a parent issue tracks the milestone's work)
+             - Flag if missing, but do not create it (just report)
+
+             c. **Labels are correct** — each issue should have at least one of the required labels
+             (`product`, `engineering`, or `plan`)
+             - Flag issues missing all three labels
+
+             d. **State consistency** — if all issues are closed, the milestone should be closeable
+             - Flag milestones where all issues are closed but milestone is still open
+
+          3. **Compile findings per milestone**
+
+          ## Output Format
+
+          ### milestones_report.md
+
+          ```markdown
+          # Milestones Report
+
+          ## Summary
+
+          - **Total Open Milestones**: [count]
+          - **Milestones with Issues**: [count]
+          - **Empty Milestones**: [count]
+          - **Issues Missing Labels**: [count]
+
+          ## Milestones
+
+          ### [Milestone Title] (#[number])
+
+          - **Open Issues**: [count]
+          - **Closed Issues**: [count]
+          - **Consolidated Issue**: [found (#N) | missing]
+          - **Unlabeled Issues**: [count]
+            - #[N] — [title]
+          - **State Issues**: [none | "all issues closed but milestone open"]
+          ```
+
+          ## Quality Criteria
+
+          - Every open milestone was inspected
+          - Each milestone's issues are listed with state and label correctness
+          - Missing consolidated issues are flagged
+          - Unlabeled issues are identified
+        inputs:
+          platform_context:
+            required: true
+        outputs:
+          milestones_report:
+            required: true
+
+      - name: check_boards
+        instructions: |
+          # Check Boards
+
+          ## Objective
+
+          Verify that each milestone has a corresponding project board and that item counts match the milestone's issue count.
+
+          ## Prerequisite
+
+          Requires `platform_context.md` (board inventory) and `milestones_report.md` (milestone data). Board checks depend on milestones because boards are organized per-milestone.
+
+          ## Task
+
+          ### Process
+
+          1. **Handle Forgejo early exit**
+             - If platform is Forgejo (`boards_api: false`), output manual instructions:
+               - Board URL pattern: `https://git.ncrmro.com/{owner}/{repo}/projects`
+               - Steps to create a board manually in the web UI
+               - Skip all CLI automation steps below
+
+          2. **For each open milestone:**
+
+             a. **Check for corresponding board**
+             - Match board title against milestone title (from `platform_context.md` boards inventory)
+             - GitHub: `gh project list --owner {owner} --format json` and filter by title
+
+             b. **If board exists, verify item count**
+
+             ```bash
+             gh project item-list {project_number} --owner {owner} --format json --jq 'length'
+             ```
+
+             - Compare board item count against milestone issue count (from `milestones_report.md`)
+             - Flag mismatches
+
+             c. **If no board exists**
+             - Flag as missing
+             - Do NOT create it in the setup workflow — only report
+             - Note: the `project_board` job can be used to create and populate boards
+
+          3. **Check board columns** (for existing boards)
+             - Verify the five standard columns exist: Backlog, To Do, In Progress, In Review, Done
+             ```bash
+             gh project field-list {project_number} --owner {owner} --format json
+             ```
+
+          ## Output Format
+
+          ### boards_report.md
+
+          ```markdown
+          # Boards Report
+
+          ## Platform
+
+          - **Platform**: [github | forgejo]
+          - **Boards API**: [true | false]
+
+          ## Summary
+
+          - **Milestones Checked**: [count]
+          - **Boards Found**: [count]
+          - **Boards Missing**: [count]
+          - **Item Count Mismatches**: [count]
+
+          ## Milestones
+
+          ### [Milestone Title]
+
+          - **Board**: [found (#{number}) | missing]
+          - **Board URL**: [url | N/A]
+          - **Milestone Issues**: [count]
+          - **Board Items**: [count | N/A]
+          - **Match**: [yes | no — [details] | N/A]
+          - **Columns OK**: [yes | no — missing: [list] | N/A]
+
+          ## Forgejo Manual Instructions (if applicable)
+
+          [Step-by-step web UI instructions for creating and managing boards, or "N/A — using GitHub CLI"]
+          ```
+
+          ## Quality Criteria
+
+          - Each milestone was checked for a corresponding board
+          - Board item counts are compared against milestone issue counts
+          - Missing boards are flagged
+          - If Forgejo, manual instructions are provided
+        inputs:
+          platform_context:
+            required: true
+          milestones_report:
+            required: true
+        outputs:
+          boards_report:
+            required: true
+
+      - name: setup_report
+        instructions: |
+          # Setup Report
+
+          ## Objective
+
+          Compile a pass/fail readiness report across all four concerns: labels, branch protection, milestones, and boards.
+
+          ## Task
+
+          ### Process
+
+          1. **Read all input reports**
+             - `platform_context.md` — platform and repo info
+             - `labels_report.md` — label status
+             - `branch_protection_report.md` — protection status
+             - `milestones_report.md` — milestone consistency
+             - `boards_report.md` — board existence and item counts
+
+          2. **Determine pass/fail for each concern**
+
+             **Labels**: PASS if all three required labels exist. FAIL if any are missing after setup.
+
+             **Branch Protection**: PASS if all expected protections are enabled. WARN if partially protected. FAIL if unprotected.
+
+             **Milestones**: PASS if all milestones have issues, consolidated issues, and proper labels. WARN if minor issues found. FAIL if milestones are empty or severely inconsistent.
+
+             **Boards**: PASS if every milestone has a board with matching item counts. WARN if minor mismatches. FAIL if boards are missing. N/A if Forgejo.
+
+          3. **Compile overall readiness**
+             - READY: all concerns pass
+             - NEEDS ATTENTION: one or more concerns have warnings
+             - NOT READY: one or more concerns fail
+
+          ## Output Format
+
+          ### setup_report.md
+
+          ```markdown
+          # Repo Setup Report
+
+          ## Repository
+
+          - **Repo**: [owner/repo]
+          - **Platform**: [github | forgejo]
+          - **Default Branch**: [branch]
+          - **Date**: [YYYY-MM-DD]
+
+          ## Readiness: [READY | NEEDS ATTENTION | NOT READY]
+
+          ## Concerns
+
+          | Concern           | Status                        | Details   |
+          | ----------------- | ----------------------------- | --------- |
+          | Labels            | [PASS \| FAIL]                | [summary] |
+          | Branch Protection | [PASS \| WARN \| FAIL]        | [summary] |
+          | Milestones        | [PASS \| WARN \| FAIL]        | [summary] |
+          | Boards            | [PASS \| WARN \| FAIL \| N/A] | [summary] |
+
+          ## Details
+
+          ### Labels
+
+          [Key findings from labels_report.md]
+
+          ### Branch Protection
+
+          [Key findings from branch_protection_report.md]
+
+          ### Milestones
+
+          [Key findings from milestones_report.md]
+
+          ### Boards
+
+          [Key findings from boards_report.md]
+
+          ## Recommended Actions
+
+          - [Numbered list of next steps to reach READY status, or "None — repo is ready for work"]
+          ```
+
+          ## Quality Criteria
+
+          - Report covers all four concerns: labels, branch protection, milestones, boards
+          - Each concern has a clear pass/fail/warn status with supporting details
+          - Overall readiness is determined
+          - Recommended actions are listed
+        inputs:
+          platform_context:
+            required: true
+          labels_report:
+            required: true
+          branch_protection_report:
+            required: true
+          milestones_report:
+            required: true
+          boards_report:
+            required: true
+        outputs:
+          setup_report:
+            required: true
+
+  doctor:
+    summary: "Audit existing repo state and fix drift across all conventions"
+    common_job_info_provided_to_all_steps_at_runtime: |
+      This job audits and configures repositories to follow team conventions. It supports two workflows:
+      `setup` (make a repo ready for work) and `doctor` (audit existing state and fix drift).
+
+      ## Platform Support
+
+      - **GitHub**: Full automation via `gh` CLI
+      - **Forgejo**: Partial automation via `fj` / `tea` CLI. No project board API — board steps
+        output manual web UI instructions.
+
+      ## Standard Labels
+
+      Every repo must have these labels:
+      - `product` — product/UX scope
+      - `engineering` — technical scope
+      - `plan` — planning/coordination
+
+      ## Standard Board Columns
+
+      GitHub Project V2 boards use these five status options:
+      - Backlog, To Do, In Progress, In Review, Done
+
+      ## Built-in Board Automations (GitHub)
+
+      - **Item closed** → status set to Done
+      - **PR merged** → status set to Done
+      - **Auto-add** → items from linked repos auto-added
+
+      Agents MUST NOT duplicate these automatic transitions.
+
+      ## Conventions to Read
+
+      - `process.project-board` — board lifecycle, transition rules, CLI reference
+      - `process.version-control` — branch protection expectations
+      - `tool.github` — GitHub CLI authentication and project board section
+      - `tool.forgejo` — Forgejo capabilities and limitations
+
+      ## Agents
+
+      Agent usernames differ by platform — read the correct column from `.agents/TEAM.md`.
+    steps:
+      - name: detect_platform
+        instructions: |
+          # Detect Platform
+
+          ## Objective
+
+          Identify the platform, verify CLI authentication, determine the default branch, and inventory existing labels, milestones, and boards.
+
+          ## Task
+
+          ### Process
+
+          1. **Determine the platform**
+             - Parse the `project_repo` input to identify the repo slug and platform
+             - If not explicit, check the repo's remote URL or ask the user
+             - Platforms: `github` or `forgejo`
+
+          2. **Verify CLI authentication**
+
+             **GitHub:**
+             - Run `gh auth status` to check current scopes
+             - If the `project` scope is missing, run `gh auth refresh -s project`
+             - Confirm the authenticated user matches the agent's GitHub username from TEAM.md
+
+             **Forgejo:**
+             - Run `fj auth status` or equivalent to verify token
+             - Confirm connectivity to `git.ncrmro.com`
+
+          3. **Get default branch**
+             - GitHub: `gh repo view {owner}/{repo} --json defaultBranchRef --jq '.defaultBranchRef.name'`
+             - Forgejo: `tea repo info --login forgejo {owner}/{repo}` or API call
+
+          4. **Inventory existing labels**
+             - GitHub: `gh label list --repo {owner}/{repo} --json name,color,description`
+             - Forgejo: `tea label list --login forgejo --repo {owner}/{repo}`
+
+          5. **Inventory milestones**
+             - GitHub: `gh api repos/{owner}/{repo}/milestones --jq '.[] | {title, number, state, open_issues, closed_issues}'`
+             - Forgejo: `tea milestone list --login forgejo --repo {owner}/{repo}`
+
+          6. **Inventory boards** (GitHub only)
+             - `gh project list --owner {owner} --format json`
+             - If Forgejo, note that board API is unavailable and record `boards_api: false`
+
+          ## Output Format
+
+          ### platform_context.md
+
+          ```markdown
+          # Platform Context
+
+          ## Platform
+
+          - **Platform**: [github | forgejo]
+          - **Repository**: [owner/repo]
+          - **Default Branch**: [main | master | etc.]
+          - **Auth Status**: [authenticated | needs refresh]
+          - **Boards API**: [true | false]
+
+          ## Existing Labels
+
+          | Name | Color | Description |
+          | ---- | ----- | ----------- |
+          | ...  | ...   | ...         |
+
+          ## Milestones
+
+          | Title | Number | State | Open | Closed |
+          | ----- | ------ | ----- | ---- | ------ |
+          | ...   | ...    | ...   | ...  | ...    |
+
+          ## Boards (GitHub only)
+
+          | Title | Number | URL |
+          | ----- | ------ | --- |
+          | ...   | ...    | ... |
+
+          [Or "N/A — Forgejo does not support project boards via API"]
+          ```
+
+          ## Quality Criteria
+
+          - Platform is correctly identified
+          - CLI authentication is verified and scopes are sufficient
+          - Default branch name is recorded
+          - Existing labels, milestones, and boards are inventoried
+        inputs:
+          project_repo:
+            required: true
+        outputs:
+          platform_context:
+            required: true
+
+      - name: audit_labels
+        instructions: |
+          # Audit Labels
+
+          ## Objective
+
+          Deep audit of repository labels: verify required labels, find case-insensitive duplicates, identify zero-issue labels, and fix issues.
+
+          ## Task
+
+          ### Process
+
+          1. **Read existing labels** from `platform_context.md`
+
+          2. **Check required labels**
+             - Required: `product`, `engineering`, `plan`
+             - Create any that are missing (same as ensure_labels)
+
+          3. **Find case-insensitive duplicates**
+             - Group all labels by lowercased name
+             - Flag any groups with more than one label (e.g., `Bug` and `bug`)
+             - Recommend which to keep (prefer lowercase)
+
+          4. **Find zero-issue labels**
+             - For each label, count issues using it:
+               - GitHub: `gh issue list --repo {owner}/{repo} --label "{name}" --state all --json number --jq 'length'`
+               - Forgejo: API or `tea issue list` with label filter
+             - Labels with zero issues are flagged as candidates for cleanup
+             - Do NOT auto-delete — just flag them
+
+          5. **Fix case mismatches on required labels**
+             - If a required label exists with wrong casing, rename it:
+               - GitHub: `gh label edit "{WrongCase}" --repo {owner}/{repo} --name "{correct_case}"`
+               - Forgejo: API call to update label name
+
+          ## Output Format
+
+          ### labels_audit.md
+
+          ```markdown
+          # Labels Audit
+
+          ## Summary
+
+          - **Total Labels**: [count]
+          - **Required Labels OK**: [count]/3
+          - **Created**: [count]
+          - **Case Duplicates Found**: [count]
+          - **Zero-Issue Labels**: [count]
+
+          ## Required Labels
+
+          | Label       | Status                     | Action    |
+          | ----------- | -------------------------- | --------- |
+          | product     | [ok \| created \| renamed] | [details] |
+          | engineering | [ok \| created \| renamed] | [details] |
+          | plan        | [ok \| created \| renamed] | [details] |
+
+          ## Case-Insensitive Duplicates
+
+          | Lowercase Name | Variants | Recommendation           |
+          | -------------- | -------- | ------------------------ |
+          | ...            | Bug, bug | Keep "bug", delete "Bug" |
+
+          ## Zero-Issue Labels
+
+          | Label | Created | Recommendation    |
+          | ----- | ------- | ----------------- |
+          | ...   | [date]  | Consider removing |
+
+          ## Actions Taken
+
+          - [List of changes made]
+
+          ## Manual Actions Needed
+
+          - [List of changes requiring human intervention, or "None"]
+          ```
+
+          ## Quality Criteria
+
+          - All three required labels are verified
+          - Case-insensitive duplicates are identified
+          - Zero-issue labels are flagged
+          - Actions taken and remaining manual steps are documented
+        inputs:
+          platform_context:
+            required: true
+        outputs:
+          labels_audit:
+            required: true
+
+      - name: audit_branch_protection
+        instructions: |
+          # Audit Branch Protection
+
+          ## Objective
+
+          Deep check of branch protection rules on the default branch. Attempt to enable missing protections via API.
+
+          ## Task
+
+          ### Process
+
+          1. **Read platform context** from `platform_context.md`
+
+          2. **Fetch current branch protection** (same as check_branch_protection)
+
+             **GitHub:**
+
+             ```bash
+             gh api repos/{owner}/{repo}/branches/{default_branch}/protection
+             ```
+
+             **Forgejo:**
+
+             ```bash
+             tea api --login forgejo /repos/{owner}/{repo}/branch_protections
+             ```
+
+          3. **Check all expected protections**
+
+             Same checklist as check_branch_protection:
+             - Require PR reviews (min 1 approval)
+             - Dismiss stale reviews
+             - Require status checks (if CI configured)
+             - Restrict force pushes
+             - Restrict deletions
+
+          4. **Attempt to enable missing protections**
+
+             **GitHub:**
+
+             ```bash
+             gh api repos/{owner}/{repo}/branches/{default_branch}/protection \
+               --method PUT \
+               --input - <<EOF
+             {
+               "required_pull_request_reviews": {
+                 "required_approving_review_count": 1,
+                 "dismiss_stale_reviews": true
+               },
+               "enforce_admins": true,
+               "restrictions": null,
+               "required_status_checks": null,
+               "allow_force_pushes": false,
+               "allow_deletions": false
+             }
+             EOF
+             ```
+
+             - Be careful: this replaces the entire protection config. Read existing settings first and merge.
+
+             **Forgejo:**
+             - Use the branch protection API to create or update rules
+             - `tea api --login forgejo --method POST /repos/{owner}/{repo}/branch_protections`
+
+          5. **Verify changes**
+             - Re-fetch protection rules to confirm the changes took effect
+             - Document any API errors or permission issues
+
+          ## Output Format
+
+          ### branch_protection_audit.md
+
+          ```markdown
+          # Branch Protection Audit
+
+          ## Repository
+
+          - **Repo**: [owner/repo]
+          - **Default Branch**: [branch name]
+          - **Platform**: [github | forgejo]
+
+          ## Findings
+
+          | Protection            | Before               | After                | Action                                             |
+          | --------------------- | -------------------- | -------------------- | -------------------------------------------------- |
+          | Require PR reviews    | [enabled \| missing] | [enabled \| missing] | [enabled via API \| already set \| failed: reason] |
+          | Dismiss stale reviews | ...                  | ...                  | ...                                                |
+          | Require status checks | ...                  | ...                  | ...                                                |
+          | Restrict force pushes | ...                  | ...                  | ...                                                |
+          | Restrict deletions    | ...                  | ...                  | ...                                                |
+
+          ## Actions Taken
+
+          - [List of API calls made and their results]
+
+          ## Remaining Gaps
+
+          - [Protections that could not be enabled, with reasons]
+          - [Or "None — all protections are in place"]
+          ```
+
+          ## Quality Criteria
+
+          - All branch protection rules have been inspected
+          - Missing protections were attempted to be enabled via API
+          - Any gaps that could not be fixed are documented with reasons
+        inputs:
+          platform_context:
+            required: true
+        outputs:
+          branch_protection_audit:
+            required: true
+
+      - name: audit_milestones
+        instructions: |
+          # Audit Milestones
+
+          ## Objective
+
+          Deep consistency check on milestones. Fix label drift on issues — add missing labels, correct mismatches.
+
+          ## Task
+
+          ### Process
+
+          1. **Read platform context** from `platform_context.md`
+
+          2. **For each open milestone:**
+
+             a. **List all issues**
+             - GitHub: `gh issue list --repo {owner}/{repo} --milestone "{title}" --state all --json number,title,state,labels,assignees`
+             - Forgejo: API or `tea` equivalent
+
+             b. **Check consolidated issue**
+             - Look for an issue whose title matches the milestone title
+             - If missing, flag but do not create
+
+             c. **Audit labels on each issue**
+             - Every issue SHOULD have at least one of: `product`, `engineering`, `plan`
+             - Apply heuristic to add missing labels:
+               - Issues with specs, user stories, or UX mentions → `product`
+               - Issues with implementation, code, or technical mentions → `engineering`
+               - Issues about planning, coordination, or tracking → `plan`
+             - Fix label drift:
+               - GitHub: `gh issue edit {number} --repo {owner}/{repo} --add-label "{label}"`
+               - Forgejo: API call
+
+             d. **Check assignees**
+             - Flag issues with no assignees
+             - Do NOT auto-assign — just report
+
+             e. **State consistency**
+             - If all issues are closed, flag the milestone for closure
+             - If milestone has a due date in the past and open issues remain, flag as overdue
+
+          3. **Compile audit findings and actions taken**
+
+          ## Output Format
+
+          ### milestones_audit.md
+
+          ```markdown
+          # Milestones Audit
+
+          ## Summary
+
+          - **Milestones Audited**: [count]
+          - **Issues Audited**: [count]
+          - **Labels Added**: [count]
+          - **Unassigned Issues**: [count]
+          - **Overdue Milestones**: [count]
+
+          ## Milestones
+
+          ### [Milestone Title] (#[number])
+
+          **Issues:**
+
+          | #   | Title | State | Labels | Assignees | Action                            |
+          | --- | ----- | ----- | ------ | --------- | --------------------------------- |
+          | ... | ...   | ...   | ...    | ...       | [added "engineering" label \| ok] |
+
+          **Findings:**
+
+          - Consolidated issue: [found (#N) \| missing]
+          - Unassigned issues: [list or "none"]
+          - State: [ok \| all closed — recommend closing milestone \| overdue]
+
+          ## Actions Taken
+
+          - [List of label additions and other fixes]
+
+          ## Manual Actions Needed
+
+          - [Milestones to close, issues to assign, etc.]
+          ```
+
+          ## Quality Criteria
+
+          - Every open milestone was deeply inspected
+          - Issues with incorrect or missing labels were corrected
+          - Milestone-issue relationships are consistent
+          - Unassigned issues and overdue milestones are flagged
+        inputs:
+          platform_context:
+            required: true
+        outputs:
+          milestones_audit:
+            required: true
+
+      - name: audit_boards
+        instructions: |
+          # Audit Boards
+
+          ## Objective
+
+          Full board audit: add missing items, correct wrong statuses, flag stale cards. For Forgejo, output manual instructions.
+
+          ## Prerequisite
+
+          Requires `platform_context.md` and `milestones_audit.md`. Board audit depends on milestone audit because it needs accurate milestone-issue mappings.
+
+          ## Task
+
+          ### Process
+
+          1. **Handle Forgejo early exit**
+             - If platform is Forgejo (`boards_api: false`), output manual review instructions:
+               - How to check boards in the web UI at `https://git.ncrmro.com/{owner}/{repo}/projects`
+               - Checklist of things to verify manually
+               - Skip all CLI automation steps below
+
+          2. **For each open milestone with a board:**
+
+             a. **Fetch board items**
+
+             ```bash
+             gh project item-list {project_number} --owner {owner} --format json
+             ```
+
+             b. **Fetch milestone issues**
+
+             ```bash
+             gh issue list --repo {owner}/{repo} --milestone "{milestone}" --state all \
+               --json number,title,state,labels
+             ```
+
+             c. **Find missing items** — milestone issues not on the board
+             - Add missing items:
+               ```bash
+               gh project item-add {project_number} --owner {owner} \
+                 --url https://github.com/{owner}/{repo}/issues/{issue_number} \
+                 --format json
+               ```
+
+             d. **Cross-reference statuses** — for each board item:
+             - Check linked issue state and PR state
+             - Expected status rules:
+               - Closed issue → Done
+               - Open + non-draft PR with reviewers → In Review
+               - Open + draft PR or any open PR → In Progress
+               - Open + no PR → Backlog
+             - Correct wrong statuses:
+               ```bash
+               gh project item-edit --id {item_id} --project-id {project_id} \
+                 --field-id {status_field_id} \
+                 --single-select-option-id {correct_option_id}
+               ```
+
+             e. **Find stale cards** — board items whose linked issue is NOT in the milestone
+             - Flag but do NOT auto-remove
+
+          3. **For milestones without boards:**
+             - Flag as missing
+             - Optionally create if there are issues to track (ask user or just report)
+
+          ## Output Format
+
+          ### boards_audit.md
+
+          ```markdown
+          # Boards Audit
+
+          ## Platform
+
+          - **Platform**: [github | forgejo]
+          - **Boards API**: [true | false]
+
+          ## Summary
+
+          - **Boards Audited**: [count]
+          - **Items Added**: [count]
+          - **Statuses Corrected**: [count]
+          - **Stale Cards Flagged**: [count]
+          - **Missing Boards**: [count]
+
+          ## Per-Board Details
+
+          ### [Milestone Title] — Board #{number}
+
+          **Items Added:**
+
+          | Issue # | Item ID | Status Set | Reason |
+          | ------- | ------- | ---------- | ------ |
+          | ...     | ...     | ...        | ...    |
+
+          **Statuses Corrected:**
+
+          | Issue # | Item ID | Old Status | New Status | Reason |
+          | ------- | ------- | ---------- | ---------- | ------ |
+          | ...     | ...     | ...        | ...        | ...    |
+
+          **Stale Cards:**
+
+          | Item ID | Linked Issue | Recommendation |
+          | ------- | ------------ | -------------- |
+          | ...     | ...          | ...            |
+
+          ## Missing Boards
+
+          - [Milestone Title] — [count] issues, no board
+
+          ## Forgejo Manual Instructions (if applicable)
+
+          [Manual review checklist, or "N/A"]
+
+          ## Actions Taken
+
+          - [Summary of all automated fixes]
+
+          ## Remaining Issues
+
+          - [Items needing manual attention]
+          ```
+
+          ## Quality Criteria
+
+          - Every milestone's board was inspected
+          - Missing items were added to boards
+          - Wrong statuses were corrected based on issue/PR state
+          - Stale cards (not in milestone) are flagged
+          - Forgejo repos get manual instructions
+        inputs:
+          platform_context:
+            required: true
+          milestones_audit:
+            required: true
+        outputs:
+          boards_audit:
+            required: true
+
+      - name: doctor_report
+        instructions: |
+          # Doctor Report
+
+          ## Objective
+
+          Compile a summary of all audit findings, fixes applied, and remaining issues across all four concerns.
+
+          ## Task
+
+          ### Process
+
+          1. **Read all input reports**
+             - `platform_context.md` — platform and repo info
+             - `labels_audit.md` — label audit findings and fixes
+             - `branch_protection_audit.md` — protection audit and fixes
+             - `milestones_audit.md` — milestone audit and label drift fixes
+             - `boards_audit.md` — board audit and status corrections
+
+          2. **Summarize findings per concern**
+             - Count total findings, fixes applied, and remaining issues
+
+          3. **Determine health status for each concern**
+             - HEALTHY: no issues found or all issues fixed
+             - FIXED: issues were found and all were fixed
+             - NEEDS ATTENTION: issues remain that require manual intervention
+
+          4. **Compile remaining manual actions**
+             - Aggregate all items from each audit that still need human attention
+
+          ## Output Format
+
+          ### doctor_report.md
+
+          ```markdown
+          # Doctor Report
+
+          ## Repository
+
+          - **Repo**: [owner/repo]
+          - **Platform**: [github | forgejo]
+          - **Date**: [YYYY-MM-DD]
+
+          ## Overall Health: [HEALTHY | FIXED | NEEDS ATTENTION]
+
+          ## Summary
+
+          | Concern           | Findings | Fixed   | Remaining | Status                                |
+          | ----------------- | -------- | ------- | --------- | ------------------------------------- |
+          | Labels            | [count]  | [count] | [count]   | [HEALTHY \| FIXED \| NEEDS ATTENTION] |
+          | Branch Protection | [count]  | [count] | [count]   | [HEALTHY \| FIXED \| NEEDS ATTENTION] |
+          | Milestones        | [count]  | [count] | [count]   | [HEALTHY \| FIXED \| NEEDS ATTENTION] |
+          | Boards            | [count]  | [count] | [count]   | [HEALTHY \| FIXED \| NEEDS ATTENTION] |
+
+          ## Details
+
+          ### Labels
+
+          - **Findings**: [summary from labels_audit.md]
+          - **Actions Taken**: [list]
+          - **Remaining**: [list or "None"]
+
+          ### Branch Protection
+
+          - **Findings**: [summary from branch_protection_audit.md]
+          - **Actions Taken**: [list]
+          - **Remaining**: [list or "None"]
+
+          ### Milestones
+
+          - **Findings**: [summary from milestones_audit.md]
+          - **Actions Taken**: [list]
+          - **Remaining**: [list or "None"]
+
+          ### Boards
+
+          - **Findings**: [summary from boards_audit.md]
+          - **Actions Taken**: [list]
+          - **Remaining**: [list or "None"]
+
+          ## Manual Actions Needed
+
+          1. [Numbered list of items requiring human attention]
+             [Or "None — repository is healthy"]
+          ```
+
+          ## Quality Criteria
+
+          - Report covers all four concerns: labels, branch protection, milestones, boards
+          - All audit findings are summarized with counts
+          - All fix actions taken are listed
+          - Any issues still needing manual attention are documented
+        inputs:
+          platform_context:
+            required: true
+          labels_audit:
+            required: true
+          branch_protection_audit:
+            required: true
+          milestones_audit:
+            required: true
+          boards_audit:
+            required: true
+        outputs:
+          doctor_report:
+            required: true

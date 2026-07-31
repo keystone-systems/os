@@ -1,0 +1,371 @@
+#!/usr/bin/env python3
+
+"""
+Gemini CLI wrapper with Worktree support.
+
+Usage:
+  ./bin/gemini [gemini args...]                        # Run in current directory
+  ./bin/gemini -wt specs/my-feature [gemini args...]   # Run in worktree
+
+Worktree Flags:
+  -wt, --worktree  Enable worktree isolation mode. Takes optional path (e.g., specs/my-feature).
+
+Environment Variables:
+  PLAYWRIGHT_EXECUTABLE_PATH  Path to Playwright browser executable (primarily for NixOS users)
+                             Can be set in .env file or as system environment variable
+
+MCP Configuration:
+  Gemini reads MCP servers from .gemini/settings.json.
+  Uses playwright from .gemini/settings.json (if configured).
+"""
+
+import sys
+import subprocess
+import os
+import shutil
+import re
+from pathlib import Path
+
+
+def load_env_file(env_path):
+    """Load environment variables from .env file"""
+    env_vars = {}
+    if env_path.exists():
+        with open(env_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+                # Parse KEY=VALUE
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    # Remove quotes if present
+                    value = value.strip().strip('"').strip("'")
+                    env_vars[key.strip()] = value
+    return env_vars
+
+
+def sluggify(value):
+    """
+    Normalizes string, converts to lowercase, removes non-alpha characters,
+    and converts spaces to hyphens.
+    """
+    value = str(value)
+    # Replace slashes with hyphens
+    value = value.replace('/', '-')
+    # Keep alphanumeric and hyphens, remove others
+    value = re.sub(r'[^\w\-]', '', value)
+    # Convert to lowercase
+    value = value.lower()
+    return value
+
+
+def command_exists(command):
+    """Check if a command exists in PATH"""
+    return shutil.which(command) is not None
+
+
+def print_warning(message):
+    """Print warning message in yellow"""
+    print(f"\033[1;33mWarning: {message}\033[0m", file=sys.stderr)
+
+
+def print_info(message):
+    """Print info message in cyan"""
+    print(f"\033[1;36m{message}\033[0m")
+
+
+def print_success(message):
+    """Print success message in green"""
+    print(f"\033[1;32m{message}\033[0m")
+
+
+def build_worktree_prompt(worktree_path):
+    """Build system prompt for worktree isolation"""
+    prompt = f"""
+# Git Worktree Context
+
+You are working in an isolated git worktree. You have been launched directly in this directory.
+
+**Worktree Directory:** `{worktree_path}`
+
+**IMPORTANT RESTRICTIONS:**
+- You are already in the correct working directory
+- Do NOT navigate to parent directories (../) or use absolute paths outside this worktree
+- All file operations must remain within this directory
+- Do NOT access the main repository or other worktrees
+
+**Environment:**
+"""
+
+    return prompt
+
+def get_git_repo_name(project_root):
+    """Extracts the git repository name (Owner/Repo) from git config."""
+    try:
+        # Get remote URL
+        result = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        url = result.stdout.strip()
+        
+        # Parse owner/repo from URL
+        # Matches: git@github.com:Owner/Repo.git or https://github.com/Owner/Repo.git
+        match = re.search(r'github\.com[:/](.+?)/(.+?)(\.git)?$', url)
+        if match:
+            return f"{match.group(1)}/{match.group(2)}"
+        return None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+def build_dev_system_prompt(project_root, env_vars):
+    """Build system prompt for dev mode.
+    Note: Gemini CLI automatically reads AGENTS.md, so we don't need to duplicate it here.
+    """
+
+    # Only append GitHub MCP configuration info if token is available
+    github_token = env_vars.get('GITHUB_PERSONAL_ACCESS_TOKEN')
+    if github_token:
+        repo_name = get_git_repo_name(project_root)
+        if repo_name:
+            github_config = f"""
+
+# GitHub MCP Server Configuration
+
+When using the GitHub MCP server, the repository is: **{repo_name}**
+"""
+            return github_config
+        else:
+             # Fallback if repo detection fails
+             return """
+
+# GitHub MCP Server Configuration
+
+When using the GitHub MCP server, please verify the repository owner and name from the user or git config.
+"""
+
+    return ""
+
+def generate_tree(path, limit=200):
+    """Generates a tree view of the directory structure."""
+    tree = []
+    count = 0
+    try:
+        for root, dirs, files in os.walk(path):
+            level = root.replace(str(path), '').count(os.sep)
+            indent = ' ' * 4 * (level)
+            tree.append('{}{}/'.format(indent, os.path.basename(root)))
+            subindent = ' ' * 4 * (level + 1)
+            for f in files:
+                tree.append('{}{}'.format(subindent, f))
+                count += 1
+                if count >= limit:
+                    tree.append(f"{subindent}... (limit reached)")
+                    return "\n".join(tree)
+    except Exception as e:
+        return f"Error generating tree: {e}"
+    return "\n".join(tree)
+
+
+def main():
+    # Get project root directory (parent of bin/)
+    script_path = Path(__file__).resolve()
+    project_root = script_path.parent.parent
+    script_dir = script_path.parent
+
+    # Load .env file if it exists
+    env_file = project_root / ".env"
+    env_vars = load_env_file(env_file)
+
+    # Parse flags
+    worktree_target = None
+    gemini_args = []
+
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == "-wt" or arg == "--worktree":
+            # Check for optional argument
+            if i + 1 < len(sys.argv) and not sys.argv[i+1].startswith("-"):
+                 worktree_target = sys.argv[i+1]
+                 i += 1
+            else:
+                 worktree_target = "auto"
+        elif arg == "--dev" or arg == "--ops":
+             print_warning(f"Flag {arg} is deprecated and ignored. Running in default mode.")
+        else:
+            gemini_args.append(arg)
+        i += 1
+
+    # Handle Worktree logic early
+    workspace_path = project_root
+    worktree_path = None
+    spec_content = ""
+    is_spec = False
+
+    spec_dir = None  # Track the actual spec directory for later use
+
+    if worktree_target:
+        if worktree_target == "auto":
+            worktree_path = detect_worktree(project_root)
+        else:
+            # Check if it's a spec
+            if worktree_target.startswith("specs/"):
+                is_spec = True
+                spec_path = project_root / worktree_target
+
+                # If exact path doesn't exist, try to find matching spec directory
+                if not spec_path.exists():
+                    # Extract the spec name part (e.g., "001-decision-app-confidence-level")
+                    spec_name = worktree_target.replace("specs/", "")
+                    specs_root = project_root / "specs"
+                    if specs_root.exists():
+                        # Find spec directories that the name starts with
+                        for entry in specs_root.iterdir():
+                            if entry.is_dir() and spec_name.startswith(entry.name):
+                                spec_path = entry
+                                break
+
+                if spec_path.exists():
+                    spec_dir = spec_path if spec_path.is_dir() else spec_path.parent
+                    target_file = spec_path
+
+                    if spec_path.is_dir():
+                        target_file = spec_path / "spec.md"
+
+                    if target_file.is_file():
+                        try:
+                            with open(target_file, 'r') as f:
+                                spec_content = f.read()
+                        except Exception as e:
+                            print_warning(f"Failed to read spec file: {e}")
+                    elif spec_path.is_dir():
+                         print_warning(f"Spec target is a directory and spec.md was not found inside.")
+            # Strip specs/ if present and normalize name
+            clean_name = worktree_target.replace("specs/", "")
+            slug = sluggify(clean_name)
+            expected_path = project_root / "worktrees" / slug
+
+            # Ensure worktree and .env exist (bin/worktree add handles both cases)
+            try:
+                subprocess.run(
+                    [str(script_dir / "worktree"), "add", clean_name],
+                    check=True
+                )
+            except subprocess.CalledProcessError:
+                print(f"Error: Failed to setup worktree for {clean_name}", file=sys.stderr)
+                sys.exit(1)
+
+            worktree_path = expected_path
+
+        if worktree_path:
+            workspace_path = worktree_path
+            print_info(f"  Worktree:        {worktree_path}")
+            print()
+        else:
+            if worktree_target == "auto":
+                 print_warning("Worktree flag specified (auto) but no worktree detected")
+            else:
+                 print_warning(f"Failed to resolve worktree for {worktree_target}")
+            print()
+
+    # Prepare Spec Instructions if applicable
+    spec_instructions = ""
+    spec_file_refs = []
+    if is_spec and worktree_path and spec_dir:
+        # Build @ references to the key spec files (relative to project root)
+        try:
+             spec_rel_path = spec_dir.relative_to(project_root)
+             for filename in ["spec.md", "plan.md", "tasks.md"]:
+                 file_path = spec_dir / filename
+                 if file_path.exists():
+                     spec_file_refs.append(f"@{spec_rel_path}/{filename}")
+        except ValueError:
+             # spec_dir might not be relative to project_root if unexpected path
+             pass
+
+        spec_refs = "\n".join(spec_file_refs) if spec_file_refs else ""
+
+        spec_instructions = f"""
+# Spec-Driven Development Context
+
+**Spec Directory:** `{spec_dir}`
+
+**Spec Files:**
+{spec_refs}
+
+**Initial Action:**
+Read the spec files above and provide a brief summary of:
+1. What work has been completed
+2. What tasks remain
+3. Any blockers or decisions needed
+
+Then wait for further instructions from the user.
+
+**Directives:**
+1. **Maintain the Spec:** Update the spec files to reflect changes, decisions, and progress.
+2. **Task Tracking:** Keep track of completed tasks and report progress.
+3. **Commits:** Commit your changes as soon as a task from the spec is completed.
+"""
+
+    # Dev mode: standard development tools
+    print()
+    print_info("=" * 60)
+    print_info("Gemini CLI - Project Environment")
+    print_info("=" * 60)
+    print()
+    print_info("  Mode:            Development")
+    print_info("  MCP Servers:     (from .gemini/settings.json)")
+    print_info("    • playwright")
+    print()
+    print_info("=" * 60)
+    print()
+
+    # Build dev system prompt from copilot instructions
+    dev_prompt = build_dev_system_prompt(project_root, env_vars)
+
+    # Add worktree prompt if active
+    if worktree_path:
+        worktree_prompt = build_worktree_prompt(worktree_path)
+        dev_prompt += worktree_prompt
+
+    if spec_instructions:
+        dev_prompt += spec_instructions
+
+    # Run gemini with dev MCP config
+    print_success("✓ Launching Gemini CLI with development configuration...")
+    print()
+
+    if dev_prompt:
+        cmd = ["gemini", "--prompt-interactive", dev_prompt] + gemini_args
+    else:
+        cmd = ["gemini"] + gemini_args
+
+    # Run the command
+    try:
+        # If in worktree mode, launch gemini directly in the worktree directory
+        # This ensures the agent's file operations default to the worktree
+        run_cwd = str(worktree_path) if worktree_path else None
+        
+        # Run direnv allow if in a worktree and direnv is installed
+        if run_cwd and shutil.which("direnv"):
+            print_info(f"Running 'direnv allow' in {run_cwd}...")
+            subprocess.run(["direnv", "allow", run_cwd], check=False, capture_output=True)
+
+        subprocess.run(cmd, check=True, cwd=run_cwd)
+    except subprocess.CalledProcessError as e:
+        sys.exit(e.returncode)
+    except FileNotFoundError:
+        print("Error: 'gemini' command not found.", file=sys.stderr)
+        print("Please install Gemini CLI: https://ai.google.dev/gemini-api/docs/cli", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,24 @@
+---
+source: tests/render.rs
+expression: output
+---
+                                my-infra  3 hosts                               
+────────────────────────────────────────────────────────────────────────────────
+ Hosts       │ laptop                 ●    │  Arch   x86_64-linux               
+ Services    │   100.64.0.1                │                                    
+ Secrets     │ server                 ●    │  Modules  operating-system         
+ Security    │   100.64.0.2                │                                    
+ Installer   │ rpi                    ○    │                                    
+             │   2026-03-12T08:00          │                                    
+             │                             │  Status online                     
+             │                             │  TS IP  100.64.0.1                 
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+             │                             │                                    
+      1-5: sections • ↑/↓: navigate • Enter: details • r: refresh • q: quit

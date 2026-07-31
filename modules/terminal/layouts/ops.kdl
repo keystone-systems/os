@@ -1,0 +1,12 @@
+// ops layout — 3 tabs for operations and monitoring
+layout {
+    tab name="shell" focus=true {
+        pane
+    }
+    tab name="logs" {
+        pane
+    }
+    tab name="monitor" {
+        pane
+    }
+}
