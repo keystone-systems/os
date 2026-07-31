@@ -71,76 +71,6 @@ in
         nix-direnv.enable = true;
       };
 
-      # Zellij - A terminal multiplexer with layouts, panes, and tabs
-      # Modern alternative to tmux/screen with built-in session management
-      # https://zellij.dev/
-      programs.zellij = {
-        enable = true;
-        enableZshIntegration = false;
-        settings = {
-          theme = "current";
-          startup_tips = false;
-          pane_frames = false;
-          # Ctrl+punctuation bindings such as Ctrl+, need extended keyboard reporting.
-          support_kitty_keyboard_protocol = true;
-          keybinds = {
-            normal = {
-              # Previous tab: Ctrl+,
-              "bind \"Ctrl ,\"" = {
-                GoToPreviousTab = { };
-              };
-              # Previous tab: Ctrl+PageUp
-              "bind \"Ctrl PageUp\"" = {
-                GoToPreviousTab = { };
-              };
-              # Next tab: Ctrl+.
-              "bind \"Ctrl .\"" = {
-                GoToNextTab = { };
-              };
-              # Next tab: Ctrl+PageDown
-              "bind \"Ctrl PageDown\"" = {
-                GoToNextTab = { };
-              };
-              # Move tab left: Ctrl+<
-              "bind \"Ctrl <\"" = {
-                MoveTab = "Left";
-              };
-              # Move tab right: Ctrl+>
-              "bind \"Ctrl >\"" = {
-                MoveTab = "Right";
-              };
-              # New tab: Ctrl+T
-              # Open a visible floating prompt instead of the subtle RenameTab mode UI.
-              "bind \"Ctrl t\"" = {
-                Run = {
-                  _args = [
-                    "${zellijNewTabPrompt}/bin/keystone-zellij-new-tab-prompt"
-                  ];
-                  floating = true;
-                  close_on_exit = true;
-                };
-              };
-              # Close tab: Ctrl+W
-              "bind \"Ctrl w\"" = {
-                CloseTab = { };
-              };
-              # Unbind default Ctrl+G (conflict with Claude Code)
-              "unbind \"Ctrl g\"" = [ ];
-              # Lock mode: Ctrl+Shift+G
-              "bind \"Ctrl Shift g\"" = {
-                SwitchToMode = "locked";
-              };
-              # Unbind default Ctrl+O (conflict with Claude Code and lazygit)
-              "unbind \"Ctrl o\"" = [ ];
-              # Session mode: Ctrl+Shift+O
-              "bind \"Ctrl Shift o\"" = {
-                SwitchToMode = "session";
-              };
-            };
-          };
-        };
-      };
-
       # Fzf - A command-line fuzzy finder
       # https://github.com/junegunn/fzf
       programs.fzf = {
@@ -151,89 +81,7 @@ in
       # Bat - A cat(1) clone with wings (syntax highlighting and Git integration)
       # https://github.com/sharkdp/bat
       programs.bat = {
-        enable = true;
-      };
-
-      programs.zsh = {
-        enable = true;
-        enableCompletion = mkDefault true;
-        autosuggestion.enable = mkDefault true;
-        syntaxHighlighting.enable = mkDefault true;
-        shellAliases = {
-          # Better unix commands
-          l = "eza -1l";
-          ls = "eza -1l";
-          grep = "rg";
-          # Local Development
-          g = "git";
-          lg = "lazygit";
-          # Terminal utilities
-          zs = "zesh connect"; # Zellij session manager with zoxide integration
-          y = "yazi";
-        };
-        history.size = 100000;
-        zplug.enable = lib.mkForce false;
-        oh-my-zsh = {
-          enable = true;
-          plugins = [
-            "git"
-            "colored-man-pages"
-          ];
-          theme = "robbyrussell";
-        };
-        initContent = ''
-          _keystone_zellij_effective_cwd() {
-            local cwd="''${PWD:-$HOME}"
-
-            if [[ -z "$cwd" || ! -d "$cwd" ]]; then
-              cwd="$HOME"
-            fi
-
-            print -r -- "$cwd"
-          }
-
-          _keystone_zellij_pipe_tab_name() {
-            [[ -n "''${ZELLIJ:-}" && -n "''${ZELLIJ_PANE_ID:-}" ]] || return 1
-
-            local title="$1"
-            local payload
-            payload="$(${pkgs.jq}/bin/jq -nc \
-              --arg pane_id "$ZELLIJ_PANE_ID" \
-              --arg name "$title" \
-              '{ pane_id: $pane_id, name: $name }')"
-
-            ${pkgs.zellij}/bin/zellij action pipe \
-              --plugin "file:${pkgs.keystone.zellij-tab-name}/share/zellij/plugins/zellij-tab-name.wasm" \
-              --name change-tab-name \
-              -- "$payload" >/dev/null 2>&1
-          }
-
-          ztab() {
-            if [[ $# -eq 0 ]]; then
-              print "usage: ztab <name>" >&2
-              return 1
-            fi
-
-            _keystone_zellij_pipe_tab_name "$*"
-          }
-
-          znewtab() {
-            local title="$*"
-            local tab_cwd
-            tab_cwd="$(_keystone_zellij_effective_cwd)"
-
-            if [[ -n "$title" ]]; then
-              ${pkgs.coreutils}/bin/timeout 5s \
-                ${pkgs.zellij}/bin/zellij action new-tab --cwd "$tab_cwd" --name "$title"
-            else
-              ${pkgs.zellij}/bin/zellij run \
-                --floating \
-                --close-on-exit \
-                --cwd "$tab_cwd" \
-                -- "${zellijNewTabPrompt}/bin/keystone-zellij-new-tab-prompt"
-            fi
-          }
-        '';
+        enable = false;
       };
 
       home.sessionPath = [ "$HOME/.local/bin" ];
@@ -244,6 +92,12 @@ in
           # Bottom - Graphical process/system monitor
           # https://github.com/ClementTsang/bottom
           bottom
+          bat
+          zellij
+          zsh
+          zsh-autosuggestions
+          zsh-syntax-highlighting
+          oh-my-zsh
 
           # Dust - A more intuitive version of du in rust
           # https://github.com/bootandy/dust
@@ -343,26 +197,6 @@ in
       home.file.".config/nix/nix.conf".text = ''
         experimental-features = nix-command flakes
       '';
-    })
-    (mkHomeRepoFiles {
-      inherit config;
-      files = [
-        {
-          targetPath = ".config/zellij/layouts/dev.kdl";
-          relativePath = "modules/terminal/layouts/dev.kdl";
-          sourcePath = ./layouts/dev.kdl;
-        }
-        {
-          targetPath = ".config/zellij/layouts/ops.kdl";
-          relativePath = "modules/terminal/layouts/ops.kdl";
-          sourcePath = ./layouts/ops.kdl;
-        }
-        {
-          targetPath = ".config/zellij/layouts/write.kdl";
-          relativePath = "modules/terminal/layouts/write.kdl";
-          sourcePath = ./layouts/write.kdl;
-        }
-      ];
     })
     ksCommand
   ]);

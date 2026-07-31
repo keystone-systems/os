@@ -31,6 +31,7 @@ in
     home.packages =
       with pkgs;
       [
+        helix-pkg
         # LSP packages for Helix
         bash-language-server
         docker-compose-language-service
@@ -89,7 +90,7 @@ in
     # Helix - Modal text editor
     # https://helix-editor.com/
     programs.helix = {
-      enable = mkDefault true;
+      enable = false;
       package = mkDefault helix-pkg;
       settings = mkDefault {
         # Use kinda_nvim theme if available, otherwise use default
@@ -373,12 +374,5 @@ in
       };
     };
 
-    # Copy helix theme files from the flake input (if available)
-    xdg.configFile."helix/themes/kinda_nvim.toml" = mkIf hasKindaNvim {
-      source = "${keystoneInputs.kinda-nvim-hx}/kinda_nvim.toml";
-    };
-    xdg.configFile."helix/themes/kinda_nvim_light.toml" = mkIf hasKindaNvim {
-      source = "${keystoneInputs.kinda-nvim-hx}/kinda_nvim_light.toml";
-    };
   };
 }

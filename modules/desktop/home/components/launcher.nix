@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 with lib;
@@ -191,9 +192,14 @@ in
       ];
     })
     {
+      home.packages = [
+        pkgs.wofi
+        pkgs.walker
+      ];
+
       # Wofi as the application launcher
       programs.wofi = {
-        enable = mkDefault true;
+        enable = false;
         settings = {
           show = "drun";
           width = 600;
@@ -211,7 +217,7 @@ in
 
       # Walker launcher using the official home-manager module
       programs.walker = {
-        enable = mkDefault true;
+        enable = false;
         runAsService = true;
 
         config = {

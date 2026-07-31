@@ -156,44 +156,10 @@ in
       }
     ];
 
-    # Generate allowed_signers file when SSH public keys are provided
-    home.file.".ssh/allowed_signers" = mkIf (cfg.git.enable && cfg.git.sshPublicKeys != [ ]) {
-      text = allowedSignersContent;
-    };
-
-    # Configure git when enabled
-    programs.git = mkIf cfg.git.enable {
-      enable = true;
-      lfs.enable = mkDefault true;
-
-      settings = mkDefault {
-        user = {
-          name = cfg.git.userName;
-          email = cfg.git.userEmail;
-          signingkey = cfg.git.signingKey;
-        };
-        gpg.format = "ssh";
-        gpg.ssh.allowedSignersFile = mkIf (cfg.git.sshPublicKeys != [ ]) "~/.ssh/allowed_signers";
-        commit.gpgsign = true;
-        tag.gpgsign = true;
-        alias = {
-          s = "switch";
-          f = "fetch";
-          p = "pull";
-          b = "branch";
-          st = "status -sb";
-          co = "checkout";
-          c = "commit";
-        };
-        push.autoSetupRemote = true;
-        init.defaultBranch = "main";
-        submodule.recurse = true;
-        safe.directory = notesPath;
-      };
-    };
-
     home.packages =
       optionals cfg.git.enable [
+        pkgs.git
+        pkgs.git-lfs
         pkgs.keystone.fetch-github-sources
       ]
       ++ [

@@ -11,7 +11,7 @@ in
 {
   config = mkIf desktopCfg.enable {
     programs.hyprlock = {
-      enable = mkDefault true;
+      enable = false;
       settings = {
         source = mkDefault "${config.xdg.configHome}/keystone/current/theme/hyprlock.conf";
 

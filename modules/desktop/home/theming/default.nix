@@ -194,25 +194,6 @@ let
     // {
       "${destThemePath}/zellij.conf".text = "theme \"${zellijTheme}\"\n";
     }
-    # Copy helix.toml to helix themes directory for custom themes
-    // (
-      if pathExists "${sourceThemePath}/helix.toml" then
-        {
-          "${config.xdg.configHome}/helix/themes/${helixTheme}.toml".source = "${sourceThemePath}/helix.toml";
-        }
-      else
-        { }
-    )
-    # Copy zellij.kdl to zellij themes directory for custom themes
-    // (
-      if pathExists "${sourceThemePath}/zellij.kdl" then
-        {
-          "${config.xdg.configHome}/zellij/themes/${zellijTheme}.kdl".source =
-            "${sourceThemePath}/zellij.kdl";
-        }
-      else
-        { }
-    )
     # Use osaka-jade backgrounds from omarchy for royal-green
     // (
       if themeName == "royal-green" then

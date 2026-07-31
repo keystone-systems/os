@@ -107,15 +107,5 @@ in
       pkgs.jq
     ];
 
-    # Satty configuration - Ctrl+C copies to clipboard, saves file, and exits
-    xdg.configFile."satty/config.toml".text = ''
-      [general]
-      early-exit = true
-      save-after-copy = true
-      copy-command = "${pkgs.wl-clipboard}/bin/wl-copy"
-    '';
-
-    # Hyprland layer rule to remove animation artifacts during screenshot selection
-    wayland.windowManager.hyprland.settings.layerrule = [ "no_anim on, match:namespace slurp" ];
   };
 }

@@ -17,11 +17,5 @@ in
       wl-clip-persist
     ];
 
-    # Clipse configuration
-    xdg.configFile."clipse/config.json".text = builtins.toJSON {
-      historySize = 100;
-      maxCharacters = 1000;
-      themeFile = "${config.xdg.configHome}/keystone/current/theme/clipse.json";
-    };
   };
 }

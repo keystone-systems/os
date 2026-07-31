@@ -15,7 +15,7 @@ in
 {
   config = mkIf cfg.enable {
     programs.waybar = {
-      enable = mkDefault true;
+      enable = false;
       # home-manager's `programs.waybar.systemd.enable` is mkEnableOption and
       # defaults to false. Without it, only the nixpkgs-shipped waybar.service
       # unit lands in the user profile — no wants symlink is created, so the
@@ -289,6 +289,19 @@ in
           font-weight: bold;
         }
       '';
+    };
+    home.packages = [ pkgs.waybar ];
+    systemd.user.services.waybar = {
+      Unit = {
+        Description = "Waybar status bar";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        ExecStart = "${pkgs.waybar}/bin/waybar";
+        Restart = "on-failure";
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
     };
   };
 }

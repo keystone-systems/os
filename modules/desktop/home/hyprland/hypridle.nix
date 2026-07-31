@@ -23,7 +23,7 @@ in
     };
 
     services.hypridle = {
-      enable = mkDefault true;
+      enable = false;
       settings = {
         general = {
           lock_cmd = lockCommand;
@@ -47,6 +47,15 @@ in
           }
         ];
       };
+    };
+    systemd.user.services.hypridle = {
+      Unit = {
+        Description = "Hyprland idle manager";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service.ExecStart = "${pkgs.hypridle}/bin/hypridle";
+      Install.WantedBy = [ "graphical-session.target" ];
     };
   };
 }

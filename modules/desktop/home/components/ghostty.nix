@@ -11,7 +11,7 @@ in
 {
   config = mkIf cfg.enable {
     programs.ghostty = {
-      enable = true;
+      enable = false;
       settings = {
         # Window settings
         window-padding-x = 14;
@@ -60,5 +60,6 @@ in
         config-file = "${config.xdg.configHome}/keystone/current/theme/ghostty.conf";
       };
     };
+    home.packages = [ pkgs.ghostty ];
   };
 }

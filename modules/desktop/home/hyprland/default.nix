@@ -82,7 +82,7 @@ in
 
   config = mkIf desktopCfg.enable {
     wayland.windowManager.hyprland = {
-      enable = true;
+      enable = false;
       package = hyprlandPkg;
       # Disabled since programs.hyprland.withUWSM is enabled on NixOS
       systemd.enable = false;
@@ -113,6 +113,10 @@ in
     home.packages = with pkgs; [
       wofi
       waybar
+      hypridle
+      hyprlock
+      hyprpaper
+      hyprsunset
       libnotify
       wl-clipboard
       wl-clip-persist

@@ -79,7 +79,7 @@ in
     {
       # Ensure ssh-agent and ssh client are configured
       services.ssh-agent.enable = true;
-      programs.ssh.enable = true;
+      home.packages = [ pkgs.openssh ];
 
       systemd.user.services.ssh-auto-load = {
         Unit = {
