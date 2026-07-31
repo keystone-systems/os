@@ -194,8 +194,30 @@ in
     {
       home.packages = [
         pkgs.wofi
-        pkgs.walker
+        config.programs.walker.package
       ];
+
+      # Runtime integration only: Walker's editable configuration is supplied
+      # by the selected Stow package, while Keystone keeps the launcher backend
+      # and long-running application service available.
+      programs.elephant.enable = true;
+      systemd.user.services.walker = {
+        Unit = {
+          Description = "Walker - Application Runner";
+          ConditionEnvironment = "WAYLAND_DISPLAY";
+          After = [
+            "graphical-session.target"
+            "elephant.service"
+          ];
+          Requires = [ "elephant.service" ];
+          PartOf = [ "graphical-session.target" ];
+        };
+        Service = {
+          ExecStart = "${lib.getExe config.programs.walker.package} --gapplication-service";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "graphical-session.target" ];
+      };
 
       # Wofi as the application launcher
       programs.wofi = {

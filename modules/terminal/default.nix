@@ -189,6 +189,7 @@ in
             set -euo pipefail
             mkdir_bin="${pkgs.coreutils}/bin/mkdir"
             dirname_bin="${pkgs.coreutils}/bin/dirname"
+            timeout_bin="${pkgs.coreutils}/bin/timeout"
             git_bin="${pkgs.git}/bin/git"
             ${lib.concatStringsSep "\n" (
               lib.mapAttrsToList (name: repo: ''
@@ -196,10 +197,14 @@ in
                 if [ ! -d "$target/.git" ]; then
                   echo "Cloning managed repo ${name} from ${repo.url}..."
                   "$mkdir_bin" -p "$("$dirname_bin" "$target")"
-                  "$git_bin" clone "${repo.url}" "$target" || echo "Warning: Failed to clone ${name}, skipping..."
+                  "$timeout_bin" --signal=TERM 15s \
+                    "$git_bin" clone "${repo.url}" "$target" \
+                    || echo "Warning: Failed to clone ${name} after 15s, skipping..."
                 else
                   echo "Pulling managed repo ${name} at $target..."
-                  "$git_bin" -C "$target" pull --ff-only || echo "Warning: Failed to pull ${name}, skipping..."
+                  "$timeout_bin" --signal=TERM 15s \
+                    "$git_bin" -C "$target" pull --ff-only \
+                    || echo "Warning: Failed to pull ${name} after 15s, skipping..."
                 fi
               '') config.keystone.repos
             )}

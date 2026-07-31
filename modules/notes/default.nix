@@ -347,11 +347,14 @@ let
     NOTES_GIT_DIR=${lib.escapeShellArg "${cfg.path}/.git"}
 
     repo_sync() {
-      ${pkgs.keystone.repo-sync}/bin/repo-sync \
+      if ! ${pkgs.coreutils}/bin/timeout --signal=TERM 15s \
+        ${pkgs.keystone.repo-sync}/bin/repo-sync \
         --repo ${lib.escapeShellArg cfg.repo} \
         --path ${lib.escapeShellArg cfg.path} \
         --commit-prefix ${lib.escapeShellArg cfg.commitPrefix} \
-        --log-dir ${lib.escapeShellArg "${config.home.homeDirectory}/.local/state/notes-sync/logs"}
+        --log-dir ${lib.escapeShellArg "${config.home.homeDirectory}/.local/state/notes-sync/logs"}; then
+        echo "Warning: notes sync unavailable after 15s; continuing offline." >&2
+      fi
     }
 
     if [[ ! -d "$NOTES_GIT_DIR" ]]; then
