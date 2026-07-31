@@ -31,6 +31,6 @@ The bar is positioned at the top with a height of 26px.
 
 Waybar's styling is designed to switch themes on the fly without rebuilding the system.
 
-1.  **CSS Import**: The configuration imports `${config.xdg.configHome}/keystone/current/theme/waybar.css`.
-2.  **Theme Switching**: The `keystone-theme-switch` script updates the symlink at `.../keystone/current/theme`, pointing it to the new theme directory (e.g., `tokyo-night`, `catppuccin`), and then reloads Waybar.
+1.  **CSS Import**: The Stow-owned configuration imports `${config.xdg.configHome}/themes/current/waybar.css`.
+2.  **Theme Switching**: The `keystone-theme-switch` script updates the symlink at `.../themes/current`, pointing it to the selected Stow-owned theme directory (e.g., `tokyo-night`, `catppuccin`), and then reloads Waybar.
 3.  **Base Styles**: The `style` block in the Nix config sets base properties (fonts, margins) and uses variables like `@background` and `@foreground` which are populated by the imported theme CSS.

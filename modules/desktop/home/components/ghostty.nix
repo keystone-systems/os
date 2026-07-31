@@ -57,7 +57,7 @@ in
       }
       # Always load theme from the dynamic symlink so theme switching works at runtime
       // {
-        config-file = "${config.xdg.configHome}/keystone/current/theme/ghostty.conf";
+        config-file = "${config.xdg.configHome}/themes/current/ghostty.conf";
       };
     };
     home.packages = [ pkgs.ghostty ];

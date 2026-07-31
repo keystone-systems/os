@@ -13,7 +13,7 @@ in
     programs.hyprlock = {
       enable = false;
       settings = {
-        source = mkDefault "${config.xdg.configHome}/keystone/current/theme/hyprlock.conf";
+        source = mkDefault "${config.xdg.configHome}/themes/current/hyprlock.conf";
 
         general = {
           disable_loading_bar = true;

@@ -86,7 +86,7 @@ in
 
       # Link to theme file from current theme
       xdg.configFile."btop/themes/keystone.theme".source =
-        config.lib.file.mkOutOfStoreSymlink "${config.xdg.configHome}/keystone/current/theme/btop.theme";
+        config.lib.file.mkOutOfStoreSymlink "${config.xdg.configHome}/themes/current/btop.theme";
     */
   };
 }

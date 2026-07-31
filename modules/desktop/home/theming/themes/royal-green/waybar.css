@@ -1,8 +1,0 @@
-@define-color foreground #B6BFBC;
-@define-color background #001F14;
-@define-color gold #B8A26C;
-
-#workspaces button.active {
-  color: @gold;
-  font-weight: bold;
-}

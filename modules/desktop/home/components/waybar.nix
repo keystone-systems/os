@@ -202,7 +202,7 @@ in
       };
 
       style = ''
-        @import "${config.xdg.configHome}/keystone/current/theme/waybar.css";
+        @import "${config.xdg.configHome}/themes/current/waybar.css";
 
         * {
           background-color: @background;

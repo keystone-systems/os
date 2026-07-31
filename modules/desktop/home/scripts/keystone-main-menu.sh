@@ -29,7 +29,7 @@ detach() {
 }
 
 current_theme_name() {
-  local current_theme_dir="${XDG_CONFIG_HOME:-$HOME/.config}/keystone/current/theme"
+  local current_theme_dir="${XDG_CONFIG_HOME:-$HOME/.config}/themes/current"
 
   if [[ -L "$current_theme_dir" ]]; then
     basename "$(readlink -f "$current_theme_dir")"
@@ -270,7 +270,7 @@ style_json() {
 }
 
 theme_json() {
-  local themes_dir="${XDG_CONFIG_HOME:-$HOME/.config}/keystone/themes"
+  local themes_dir="${XDG_CONFIG_HOME:-$HOME/.config}/themes"
   local current_theme
   current_theme=$(current_theme_name)
 

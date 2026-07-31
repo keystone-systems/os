@@ -15,10 +15,7 @@
 #   4. (Interactive only) the user confirms the dialog looks right
 #
 # Theme source resolution:
-#   - Custom themes (royal-green, etc.) — read from
-#     $REPO_ROOT/modules/desktop/home/theming/themes/<name>/.
-#   - Omarchy themes (tokyo-night, kanagawa, etc.) — read from the
-#     branch's flake-locked omarchy input, resolved via `nix eval`.
+#   - Themes are read from ~/.config/themes by default.
 #   - Override either with KEYSTONE_THEMES_DIRS or --themes-dir.
 #
 # Caveats:
@@ -112,7 +109,7 @@ if [[ ! -f "$REPO_ROOT/flake.nix" ]] \
   exit 2
 fi
 
-CUSTOM_THEMES_DIR="$REPO_ROOT/modules/desktop/home/theming/themes"
+CUSTOM_THEMES_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/themes"
 
 # Resolve the omarchy themes directory by nix-eval-ing the flake's
 # locked input. Cached for the duration of this run because the eval
@@ -217,7 +214,7 @@ resolve_theme_dir() {
 # user's home-manager symlink. Used only as a default for "no args"
 # invocations; it doesn't constrain which themes can be tested.
 current_theme_name() {
-  local link="${KEYSTONE_CURRENT_LINK:-$HOME/.config/keystone/current/theme}"
+  local link="${KEYSTONE_CURRENT_LINK:-$HOME/.config/themes/current}"
   if [[ -L "$link" ]]; then
     basename "$(readlink -f "$link")"
   else

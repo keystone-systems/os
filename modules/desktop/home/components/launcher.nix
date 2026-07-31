@@ -9,17 +9,6 @@ let
   cfg = config.keystone.desktop;
   devScripts = import ../../../shared/dev-script-link.nix { inherit lib; };
   inherit (devScripts) mkHomeRepoFiles;
-  themeDir = "${config.xdg.configHome}/keystone/current/theme";
-
-  # Read and substitute the walker style.css template
-  walkerStyleCss = builtins.replaceStrings [ "\${themeDir}" ] [ themeDir ] (
-    builtins.readFile ./walker-style.css
-  );
-
-  # TODO(REQ-018.7a): Home Manager's Walker module currently embeds layout XML
-  # inline, so this remains generated until Walker layouts can be referenced by
-  # path without losing dev-mode behavior.
-  walkerLayoutXml = builtins.readFile ./walker-layout.xml;
 in
 {
   # walker is imported via flake.nix homeModules.desktop (hoisted to avoid
@@ -232,9 +221,6 @@ in
           image_size = 24;
           insensitive = true;
         };
-        style = ''
-          @import "${config.xdg.configHome}/keystone/current/theme/wofi.css";
-        '';
       };
 
       # Walker launcher using the official home-manager module
@@ -436,14 +422,6 @@ in
                 provider = "clipboard";
               }
             ];
-          };
-        };
-
-        # Define the keystone theme
-        themes.keystone = {
-          style = walkerStyleCss;
-          layouts = {
-            layout = walkerLayoutXml;
           };
         };
       };

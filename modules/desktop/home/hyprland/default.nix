@@ -89,7 +89,7 @@ in
 
       # Source theme file for runtime theme switching
       extraConfig = ''
-        source = ~/.config/keystone/current/theme/hyprland.conf
+        source = ~/.config/themes/current/hyprland.conf
       '';
 
       settings = {

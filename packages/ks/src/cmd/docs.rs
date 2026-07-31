@@ -75,7 +75,7 @@ fn theme_colors() -> (String, String, String) {
 
     let theme_dir = home::home_dir()
         .unwrap_or_default()
-        .join(".config/keystone/current/theme/waybar.css");
+        .join(".config/themes/current/waybar.css");
     if let Ok(contents) = fs::read_to_string(theme_dir) {
         for line in contents.lines() {
             let line = line.trim();

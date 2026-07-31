@@ -31,7 +31,8 @@ desktop/
 
 ### Theme Structure
 
-Themes are stored in `~/.config/keystone/themes/<theme-name>/` with the following structure:
+Themes are owned by the dotfiles repository and Stowed into
+`~/.config/themes/<theme-name>/` with the following structure:
 
 ```
 themes/
@@ -47,7 +48,7 @@ themes/
 
 ### Active Theme
 
-The current theme is symlinked at `~/.config/keystone/current/theme/` and sourced by all components.
+The current theme is symlinked at `~/.config/themes/current/` and sourced by all components.
 
 Startup `hyprlock` is the exception: it uses a built-in minimal secure config so
 password entry does not depend on mutable theme or wallpaper symlinks.

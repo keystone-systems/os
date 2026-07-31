@@ -110,7 +110,7 @@ in
     };
 
     # The desktop session depends on Home Manager activation having already
-    # materialized mutable theme links like ~/.config/keystone/current/theme
+    # materialized mutable theme links like ~/.config/themes/current
     # and ~/.config/keystone/current/background. Without explicit ordering,
     # display-manager can start the Hyprland session before home-manager-$user
     # has finished on a fresh install, which leaves the first session without
