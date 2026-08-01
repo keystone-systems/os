@@ -1,6 +1,8 @@
 # Regression test for the polkit rule that lets walker-launched updates
 # take a `systemd-inhibit` lock without an interactive auth prompt.
-# Rule lives in modules/desktop/nixos.nix; servers don't get the grant.
+# Rule lives in ks.systems/desktop (modules/nixos/common.nix), keyed on
+# keystone.desktop.user, which keystone-glue defaults to the admin user;
+# servers don't get the grant.
 {
   pkgs,
   lib ? pkgs.lib,

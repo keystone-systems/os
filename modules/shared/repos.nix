@@ -33,6 +33,15 @@ let
       flakeInput = "deepwork";
       branch = "main";
     };
+    # Explicit entry required: the desktop input's sourceInfo carries no
+    # owner/repo (especially under ks-dev path overrides), so auto-derivation
+    # would register a bare "desktop" repo and dev symlinks would dangle at
+    # ~/repos/desktop instead of ~/repos/ks.systems/desktop.
+    "ks.systems/desktop" = {
+      url = "https://git.ncrmro.com/ks.systems/desktop.git";
+      flakeInput = "desktop";
+      branch = "main";
+    };
   };
   explicitFlakeInputs = listToAttrs (
     mapAttrsToList (key: value: {

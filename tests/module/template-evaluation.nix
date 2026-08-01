@@ -134,7 +134,6 @@ let
           email = "workstation@example.com";
           initialPassword = "changeme";
           terminal.enable = true;
-          desktop.hyprland.modifierKey = "SUPER";
         };
         storage.devices = [ "/dev/disk/by-id/nvme-workstation-root-001" ];
         modules = [
@@ -153,7 +152,6 @@ let
           email = "workstation@example.com";
           initialPassword = "changeme";
           terminal.enable = true;
-          desktop.hyprland.modifierKey = "SUPER";
         };
         storage = {
           mode = "stripe";

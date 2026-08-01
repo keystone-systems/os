@@ -103,7 +103,7 @@ if [[ -z "$REPO_ROOT" ]]; then
   exit 2
 fi
 if [[ ! -f "$REPO_ROOT/flake.nix" ]] \
-   || [[ ! -d "$REPO_ROOT/modules/desktop/home/theming" ]]; then
+   || [[ ! -f "$REPO_ROOT/modules/desktop/keystone-glue.nix" ]]; then
   echo "error: $REPO_ROOT does not look like a keystone checkout" >&2
   echo "       (cd into the keystone checkout, or pass --repo PATH)" >&2
   exit 2
@@ -123,7 +123,7 @@ resolve_omarchy_themes_dir() {
   local out
   out=$(nix --extra-experimental-features 'nix-command flakes' \
         eval --raw --impure \
-        --expr "(builtins.getFlake \"git+file://$REPO_ROOT\").inputs.omarchy.outPath" \
+        --expr "(builtins.getFlake \"git+file://$REPO_ROOT\").inputs.desktop.inputs.omarchy.outPath" \
         2>/dev/null) || return 1
   if [[ -z "$out" || ! -d "$out/themes" ]]; then
     return 1
@@ -169,8 +169,8 @@ ensure_wpt_bin() {
   local store_path
   if ! store_path=$(nix build "path:$REPO_ROOT#write-polkit-theme" --no-link --print-out-paths 2>&1); then
     log "  ERROR: failed to build write-polkit-theme from $REPO_ROOT"
-    log "  This branch must include packages/write-polkit-theme/ — if the"
-    log "  branch was cut before that package landed, rebase onto main."
+    log "  write-polkit-theme is re-exported from the ks.systems/desktop"
+    log "  input — the flake.lock must have a fetchable desktop node."
     log "$store_path"
     return 1
   fi

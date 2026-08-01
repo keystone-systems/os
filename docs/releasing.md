@@ -64,8 +64,8 @@ shipping a fix is just landing it on the right branch.
 
 ## Update channels
 
-Hosts running the Walker update menu (`ks menu update`, wired up via
-`modules/desktop/home/services.nix`) track one of two branches. Selection is
+Hosts running the Walker update menu (`ks menu update`, wired up via the
+ks.systems/desktop flake's `modules/home/scripts/`) track one of two branches. Selection is
 declarative, through the `keystone.update.channel` option:
 
 - `stable` (default) — the menu resolves the highest `release/<major>.<minor>`

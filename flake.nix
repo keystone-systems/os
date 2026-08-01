@@ -11,23 +11,17 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    omarchy = {
-      url = "github:basecamp/omarchy/v3.0.2";
-      flake = false;
-    };
     lanzaboote = {
       url = "github:nix-community/lanzaboote";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.crane.follows = "crane";
     };
-    hyprland.url = "github:hyprwm/Hyprland";
-    hyprpaper = {
-      url = "github:hyprwm/hyprpaper";
+    # Desktop environments (Hyprland session wiring, scripts, menus, theming,
+    # dotfile templates). The desktop flake is the single owner of the
+    # compositor pin — deliberately no hyprland follows here.
+    desktop = {
+      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.hyprlang.follows = "hyprland/hyprlang";
-      inputs.hyprutils.follows = "hyprland/hyprutils";
-      inputs.hyprgraphics.follows = "hyprland/hyprgraphics";
-      inputs.hyprwayland-scanner.follows = "hyprland/hyprwayland-scanner";
     };
     himalaya = {
       url = "github:pimalaya/himalaya";
@@ -70,10 +64,6 @@
       url = "github:sxyazi/yazi";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    walker = {
-      url = "github:abenz1267/walker";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
 
     # Secret management
     agenix = {
@@ -87,7 +77,6 @@
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix-flatpak.url = "github:gmodena/nix-flatpak";
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
 
     # Helix editor themes
@@ -124,10 +113,8 @@
       crane,
       disko,
       home-manager,
-      omarchy,
       lanzaboote,
-      hyprland,
-      hyprpaper,
+      desktop,
       himalaya,
       calendula,
       cardamum,
@@ -136,10 +123,8 @@
       browser-previews,
       ghostty,
       yazi,
-      walker,
       agenix,
       nix-index-database,
-      nix-flatpak,
       nixos-hardware,
       kinda-nvim-hx,
       deepwork,
@@ -156,18 +141,13 @@
           disko
           lanzaboote
           home-manager
-          hyprland
-          hyprpaper
           himalaya
           llm-agents
           browser-previews
           agenix
-          walker
           nix-index-database
-          nix-flatpak
           nixos-hardware
           kinda-nvim-hx
-          omarchy
           ;
         self = self;
         deepwork = deepwork;
@@ -246,24 +226,40 @@
       // exampleFleet.nixosConfigurations;
 
       # Overlay that provides keystone packages
-      overlays.default = import ./overlays/default.nix {
-        inherit
-          self
-          crane
-          himalaya
-          calendula
-          cardamum
-          comodoro
-          llm-agents
-          browser-previews
-          ghostty
-          yazi
-          agenix
-          deepwork
-          grafana-mcp-src
-          lfs-s3-src
-          ;
-      };
+      overlays.default = nixpkgs.lib.composeManyExtensions [
+        # Desktop packages (write-polkit-theme, hyprpolkitagent,
+        # keystone-dpms-wake) moved to ks.systems/desktop; compose its overlay
+        # so pkgs.keystone-desktop.* resolves wherever keystone's overlay is
+        # applied.
+        desktop.overlays.default
+        (import ./overlays/default.nix {
+          inherit
+            self
+            crane
+            himalaya
+            calendula
+            cardamum
+            comodoro
+            llm-agents
+            browser-previews
+            ghostty
+            yazi
+            agenix
+            deepwork
+            grafana-mcp-src
+            lfs-s3-src
+            ;
+        })
+        # Name-stability aliases: keystone's packages export (flake.nix
+        # packages.x86_64-linux) and downstream pkgs.keystone.* references
+        # keep resolving after the move to ks.systems/desktop.
+        (final: prev: {
+          keystone = prev.keystone // {
+            write-polkit-theme = final.keystone-desktop.write-polkit-theme;
+            hyprpolkitagent = final.keystone-desktop.hyprpolkitagent;
+          };
+        })
+      ];
 
       # Export Keystone modules for use in other flakes
       nixosModules = {
@@ -314,7 +310,7 @@
           # Only pass inputs that represent managed repos — not all upstream dependencies.
           keystone._repoInputs = {
             keystone = self;
-            inherit deepwork;
+            inherit deepwork desktop;
           };
           home-manager = {
             useGlobalPkgs = true;
@@ -326,15 +322,14 @@
           };
         };
 
-        # Desktop module - Hyprland, audio, greetd (no disko/encryption dependencies)
+        # Desktop module - re-export of ks.systems/desktop plus keystone glue
+        # (which-user default, resolved routing, terminal/experimental wiring).
+        # The keystone.desktop.* option paths are preserved verbatim by the
+        # desktop flake.
         desktop = {
           imports = [
-            keystoneInputs.nix-flatpak.nixosModules.nix-flatpak
-            ./modules/desktop/nixos.nix
-          ];
-          _module.args.keystoneInputs = keystoneInputs;
-          home-manager.sharedModules = [
-            self.homeModules.desktop
+            desktop.nixosModules.default
+            ./modules/desktop/keystone-glue.nix
           ];
         };
 
@@ -377,7 +372,6 @@
 
       # Export home-manager modules (homeModules is the standard flake output name)
       homeModules = {
-        desktopHyprland = ./home-manager/modules/desktop/hyprland;
         # Keystone-specific home-manager modules
         terminal = {
           imports = [
@@ -386,16 +380,11 @@
           ];
           _module.args.keystoneInputs = keystoneInputs;
         };
-        desktop = {
-          imports = [
-            keystoneInputs.walker.homeManagerModules.default
-            ./modules/desktop/home/default.nix
-          ];
-          # keystoneInputs is provided by homeModules.terminal (loaded as a
-          # sharedModule by nixosModules.operating-system). Do not redeclare
-          # _module.args here to avoid "defined multiple times" when both
-          # terminal and desktop are active.
-        };
+        # Plain re-export of ks.systems/desktop's HM module. That flake's
+        # wrapper is the SOLE importer of walker's HM module — do not import
+        # walker here or downstream, or `programs.walker.elephant` is declared
+        # twice.
+        desktop = desktop.homeModules.default;
         notes = ./modules/notes/default.nix;
       };
 
@@ -485,36 +474,24 @@
             inherit pkgs lib nixpkgs;
             self = self;
           };
+          # Menu shell scripts moved to ks.systems/desktop; these wiring tests
+          # exercise the desktop input's copy against keystone's ks CLI and
+          # shared modules (cross-repo coupling stays covered here).
           keystoneSecretsMenu = import ./tests/module/keystone-secrets-menu.nix {
             inherit pkgs lib;
+            desktopSrc = desktop;
           };
           keystoneFingerprintMenu = import ./tests/module/keystone-fingerprint-menu.nix {
             inherit pkgs lib;
+            desktopSrc = desktop;
           };
           keystoneUpdateMenuWiring = import ./tests/module/keystone-update-menu-wiring.nix {
             inherit pkgs lib;
+            desktopSrc = desktop;
           };
           keystoneUpdateApproveFlow = import ./tests/module/keystone-update-approve-flow.nix {
             pkgs = ksPkgs;
             inherit lib ks;
-          };
-          hyprlandBindingsAgentConflict = import ./tests/module/hyprland-bindings-agent-conflict.nix {
-            inherit pkgs;
-          };
-          desktopWalkerSurfaces = import ./tests/module/desktop-walker-surfaces.nix {
-            inherit pkgs;
-          };
-          hyprlandConfigSmoke = import ./tests/module/hyprland-config-smoke.nix {
-            pkgs = ksPkgs;
-            lib = ksPkgs.lib;
-            inherit home-manager;
-            self = self;
-          };
-          desktopFprintd = import ./tests/module/desktop-fprintd.nix {
-            pkgs = ksPkgs;
-            lib = ksPkgs.lib;
-            inherit nixpkgs;
-            self = self;
           };
           agentctlRegression = import ./tests/module/agentctl-regression.nix {
             inherit pkgs;
@@ -557,10 +534,6 @@
           keystone-fingerprint-menu = keystoneFingerprintMenu;
           keystone-update-menu-wiring = keystoneUpdateMenuWiring;
           keystone-update-approve-flow = keystoneUpdateApproveFlow;
-          hyprland-bindings-agent-conflict = hyprlandBindingsAgentConflict;
-          desktop-walker-surfaces = desktopWalkerSurfaces;
-          hyprland-config-smoke = hyprlandConfigSmoke;
-          desktop-fprintd = desktopFprintd;
           ks-approve = ksApprove;
           approve-exec-script = approveExecScript;
           polkit-keystone-approve-cache = polkitKeystoneApproveCache;
@@ -612,15 +585,6 @@
             ln -s ${keystoneFingerprintMenu} "$out/keystone-fingerprint-menu"
             ln -s ${keystoneUpdateMenuWiring} "$out/keystone-update-menu-wiring"
             ln -s ${keystoneUpdateApproveFlow} "$out/keystone-update-approve-flow"
-          '';
-
-          # Desktop config serialization and startup regressions
-          check-desktop = pkgs.runCommand "check-desktop" { } ''
-            mkdir -p "$out"
-            ln -s ${hyprlandBindingsAgentConflict} "$out/hyprland-bindings-agent-conflict"
-            ln -s ${desktopWalkerSurfaces} "$out/desktop-walker-surfaces"
-            ln -s ${hyprlandConfigSmoke} "$out/hyprland-config-smoke"
-            ln -s ${desktopFprintd} "$out/desktop-fprintd"
           '';
 
           # Agent runtime and miscellaneous module tests

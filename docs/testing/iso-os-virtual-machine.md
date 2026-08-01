@@ -217,7 +217,7 @@ Understanding this boundary is the key to fast iteration.
 
 | Component | Files |
 |-----------|-------|
-| NixOS modules | `modules/os/`, `modules/desktop/`, `modules/server/` |
+| NixOS modules | `modules/os/`, `modules/server/`, `modules/desktop/keystone-glue.nix` (desktop implementation comes from the ks.systems/desktop flake via the `desktop` input) |
 | Template library | `lib/templates.nix` (`mkSystemFlake`, `mkLaptop`, etc.) |
 | Template flake config | `templates/default/flake.nix` |
 | Host definitions | `templates/default/hosts/` |
@@ -326,7 +326,8 @@ $VM_SCRIPT --post-install-reboot <vm-name> --headless --monitor-socket /tmp/e2e-
 After a full e2e run completes the install but desktop validation fails:
 
 1. The `post-install` snapshot already exists.
-2. Edit NixOS modules (e.g. `modules/desktop/`) in the keystone worktree.
+2. Edit NixOS modules (e.g. `modules/os/`) in the keystone worktree, or the
+   ks.systems/desktop checkout for desktop modules.
 3. Restore and re-boot without reinstalling:
 
 ```bash
@@ -495,7 +496,8 @@ VM_SCRIPT="$KEYSTONE_LOCKED_PATH/bin/virtual-machine"
 
 ### hardware.graphics
 
-`modules/desktop/nixos.nix` enables `hardware.graphics = true` when desktop is
+The ks.systems/desktop flake's `modules/nixos/common.nix` (imported through
+keystone's `nixosModules.desktop`) enables `hardware.graphics = true` when desktop is
 enabled. This pulls in mesa + virgl drivers so Hyprland can render on the
 virtio-gpu device in VMs and on real GPUs on bare metal.
 

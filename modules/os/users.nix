@@ -543,10 +543,10 @@ in
                     keystone.desktop = mkIf userCfg.desktop.enable {
                       enable = mkDefault true;
                       uhk.enable = mkDefault config.keystone.hardware.uhk.enable;
-                      hyprland = {
-                        modifierKey = mkDefault userCfg.desktop.hyprland.modifierKey;
-                        capslockAsControl = mkDefault userCfg.desktop.hyprland.capslockAsControl;
-                      };
+                      # hyprland.{modifierKey,capslockAsControl} bridging removed:
+                      # the HM settings-generation options were deleted in the
+                      # ks.systems/desktop extraction — keybinds/input now live in
+                      # the user's stowed dotfiles (desktop flake templates).
                     };
                   }
                 )

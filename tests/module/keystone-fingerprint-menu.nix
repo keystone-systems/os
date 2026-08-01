@@ -1,6 +1,10 @@
 {
   pkgs,
   lib,
+  # Source tree of the ks.systems/desktop flake input — the menu shell
+  # scripts moved there; this test keeps exercising them against keystone's
+  # stubs so the cross-repo contract stays covered.
+  desktopSrc,
 }:
 pkgs.runCommand "test-keystone-fingerprint-menu"
   {
@@ -14,7 +18,7 @@ pkgs.runCommand "test-keystone-fingerprint-menu"
   ''
     set -euo pipefail
 
-    export REPO_ROOT="${../..}"
+    export DESKTOP_ROOT="${desktopSrc}"
     export HOME="$PWD/home"
     export XDG_RUNTIME_DIR="$PWD/runtime"
     export USER="testuser"
@@ -31,7 +35,7 @@ pkgs.runCommand "test-keystone-fingerprint-menu"
 
     cat > "$PWD/bin/keystone-fingerprint-menu" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    exec ${pkgs.bash}/bin/bash "$REPO_ROOT/modules/desktop/home/scripts/keystone-fingerprint-menu.sh" "$@"
+    exec ${pkgs.bash}/bin/bash "$DESKTOP_ROOT/modules/home/scripts/keystone-fingerprint-menu.sh" "$@"
     EOF
     chmod +x "$PWD/bin/keystone-fingerprint-menu"
     ln -s "$PWD/bin/keystone-fingerprint-menu" "$HOME/.local/bin/keystone-fingerprint-menu"

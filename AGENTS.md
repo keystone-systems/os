@@ -26,7 +26,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 - `modules/os/` — Core OS: storage, Secure Boot, TPM, users, SSH, agents, containers, Tailscale
 - `modules/os/agents/` — Autonomous agent service accounts: task loop, scheduler, desktop, mail
 - `modules/terminal/` — Home-manager terminal: shell, editor, AI tools, mail, calendar, DeepWork
-- `modules/desktop/` — Hyprland desktop environment: theming, keybindings, components
+- `modules/desktop/` — keystone glue only (`keystone-glue.nix`); the desktop implementation lives in the ks.systems/desktop flake (the `desktop` input)
 - `modules/server/` — Server services: DNS, mail, monitoring, Forgejo, Grafana, Immich, Vaultwarden
 - `modules/notes/` — Zettelkasten notebook management via zk
 
@@ -55,7 +55,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 |---|---|
 | `operating-system` | Core OS — storage, Secure Boot, TPM, users, agents (includes disko + lanzaboote) |
 | `server` | Server services (includes domain) |
-| `desktop` | Hyprland desktop environment |
+| `desktop` | Desktop environments — re-export of ks.systems/desktop plus keystone glue |
 | `binaryCacheClient` | Attic binary cache client |
 | `hardwareKey` | YubiKey/FIDO2 support |
 | `isoInstaller` | Bootable installer |
@@ -65,7 +65,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 
 ### Home-Manager Modules (`keystone.homeModules.*`)
 
-`terminal`, `desktop`, `desktopHyprland`, `notes`
+`terminal`, `desktop` (re-export of ks.systems/desktop's `homeModules.default`), `notes`
 
 ### Overlay (`pkgs.keystone.*`)
 

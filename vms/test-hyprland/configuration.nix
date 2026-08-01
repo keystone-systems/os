@@ -56,10 +56,7 @@
       email = "testuser@keystone-test-vm";
       initialPassword = "testpass";
       terminal.enable = true;
-      desktop = {
-        enable = true;
-        hyprland.modifierKey = "SUPER";
-      };
+      desktop.enable = true;
       zfs = {
         quota = "50G";
         compression = "lz4";
@@ -67,17 +64,11 @@
     };
   };
 
-  # Enable desktop environment (Hyprland)
+  # Enable desktop environment (Hyprland via ks.systems/desktop)
   keystone.desktop = {
     enable = true;
     user = "testuser";
-
-    # Desktop components (all enabled by default)
-    hyprland.enable = true;
-    greetd.enable = true;
-    audio.enable = true;
-    bluetooth.enable = true;
-    networking.enable = true;
+    environment = "hyprland";
   };
 
   # Serial console support for VM testing

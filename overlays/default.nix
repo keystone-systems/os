@@ -33,8 +33,6 @@ let
   cfait-src = ../packages/cfait;
   zide-src = ../packages/zide;
   zellij-tab-name-src = ../packages/zellij-tab-name;
-  hyprpolkitagent-src = ../packages/hyprpolkitagent;
-  write-polkit-theme-src = ../packages/write-polkit-theme;
   agents-e2e-src = ../packages/agents-e2e;
   ks-src = ../packages/ks;
   chrome-devtools-mcp-src = ../packages/chrome-devtools-mcp;
@@ -80,8 +78,9 @@ in
     cfait = final.callPackage cfait-src { };
     zide = final.callPackage zide-src { };
     zellij-tab-name = final.callPackage zellij-tab-name-src { };
-    hyprpolkitagent = final.callPackage hyprpolkitagent-src { };
-    write-polkit-theme = final.callPackage write-polkit-theme-src { };
+    # hyprpolkitagent and write-polkit-theme moved to ks.systems/desktop;
+    # flake.nix's alias overlay re-exports them as pkgs.keystone.* from
+    # final.keystone-desktop.* for name stability.
     himalaya = himalaya-flake.packages.${system}.default;
     calendula = calendula-flake.packages.${system}.default;
     cardamum = cardamum-flake.packages.${system}.default;

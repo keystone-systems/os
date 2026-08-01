@@ -9,17 +9,10 @@
     home-manager.follows = "keystone/home-manager";
     disko.follows = "keystone/disko";
     lanzaboote.follows = "keystone/lanzaboote";
-    omarchy.follows = "keystone/omarchy";
-    hyprland.follows = "keystone/hyprland";
     himalaya.follows = "keystone/himalaya";
     llm-agents.follows = "keystone/llm-agents";
     # These inputs are consumed directly by the tests flake. Keep explicit
     # definitions here because the path-based parent lock can lag nested inputs.
-    nix-flatpak.url = "github:gmodena/nix-flatpak";
-    walker = {
-      url = "github:abenz1267/walker";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     kinda-nvim-hx = {
       url = "github:strash/kinda_nvim.hx";
       flake = false;
@@ -38,10 +31,6 @@
       home-manager,
       disko,
       lanzaboote,
-      omarchy,
-      hyprland,
-      nix-flatpak,
-      walker,
       kinda-nvim-hx,
       himalaya,
       llm-agents,
@@ -93,25 +82,18 @@
           ];
         };
 
-        # Hyprland desktop testing
+        # Hyprland desktop testing. Uses the raw ks.systems/desktop module
+        # (keystone's `desktop` input) WITHOUT the keystone glue — the glue
+        # wires keystone.os.* options, which this fast-iteration VM skips
+        # along with disko/secure boot.
         build-vm-desktop = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = {
             inherit keystone;
-            keystoneInputs = {
-              inherit
-                nixpkgs
-                hyprland
-                nix-flatpak
-                omarchy
-                walker
-                kinda-nvim-hx
-                ;
-            };
           };
           modules = [
             home-manager.nixosModules.home-manager
-            nix-flatpak.nixosModules.nix-flatpak
+            keystone.inputs.desktop.nixosModules.default
             ../vms/build-vm-desktop/configuration.nix
           ];
         };

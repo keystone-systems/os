@@ -25,7 +25,7 @@ Read the fleet survey from the previous step and produce an update plan that cat
    - Map modules to hosts that consume them:
      - `modules/os/` → all hosts
      - `modules/terminal/` → all workstations + agent hosts
-     - `modules/desktop/` → workstations with desktop enabled
+     - `modules/desktop/` (glue only; implementation is the ks.systems/desktop flake via the `desktop` input) → workstations with desktop enabled
      - `modules/server/` → server hosts (ocean, mercury, maia)
    - Use this to determine which hosts MUST be updated and in what order
 

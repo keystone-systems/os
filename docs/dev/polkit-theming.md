@@ -10,13 +10,14 @@ iterate on a theming change and re-run the test without
 
 Run it after any change that touches:
 
-- `packages/hyprpolkitagent/` — the QML or its wrapper
-- `modules/desktop/home/theming/default.nix` — the `write_polkit_theme`
-  generator or theme-file copy maps
+- ks.systems/desktop `pkgs/` hyprpolkitagent — the QML or its wrapper
+  (moved out of keystone's `packages/` in the desktop extraction)
+- ks.systems/desktop `modules/home/theming/default.nix` — the
+  `write_polkit_theme` generator or theme-file copy maps
 - `modules/os/privileged-approval.nix` — polkit policy / allowlist
-- `modules/desktop/home/theming/themes/` — custom theme files
-  (royal-green, etc.)
-- `flake.lock` rev of upstream `omarchy` — colour values may shift
+- your stowed theme dotfiles (`~/.config/themes/`) — custom theme files
+  (royal-green, etc.; seeded from the desktop flake's templates)
+- the desktop flake's lock rev of upstream `omarchy` — colour values may shift
 
 ## Prerequisites
 
@@ -34,13 +35,14 @@ If either is missing, finish a `ks update --approve` first.
 
 ## Theme source resolution
 
-The script resolves theme files from the **branch's working tree**, not
-the activated keystone. The search path, in order:
+The script resolves theme files from your dotfiles and the branch's
+locked omarchy, not the activated keystone. The search path, in order:
 
-1. `$REPO_ROOT/modules/desktop/home/theming/themes/<name>/` — custom
-   themes (royal-green, etc.) tracked in this repo.
-2. `<branch-pinned-omarchy>/themes/<name>/` — omarchy themes resolved
-   by `nix eval`-ing the branch's flake-locked `omarchy` input.
+1. `~/.config/themes/<name>/` — custom themes (royal-green, etc.) from
+   your stowed dotfiles.
+2. `<branch-pinned-omarchy>/themes/<name>/` — omarchy themes resolved by
+   `nix eval`-ing the branch's `inputs.desktop.inputs.omarchy` (the
+   omarchy pin moved to the ks.systems/desktop flake).
 
 `$REPO_ROOT` is detected via `git rev-parse` from `$PWD`, or pass
 `--repo PATH` (or `KEYSTONE_REPO=...`) to point at a different checkout.
@@ -134,8 +136,8 @@ the calling shell. Make sure you're running from a Hyprland session,
 not a tty / SSH.
 
 **Journal shows `QML XMLHttpRequest: file:// access denied`.** The
-agent wrapper isn't exporting `QML_XHR_ALLOW_FILE_READ=1`. Check
-`packages/hyprpolkitagent/default.nix`.
+agent wrapper isn't exporting `QML_XHR_ALLOW_FILE_READ=1`. Check the
+hyprpolkitagent package in the ks.systems/desktop flake's `pkgs/`.
 
 **Journal shows `kvantum platformtheme`.** Harmless — Qt logs a notice
 when kvantum is on `QT_QPA_PLATFORMTHEME` even though the agent
@@ -143,9 +145,8 @@ doesn't use it. The script's grep ignores this string.
 
 ## Adding a new theme
 
-Theme directory layout (under
-`modules/desktop/home/theming/themes/<name>/` for custom themes, or
-omarchy's `themes/<name>/`):
+Theme directory layout (under `~/.config/themes/<name>/` in your stowed
+dotfiles for custom themes, or omarchy's `themes/<name>/`):
 
 | File | Used for | Required for polkit? |
 |---|---|---|

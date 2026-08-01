@@ -26,15 +26,20 @@
 {
   pkgs,
   lib ? pkgs.lib,
+  # Source tree of the ks.systems/desktop flake input — the Lua provider and
+  # main-menu shell moved there, but the wiring they must agree with
+  # (update_menu.rs, shared/update.nix, terminal/default.nix) stays in this
+  # repo, so the cross-repo coupling check lives here.
+  desktopSrc,
 }:
 let
-  luaFile = ../../modules/desktop/home/components/keystone-update.lua;
+  luaFile = "${desktopSrc}/modules/home/components/keystone-update.lua";
   updateMenuRs = ../../packages/ks/src/cmd/update_menu.rs;
   repoRs = ../../packages/ks/src/repo.rs;
   updateChannelOption = ../../modules/shared/update.nix;
   systemFlakeFile = ../../modules/shared/system-flake.nix;
   terminalDefault = ../../modules/terminal/default.nix;
-  mainMenuShell = ../../modules/desktop/home/scripts/keystone-main-menu.sh;
+  mainMenuShell = "${desktopSrc}/modules/home/scripts/keystone-main-menu.sh";
 in
 pkgs.runCommand "test-keystone-update-menu-wiring"
   {

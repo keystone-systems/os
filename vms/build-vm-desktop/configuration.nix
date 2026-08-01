@@ -33,21 +33,15 @@
     fsType = "ext4";
   };
 
-  # Import Keystone desktop module WITHOUT disko/secure boot
-  imports = [
-    ../../modules/desktop/nixos.nix
-  ];
+  # The ks.systems/desktop module is imported by tests/flake.nix
+  # (keystone.inputs.desktop.nixosModules.default) WITHOUT disko/secure boot
+  # and WITHOUT the keystone glue (which needs keystone.os.*).
 
   # Enable Keystone desktop components
   keystone.desktop = {
     enable = true;
     user = "testuser";
-
-    hyprland.enable = true;
-    greetd.enable = true;
-    audio.enable = true;
-    bluetooth.enable = true;
-    networking.enable = true;
+    environment = "hyprland";
   };
 
   # Enable SSH for remote access

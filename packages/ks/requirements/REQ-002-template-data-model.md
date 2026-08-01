@@ -83,5 +83,6 @@ Defaults to `true`.
 **REQ-002.21** Each user MAY include `desktop.enable` (boolean, OPTIONAL).
 Defaults to `false`.
 
-**REQ-002.22** Each user MAY include `desktop.hyprland.modifierKey` (string,
-OPTIONAL). Defaults to `"SUPER"`.
+**REQ-002.22** *Removed.* `desktop.hyprland.modifierKey` was deleted in the
+ks.systems/desktop extraction — Hyprland keybinds now come from the user's
+stowed dotfiles (seeded from the desktop flake's templates), not nix options.

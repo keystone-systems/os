@@ -1,6 +1,10 @@
 {
   pkgs,
   lib,
+  # Source tree of the ks.systems/desktop flake input — the menu shell
+  # scripts moved there; this test keeps exercising them against keystone's
+  # stubs so the cross-repo contract stays covered.
+  desktopSrc,
 }:
 pkgs.runCommand "test-keystone-secrets-menu"
   {
@@ -18,7 +22,7 @@ pkgs.runCommand "test-keystone-secrets-menu"
   ''
     set -euo pipefail
 
-    export REPO_ROOT="${../..}"
+    export DESKTOP_ROOT="${desktopSrc}"
     export HOME="$PWD/home"
     export XDG_RUNTIME_DIR="$PWD/runtime"
     export KEYSTONE_SYSTEM_FLAKE_POINTER_FILE="$PWD/keystone-system-flake"
@@ -51,14 +55,14 @@ pkgs.runCommand "test-keystone-secrets-menu"
 
     cat > "$PWD/bin/keystone-secrets-menu" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    exec ${pkgs.bash}/bin/bash "$REPO_ROOT/modules/desktop/home/scripts/keystone-secrets-menu.sh" "$@"
+    exec ${pkgs.bash}/bin/bash "$DESKTOP_ROOT/modules/home/scripts/keystone-secrets-menu.sh" "$@"
     EOF
     chmod +x "$PWD/bin/keystone-secrets-menu"
     ln -s "$PWD/bin/keystone-secrets-menu" "$HOME/.local/bin/keystone-secrets-menu"
 
     cat > "$PWD/bin/keystone-setup-menu" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    exec ${pkgs.bash}/bin/bash "$REPO_ROOT/modules/desktop/home/scripts/keystone-setup-menu.sh" "$@"
+    exec ${pkgs.bash}/bin/bash "$DESKTOP_ROOT/modules/home/scripts/keystone-setup-menu.sh" "$@"
     EOF
     chmod +x "$PWD/bin/keystone-setup-menu"
     ln -s "$PWD/bin/keystone-setup-menu" "$HOME/.local/bin/keystone-setup-menu"

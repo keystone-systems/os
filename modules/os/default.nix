@@ -180,22 +180,10 @@ let
             };
           };
 
-          hyprland = {
-            modifierKey = mkOption {
-              type = types.enum [
-                "SUPER"
-                "ALT"
-              ];
-              default = "SUPER";
-              description = "Primary modifier key for Hyprland keybindings";
-            };
-
-            capslockAsControl = mkOption {
-              type = types.bool;
-              default = true;
-              description = "Remap Caps Lock to Control";
-            };
-          };
+          # hyprland.{modifierKey,capslockAsControl} were removed in the
+          # ks.systems/desktop extraction: keybinds/input config now lives in
+          # the user's stowed dotfiles (desktop flake templates), so the
+          # options had no remaining consumer.
         };
 
         zfs = {

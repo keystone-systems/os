@@ -10,7 +10,6 @@ systemd_over_activation:
     include:
       - "**/*.nix"
     exclude:
-      - "desktop/home/**"
       - "terminal/**"
       - "notes/**"
   review:

@@ -185,9 +185,12 @@ personal config repo convention.
 
 ## Affected modules
 
-- `modules/desktop/home/scripts/default.nix`
-- `modules/desktop/home/scripts/keystone-setup-menu.sh`
-- `modules/desktop/home/components/launcher.nix`
+The desktop menu modules moved to the ks.systems/desktop flake in the desktop
+extraction; the first three paths now live in that repo:
+
+- `modules/home/scripts/default.nix` (ks.systems/desktop)
+- `modules/home/scripts/keystone-setup-menu.sh` (ks.systems/desktop)
+- `modules/home/components/launcher.nix` (ks.systems/desktop)
 - `modules/terminal/mail.nix`
 - `modules/terminal/calendar.nix`
 - `modules/os/tpm.nix`

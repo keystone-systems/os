@@ -1,5 +1,11 @@
 # Convention: Hyprland autostart (os.hyprland-autostart)
 
+> **Moved:** enforcement of this convention lives in the ks.systems/desktop
+> repo (`conventions/os.hyprland-autostart.md` there is canonical) — the
+> exec-once chain is now template content in that repo's `templates/`
+> hyprland.conf, guarded by its `template-startup-lock` check. File paths
+> referenced below describe the pre-extraction keystone tree.
+
 The Hyprland `exec-once` list is a security-critical boot chain. Its first
 user-visible command MUST be the configured startup lock command
 (`keystone.desktop.startupLockCommand`, default `keystone-startup-lock`),

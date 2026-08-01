@@ -296,8 +296,10 @@ in [
   pkgs.keystone.opencode
   pkgs.keystone.himalaya
   pkgs.yazi
-  flake.inputs.walker.packages.\${system}.default
-  flake.inputs.hyprland.packages.\${system}.hyprland
+  # walker/hyprland moved to the ks.systems/desktop flake — reach through the
+  # desktop input (same pattern as bin/dev/test-polkit-theme.sh's omarchy).
+  flake.inputs.desktop.inputs.walker.packages.\${system}.default
+  flake.inputs.desktop.inputs.hyprland.packages.\${system}.hyprland
 ]
 EOF
 }

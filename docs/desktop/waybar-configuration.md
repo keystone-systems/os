@@ -3,12 +3,21 @@ title: Waybar Configuration
 description: Waybar desktop bar configuration with dynamic theming and custom integrations
 ---
 
+> **Moved:** Waybar moved to the ks.systems/desktop flake (keystone's
+> `desktop` input). The systemd user unit lives in that repo's
+> `modules/home/hyprland.nix`; the config/style files are template content
+> (`templates/waybar/`) users seed into their own dotfiles and stow — nix no
+> longer generates them. The layout/styling notes below describe that
+> template content.
+
 In Keystone, Waybar is configured as a core desktop component with dynamic theming and custom integrations.
 
 ### Configuration Location
 
-- **Active Config**: `.submodules/keystone/modules/desktop/home/components/waybar.nix`
-- **Enablement**: It is enabled automatically when `keystone.desktop.enable` is set to `true`.
+- **Active Config**: user dotfiles (`~/.config/waybar/`, seeded from
+  ks.systems/desktop `templates/waybar/`)
+- **Enablement**: The waybar user service starts automatically when
+  `keystone.desktop.enable` is set to `true` (environment `hyprland`).
 
 ### Layout Structure
 
