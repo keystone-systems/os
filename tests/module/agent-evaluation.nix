@@ -11,7 +11,7 @@
   lib,
   self,
   nixpkgs ? null,
-  agenix,
+  sops-nix,
   home-manager,
 }:
 let
@@ -34,7 +34,7 @@ let
             # Apply keystone overlay so pkgs.keystone.* is available
             nixpkgs.overlays = [ self.overlays.default ];
           }
-          agenix.nixosModules.default
+          sops-nix.nixosModules.sops
           self.nixosModules.operating-system
           {
             # Minimal required config for evaluation
@@ -1020,7 +1020,7 @@ let
             };
           };
         };
-        age.secrets."testuser-immich-api-key".file = builtins.toFile "testuser-immich-api-key.age" "dummy";
+        keystone.secrets.provided."testuser-immich-api-key".owner = "testuser";
         fileSystems."/" = {
           device = lib.mkForce "/dev/vda2";
           fsType = lib.mkForce "ext4";
@@ -1053,8 +1053,7 @@ let
             };
           };
         };
-        age.secrets."agent-vision-immich-api-key".file =
-          builtins.toFile "agent-vision-immich-api-key.age" "dummy";
+        keystone.secrets.provided."agent-vision-immich-api-key".owner = "agent-vision";
         fileSystems."/" = {
           device = lib.mkForce "/dev/vda2";
           fsType = lib.mkForce "ext4";

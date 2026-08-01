@@ -41,7 +41,9 @@
           keystone.desktop.photos.enable = lib.mkDefault config.keystone.experimental;
           keystone.desktop.agents.enable = lib.mkDefault config.keystone.experimental;
           keystone.desktop.integration.ksPackage = lib.mkDefault pkgs.keystone.ks;
-          keystone.desktop.integration.agenixPackage = lib.mkDefault pkgs.keystone.agenix;
+          # integration.agenixPackage stays unset: the desktop secrets menu is
+          # agenix-based while keystone secrets moved to sops; the option is
+          # null-tolerant, so the menu entry is simply gated off.
           home.packages = lib.mkIf config.keystone.desktop.enable [
             # Presentations — keystone-built, so it stays a keystone-side add.
             pkgs.keystone.slidev

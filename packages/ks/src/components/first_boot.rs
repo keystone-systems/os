@@ -289,7 +289,7 @@ pub enum FirstBootPhase {
     PreparingPush,     // set remote and inspect repo health before push
     RepoHealthWarning, // warn when local repo state is not fully committed/pushed
     Pushing,           // push the pending install commit
-    SecretsSetup,      // TODO: agenix secrets initialization
+    SecretsSetup,      // TODO: sops secrets initialization
     Done,
     Failed(String),
 }
@@ -714,7 +714,7 @@ impl FirstBootScreen {
             FirstBootPhase::RepoHealthWarning => self.render_repo_health_warning(frame, area),
             FirstBootPhase::Pushing => self.render_progress(frame, area),
             FirstBootPhase::SecretsSetup => {
-                self.render_enrollment_step(frame, area, "Secrets", "agenix init")
+                self.render_enrollment_step(frame, area, "Secrets", "sops init")
             }
             FirstBootPhase::Done => self.render_done(frame, area),
             FirstBootPhase::Failed(err) => self.render_failed(frame, area, err),
@@ -1365,7 +1365,7 @@ impl FirstBootScreen {
                 _ => None,
             },
             FirstBootPhase::SecretsSetup => match code {
-                // TODO: wire to agenix secrets init
+                // TODO: wire to sops secrets init
                 KeyCode::Enter | KeyCode::Char('s') => {
                     self.complete(true, "Onboarding complete!");
                     None

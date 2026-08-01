@@ -34,7 +34,7 @@ serde_yaml = "0.9"
 # Nix parsing
 rnix = "0.11"
 
-# Encryption (agenix-compatible)
+# Encryption (age)
 age = { version = "0.11", features = ["cli-common"] }
 
 # FIDO2

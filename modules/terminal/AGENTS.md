@@ -74,19 +74,18 @@ NOT the email address. Using the email as login causes auth failures.
 
 See `conventions/tool.himalaya.md` for full himalaya CLI reference.
 
-## Age-YubiKey / hwrekey (`age-yubikey.nix`)
+## Age-YubiKey (`age-yubikey.nix`)
 
-The `hwrekey` workflow: detect YubiKey → match serial → `agenix --rekey` →
-commit+push secrets submodule → update parent flake input.
-
-Retries up to 3x with 3s backoff for pcscd contention. Requires `secretsFlakeInput`
-and `configRepoPath` options to be set.
+Writes `~/.age/yubikey-identity.txt` from configured YubiKey identities and
+exports `AGE_IDENTITIES_FILE`. Secrets are edited with `ks secrets edit` and
+re-encrypted with `ks secrets rekey`; recipient generation lives in
+`ks secrets sync`.
 
 ## SSH Auto-Load (`ssh-auto-load.nix`)
 
 Systemd user service that loads SSH keys at login. **Security**: SSH private keys are
-host-bound and never stored in agenix — only passphrases are managed as secrets
-(`{hostname}-ssh-passphrase`). Service polls for `SSH_AUTH_SOCK` with 5s timeout.
+host-bound and never stored in the secrets repo — only passphrases are managed
+as sops secrets (`{username}-ssh-passphrase`). Service polls for `SSH_AUTH_SOCK` with 5s timeout.
 
 ## Sandbox (`sandbox.nix`)
 

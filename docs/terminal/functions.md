@@ -10,15 +10,13 @@ entrypoints that make the environment more usable than a plain package bundle.
 
 ## Key commands
 
-- `ks` for Keystone repo-oriented workflows
+- `ks` for Keystone repo-oriented workflows (including `ks secrets edit|sync|rekey`)
 - `zs` for connecting to Zellij sessions through `zesh`
-- `hwrekey` for age/YubiKey rekeying workflows
 
 ## What these commands do
 
-- `ks` is the Keystone command entrypoint used for common repo and environment tasks
+- `ks` is the Keystone command entrypoint used for common repo and environment tasks; `ks secrets` covers sops editing and YubiKey-based rekeying (see `conventions/secrets.md`)
 - `zs` provides fast Zellij session access
-- `hwrekey` wraps the YubiKey-based agenix rekey workflow
 
 ## Why these matter
 

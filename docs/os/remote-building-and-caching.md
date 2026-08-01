@@ -111,9 +111,9 @@ Enable the Attic server via keystone:
 ```nix
 keystone.server.services.attic.enable = true;
 
-# Token signing key (agenix secret)
-age.secrets.attic-server-token-key = {
-  file = "${inputs.agenix-secrets}/secrets/attic-server-token-key.age";
+# Token signing key (sops secret in secrets/services/attic.yaml)
+keystone.secrets.provided.attic-server-token-key = {
+  scope = "service:attic";
 };
 ```
 
@@ -156,7 +156,7 @@ After the first deploy, the Attic server runs but has **no cache**. You must cre
    };
    ```
 
-5. **Generate push tokens** for builder machines. Store these as agenix secrets (`attic-push-token`).
+5. **Generate push tokens** for builder machines. Store these as sops secrets (`attic-push-token` in `secrets/shared.yaml`); prefer short-validity tokens per `conventions/secrets.md`.
 
 ### Client (all machines)
 
@@ -198,7 +198,7 @@ systemd.services.attic-watch-store = {
     ExecStart = "${pkgs.attic-client}/bin/attic watch-store server:nixos-config";
     Restart = "on-failure";
     RestartSec = 10;
-    # Credentials loaded from environment file or agenix
+    # Credentials loaded from environment file or a sops secret
   };
 };
 ```
@@ -223,7 +223,7 @@ Attic and Harmonia can coexist during transition:
 4. **Remove Harmonia** once the Attic cache is warm and all machines are configured:
    - Disable `keystone.server.binaryCache` on the NAS
    - Remove `keystone.binaryCacheClient` from all hosts
-   - Remove the harmonia signing key from agenix secrets
+   - Remove the harmonia signing key from the sops secrets
 
 The existing `keystone.binaryCacheClient` module pattern (URL + public key) maps directly to how Attic clients are configured, so the migration is straightforward.
 

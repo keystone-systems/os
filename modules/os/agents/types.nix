@@ -326,10 +326,10 @@ in
         # Tailscale: each agent gets its own tailscaled instance with unique
         # state dir, socket, and TUN interface. An nftables fwmark rule routes
         # the agent's UID traffic through its dedicated TUN.
-        # Requires an agenix secret at age.secrets."agent-{name}-tailscale-auth-key".
+        # Requires the sops secret keystone.secrets.provided."agent-{name}-tailscale-auth-key".
 
-        # SSH: each agent gets ssh-agent + git signing + agenix secrets.
-        # Requires agenix secrets: agent-{name}-ssh-key, agent-{name}-ssh-passphrase.
+        # SSH: each agent gets ssh-agent + git signing + sops secrets.
+        # Requires sops secrets: agent-{name}-ssh-key, agent-{name}-ssh-passphrase.
         # CRITICAL: SSH public key is now declared in keystone.keys."agent-{name}"
         # instead of here. The single host key is read from the registry.
 

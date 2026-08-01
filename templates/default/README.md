@@ -78,13 +78,13 @@ to install programs, NixOS vs Home Manager, and links to upstream Nix docs.
 - [`docs/keystone/os-installer.md`](docs/keystone/os-installer.md) — build
   the installer ISO and write it to USB (Linux + macOS + Windows).
 - [`docs/keystone/github-token.md`](docs/keystone/github-token.md) — set up
-  an agenix-encrypted GitHub PAT to avoid rate-limit 403s.
+  a sops-encrypted GitHub PAT to avoid rate-limit 403s.
 - [`docs/keystone/system-agent-prompts.md`](docs/keystone/system-agent-prompts.md)
   — copy-pasteable prompts for asking an AI coding agent to help with
   onboarding, learning, secrets, ops, and install workflows.
 - [`AGENTS.md`](AGENTS.md) — short orientation for AI coding agents (Claude
   Code, Codex, Gemini CLI, etc.). Repo shape, NixOS-vs-Home-Manager pitfalls,
-  agenix conventions.
+  secrets conventions (see keystone's `conventions/secrets.md`).
 
 ## Where to investigate Keystone itself
 

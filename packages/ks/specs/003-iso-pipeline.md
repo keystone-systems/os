@@ -2,7 +2,7 @@
 
 ## Stories Covered
 
-- US-007: Build ISO installers with baked-in agenix secrets
+- US-007: Build ISO installers with baked-in sops secrets
 - US-008: Detect and deploy to Keystone ISO instances
 
 ## Affected Modules
@@ -35,12 +35,12 @@ remains the normative contract for discovery, manual fallback, and
 
 ## Gaps to Implement
 
-### US-007: Agenix Secrets Baking
+### US-007: Sops Secrets Baking
 
-The current ISO build does not include agenix secrets. The agenix-secrets integration requires:
+The current ISO build does not include sops secrets. The secrets integration requires:
 
 1. Determining the path to the user's secrets repo
-2. Copying or symlinking the secrets into the ISO build directory as `agenix-secrets/`
+2. Copying or symlinking the secrets into the ISO build directory as `secrets/`
 3. Wiring the secrets path into the generated ISO flake
 
 ### US-008: ISO Instance Discovery and Deployment
@@ -60,11 +60,11 @@ an alternate deployment surface.
 | is_usb | `bool`   | USB vs file destination  |
 | size   | `String` | Human-readable size      |
 
-### `AgenixSecretsConfig` (new — `src/template.rs` or new module)
+### `SopsSecretsConfig` (new — `src/template.rs` or new module)
 
 | Field             | Type             | Notes                                                  |
 | ----------------- | ---------------- | ------------------------------------------------------ |
-| secrets_repo_path | `PathBuf`        | Absolute path to the user's agenix-secrets repo        |
+| secrets_repo_path | `PathBuf`        | Absolute path to the user's secrets repo        |
 | secrets_subdir    | `Option<String>` | Subdirectory within the secrets repo; defaults to root |
 
 ### `IsoInstanceDiscovery` (new — `src/components/deploy.rs`)
@@ -85,16 +85,16 @@ an alternate deployment surface.
 
 ## Behavioral Requirements
 
-### ISO Build with Agenix Secrets (US-007)
+### ISO Build with Sops Secrets (US-007)
 
 1. The ISO screen MUST offer a "secrets integration" option before building.
-2. When secrets integration is enabled, the TUI MUST prompt for the path to the agenix-secrets
+2. When secrets integration is enabled, the TUI MUST prompt for the path to the secrets
    repository (defaulting to `~/.keystone/secrets/` if it exists).
-3. The TUI MUST copy the secrets repository into the ISO build directory at `agenix-secrets/`
+3. The TUI MUST copy the secrets repository into the ISO build directory at `secrets/`
    before triggering `nix build`.
-4. The generated ISO flake MUST reference the `agenix-secrets/` directory so the installer
+4. The generated ISO flake MUST reference the `secrets/` directory so the installer
    can access secrets during installation.
-5. The TUI MUST verify that the secrets repo contains an `agenix.nix` or `secrets.nix` file
+5. The TUI MUST verify that the secrets repo contains a `.sops.yaml` or `secrets/` layout
    before proceeding — if absent, MUST warn the user but allow building without secrets.
 6. The built ISO MUST boot and install without requiring manual secret entry (end-to-end
    requirement — verified via manual test during development).
@@ -160,7 +160,7 @@ an alternate deployment surface.
 │  Configuration: ocean (x86_64-linux)                                     │
 │                                                                          │
 │  Secrets Integration                                                     │
-│  ○ No secrets — install without agenix secrets                           │
+│  ○ No secrets — install without sops secrets                           │
 │  ● Include secrets from: ~/.keystone/secrets/  [Browse...]               │
 │                                                                          │
 │  Write Destination                                                       │

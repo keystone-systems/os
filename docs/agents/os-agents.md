@@ -178,7 +178,7 @@ If using Forgejo with OpenSSH (passthrough mode) instead of the built-in server,
 
 The `agent-{name}-notes-sync` service uses the agent's SSH agent socket (`SSH_AUTH_SOCK`) for authentication. The agent's SSH key must be registered in the Forgejo user's SSH keys settings.
 
-### Required Agenix Secrets
+### Required Sops Secrets
 
 Each agent with SSH configured needs:
 
@@ -200,11 +200,11 @@ journalctl --user -u agent-{name}-notes-sync -n 20
 | -------------- | ---------------------------------- | -------------------------------------------- |
 | User account   | `agent-{name}`                     | UID 4001+, group `agents`, no sudo           |
 | Home directory | `/home/agent-{name}`               | chmod 750, readable by `agent-admins` group  |
-| SSH agent      | `agent-{name}-ssh-agent.service`   | Auto-loads agenix key with passphrase        |
+| SSH agent      | `agent-{name}-ssh-agent.service`   | Auto-loads sops-managed key with passphrase        |
 | Git signing    | `agent-{name}-git-config.service`  | SSH-based commit signing                     |
 | Desktop        | `agent-{name}-labwc.service`       | Headless Wayland (labwc + wayvnc)            |
 | Browser        | `agent-{name}-chromium.service`    | Chromium with remote debugging               |
-| Mail           | himalaya CLI                       | Stalwart IMAP/SMTP via agenix password       |
+| Mail           | himalaya CLI                       | Stalwart IMAP/SMTP via sops-managed password       |
 | Calendar       | calendula CLI                      | Stalwart CalDAV (auto-configured from mail)  |
 | Contacts       | cardamum CLI                       | Stalwart CardDAV (auto-configured from mail) |
 | Bitwarden      | `bw` CLI                           | Configured for Vaultwarden instance          |
@@ -229,8 +229,8 @@ journalctl --user -u agent-{name}-notes-sync -n 20
 5. **Check key fingerprint matches:**
 
    ```bash
-   # Fingerprint of the agenix private key
-   ssh-keygen -lf /run/agenix/agent-{name}-ssh-key
+   # Fingerprint of the sops-managed private key
+   ssh-keygen -lf /run/secrets/agent-{name}-ssh-key
 
    # Compare with the public key in your config
    echo "ssh-ed25519 AAAAC3..." | ssh-keygen -lf -
@@ -1046,7 +1046,7 @@ The `task-loop.sh` and `scheduler.sh` scripts write metrics to the standard node
 | ------------------------------- | ------------------- | --------------------------------------------------------- |
 | Mail provisioning (FR-004)      | himalaya works      | Stalwart account auto-provisioning not fully wired        |
 | Bitwarden provisioning (FR-005) | rbw configured      | Per-agent Vaultwarden collection not created              |
-| Tailscale per-agent (FR-006)    | Code exists         | Disabled due to agenix.service dependency                 |
+| Tailscale per-agent (FR-006)    | Code exists         | Historically disabled by an agenix.service dependency (since removed)                 |
 | MCP config access (FR-015)      | .mcp.json generated | No `/etc/keystone/agent-mcp/{name}.json` for human access |
 
 ### Not Yet Implemented

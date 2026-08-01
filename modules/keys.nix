@@ -7,13 +7,13 @@
 # Each user/agent has one ed25519 key per host, declared under `hosts.<hostname>`.
 # These keys are generated locally on each machine and NEVER leave that host.
 # The private key must be password-protected and loaded via ssh-agent — keystone's
-# sshAutoLoad service handles this automatically using agenix-managed passphrases.
+# sshAutoLoad service handles this automatically using sops-managed passphrases.
 #
 # ## Hardware keys
 #
 # FIDO2/YubiKey keys declared under `hardwareKeys.<name>`. These are portable
 # physical tokens that work across any host — signing requires physical touch
-# on the device. Hardware keys can also carry an age identity for agenix
+# on the device. Hardware keys can also carry an age identity for sops
 # secrets encryption via age-plugin-yubikey.
 #
 # ## Consumers
@@ -85,7 +85,7 @@ in
                     ageIdentity = mkOption {
                       type = types.nullOr types.str;
                       default = null;
-                      description = "age-plugin-yubikey identity string for agenix secrets.";
+                      description = "age-plugin-yubikey identity string for sops secrets.";
                     };
                   };
                 }

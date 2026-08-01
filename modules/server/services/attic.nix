@@ -23,6 +23,14 @@ let
   serverLib = import ../lib.nix { inherit lib; };
   serverCfg = config.keystone.server;
   cfg = serverCfg.services.attic;
+  effectiveEnvironmentFile =
+    if cfg.environmentFile != null then
+      cfg.environmentFile
+    else
+      # `or` fallback keeps the missing-secret case surfacing as the
+      # assertion below, not as an attribute error.
+      config.keystone.secrets.provided.attic-server-token-key.path
+        or "/run/secrets/attic-server-token-key";
 in
 {
   options.keystone.server.services.attic =
@@ -35,9 +43,12 @@ in
     }
     // {
       environmentFile = lib.mkOption {
-        type = lib.types.path;
-        default = "/run/agenix/attic-server-token-key";
-        description = "Path to env file with ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64. Defaults to conventional agenix secret.";
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = ''
+          Path to env file with ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64. When
+          null, uses the conventional `attic-server-token-key` sops secret.
+        '';
       };
 
       publicKey = lib.mkOption {
@@ -54,9 +65,9 @@ in
     };
 
   config = lib.mkIf (serverCfg.enable && cfg.enable) {
-    assertions = lib.optional (cfg.environmentFile == "/run/agenix/attic-server-token-key") {
-      assertion = config.age.secrets ? "attic-server-token-key";
-      message = "keystone.server.services.attic requires age.secrets.\"attic-server-token-key\" to be declared.";
+    assertions = lib.optional (cfg.environmentFile == null) {
+      assertion = config.keystone.secrets.provided ? "attic-server-token-key";
+      message = "keystone.server.services.attic requires keystone.secrets.provided.\"attic-server-token-key\" to be declared.";
     };
 
     environment.systemPackages = [ pkgs.attic-client ];
@@ -74,7 +85,7 @@ in
 
     services.atticd = {
       enable = true;
-      environmentFile = cfg.environmentFile;
+      environmentFile = effectiveEnvironmentFile;
       settings = {
         listen = "127.0.0.1:${toString cfg.port}";
         storage = {
@@ -100,7 +111,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        EnvironmentFile = cfg.environmentFile;
+        EnvironmentFile = effectiveEnvironmentFile;
         # Must match atticd.service: DynamicUser maps /var/lib/atticd to
         # /var/lib/private/atticd so we see the same database and write
         # output files (public-key, push-token) to the correct location.

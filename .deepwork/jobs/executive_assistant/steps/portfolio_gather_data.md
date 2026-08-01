@@ -74,7 +74,7 @@ history, and existing notes repo files.
    - Summary of recent commit messages (top 5-10)
 
    **Automated commit detection**: Notes repos and config repos often have high commit
-   counts from automated sync (repo-sync, agenix relocking). If most recent commits
+   counts from automated sync (repo-sync, secrets relocking). If most recent commits
    follow a repetitive pattern (e.g., "chore: relock", "Auto-sync"), note this in the
    data so the summary step can distinguish human activity from automation.
 

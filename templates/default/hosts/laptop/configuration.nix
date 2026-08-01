@@ -20,28 +20,30 @@
   # See docs/keystone/github-token.md for the full setup.
   # ---------------------------------------------------------------------------
   #
-  # `age.secrets.*` is already wired by Keystone's operating-system module — you
-  # just declare the secret here.
+  # Keystone's operating-system module imports sops-nix, and mkSystemFlake
+  # defaults `keystone.secrets.dir` to this repo's `secrets/` directory — you
+  # just declare the secret here. (If you move the secrets directory, set
+  # `keystone.secrets.dir` yourself; without it, provided secrets materialize
+  # nothing and the build warns.)
   #
   # Requires:
-  #   - secrets/<username>-github-token.age created via `nix shell nixpkgs#agenix
-  #     --command agenix -e secrets/<username>-github-token.age`
-  #   - secrets.nix recipients including this host's age pubkey
+  #   - a `<username>-github-token` key added to this host's sops file via
+  #     `ks secrets edit secrets/laptop.yaml`
+  #   - secrets/recipients.nix including your admin key (then `ks secrets sync`)
   #
   # Replace <username> below with the value from flake.nix `admin.username`.
   #
-  # age.secrets."<username>-github-token" = {
-  #   file = ../../secrets/<username>-github-token.age;
+  # keystone.secrets.provided."<username>-github-token" = {
   #   owner = "<username>";
-  #   mode = "0400";
+  #   scope = "host";
   # };
   #
   # programs.zsh.interactiveShellInit = ''
-  #   # Read the agenix-decrypted PAT into the env so gh + ks pick it up.
+  #   # Read the sops-decrypted PAT into the env so gh + ks pick it up.
   #   # Read at shell start (not via session vars) to keep the secret out of
   #   # the Nix store at evaluation time.
-  #   if [ -f /run/agenix/<username>-github-token ]; then
-  #     export GITHUB_TOKEN="$(tr -d '\n' < /run/agenix/<username>-github-token)"
+  #   if [ -f /run/secrets/<username>-github-token ]; then
+  #     export GITHUB_TOKEN="$(tr -d '\n' < /run/secrets/<username>-github-token)"
   #   fi
   # '';
 }

@@ -134,7 +134,7 @@ ed25519 key pair, or enrolling a FIDO2 hardware key (YubiKey) via
 **REQ-008.26** Once SSH keys are configured, the TUI MUST prompt the user
 to push the pending install commit from Stage 4 to the remote repository.
 
-**REQ-008.27** The TUI SHOULD guide the user through initializing agenix
+**REQ-008.27** The TUI SHOULD guide the user through initializing sops
 secrets for the system.
 
 ## Stage 7: Services + Onboarding (target machine)

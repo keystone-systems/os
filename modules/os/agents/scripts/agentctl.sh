@@ -297,7 +297,7 @@ if [ $# -lt 2 ]; then
   echo "  opencode          Start interactive OpenCode session (supports --project, --role, --roles)" >&2
   echo "  mail              Send structured email to the agent (via agent-mail)" >&2
   echo "  vnc               Open remote-viewer to the agent's VNC desktop" >&2
-  echo "  provision         Generate SSH keypair, mail password, and agenix secrets" >&2
+  echo "  provision         Generate SSH keypair, mail password, and sops secrets" >&2
   echo "" >&2
   echo "Flags:" >&2
   echo "  -r, --role <mode>      Compose role-specific prompt via .agents/compose.sh" >&2
@@ -334,8 +334,8 @@ if [ $# -lt 2 ]; then
   echo "  agentctl drago opencode" >&2
   echo "  agentctl drago vnc" >&2
   echo "  agentctl drago mail task --subject \"Fix CI pipeline\"" >&2
-  echo "  agentctl drago provision                     # full flow incl. hwrekey" >&2
-  echo "  agentctl drago provision --skip-rekey        # skip hwrekey at end" >&2
+  echo "  agentctl drago provision                     # full flow incl. rekey" >&2
+  echo "  agentctl drago provision --skip-rekey        # skip ks secrets rekey at end" >&2
   exit 1
 fi
 AGENT_NAME="$1"; shift
@@ -378,7 +378,7 @@ EFFECTIVE_AGENT_HOST=$(printf '%s\n' "$EFFECTIVE_PREFS" | jq -r --arg configured
 
 # Remote dispatch: forward non-local commands via SSH over Tailscale.
 # VNC is excluded — it runs locally and connects to the remote host directly.
-# Provision is excluded — it modifies the local agenix-secrets repo.
+# Provision is excluded — it modifies the local secrets directory.
 if [ -n "$EFFECTIVE_AGENT_HOST" ] && [ "$EFFECTIVE_AGENT_HOST" != "$THIS_HOST" ]; then
   if [ "$1" != "vnc" ] && [ "$1" != "provision" ]; then
     exec "$OPENSSH"/bin/ssh -t "$EFFECTIVE_AGENT_HOST" agentctl "$AGENT_NAME" "$@"
@@ -844,14 +844,50 @@ $ROLE_PROMPT"
       echo "Ensure keystone.systemFlake.path is set in your NixOS config." >&2
       exit 1
     fi
-    SECRETS_DIR="$_system_flake/agenix-secrets"
+    SECRETS_DIR="$_system_flake/secrets"
     if [ ! -d "$SECRETS_DIR" ]; then
       echo "Error: secrets directory not found: $SECRETS_DIR" >&2
+      exit 1
+    fi
+    HOST_YAML="$SECRETS_DIR/$PROVISION_AGENT_HOST.yaml"
+    if [ ! -f "$HOST_YAML" ]; then
+      echo "Error: sops file not found: $HOST_YAML" >&2
+      echo "Create it first: ks secrets edit secrets/$PROVISION_AGENT_HOST.yaml" >&2
+      exit 1
+    fi
+
+    # Prefer the YubiKey age identity, same convention as `ks secrets edit`
+    # and k8s-apply-secrets.
+    if [ -z "${SOPS_AGE_KEY_FILE:-}" ] && [ -f "$HOME/.age/yubikey-identity.txt" ]; then
+      export SOPS_AGE_KEY_FILE="$HOME/.age/yubikey-identity.txt"
+    fi
+
+    # Fail fast if the sops file cannot be decrypted with the available
+    # identities — otherwise the per-key existence checks below (which
+    # silence stderr) would misread a decrypt failure as "key missing"
+    # after key material has already been generated.
+    if ! "$SOPS"/bin/sops -d "$HOST_YAML" >/dev/null; then
+      echo "Error: cannot decrypt $HOST_YAML with the available age/SSH identities." >&2
+      echo "Check SOPS_AGE_KEY_FILE and your entry in secrets/recipients.nix (then 'ks secrets rekey')." >&2
       exit 1
     fi
 
     TMPDIR=$("$COREUTILS"/bin/mktemp -d)
     trap '"$COREUTILS"/bin/rm -rf "$TMPDIR"' EXIT
+
+    # sops EDITOR hook used by set_sops_secret: appends $SECRET_NAME (value
+    # read from $VALUE_FILE) to the decrypted YAML, so the plaintext never
+    # appears on any process argv (/proc/<pid>/cmdline is world-readable and
+    # these hosts run other local agent users).
+    cat > "$TMPDIR/sops-merge-editor" <<EOF
+#!/bin/sh
+set -eu
+{
+  printf '%s: ' "\$SECRET_NAME"
+  "$JQ"/bin/jq -Rs . < "\$VALUE_FILE"
+} >> "\$1"
+EOF
+    chmod +x "$TMPDIR/sops-merge-editor"
 
     echo "==> Provisioning secrets for $USERNAME"
 
@@ -876,128 +912,68 @@ $ROLE_PROMPT"
     echo -n "$BW_PASSWORD" > "$TMPDIR/bitwarden-password"
     echo "==> Generated Bitwarden password"
 
-    # --- Step 3: Insert entries into secrets.nix ---
-    SECRETS_NIX="$SECRETS_DIR/secrets.nix"
-    if [ ! -f "$SECRETS_NIX" ]; then
-      echo "Error: $SECRETS_NIX not found" >&2
-      exit 1
-    fi
+    # --- Step 3: Write secrets into the host's sops file ---
+    echo "==> Writing secrets to secrets/$PROVISION_AGENT_HOST.yaml..."
+    cd "$SECRETS_DIR/.."
 
-    # Helper: add entry before the final closing brace if not already present
-    add_secret() {
+    set_sops_secret() {
       local SECRET_NAME="$1"
-      local RECIPIENTS="$2"
-      if "$GNUGREP"/bin/grep -q "\"$SECRET_NAME\"" "$SECRETS_NIX"; then
-        echo "    $SECRET_NAME already exists in secrets.nix, skipping"
-      else
-        # Insert before the last closing brace
-        "$GNUSED"/bin/sed -i "/^}$/i\\\\  \"$SECRET_NAME\".publicKeys = $RECIPIENTS;" "$SECRETS_NIX"
-        echo "    Added $SECRET_NAME to secrets.nix"
-      fi
-    }
-
-    # Determine recipient expression pieces
-    # Agent host system key (for himalaya client / ssh-agent)
-    AGENT_HOST_EXPR="systems.${PROVISION_AGENT_HOST}"
-    # Mail server host system key (for Stalwart provisioning)
-    MAIL_HOST_EXPR=""
-    if [ -n "$MAIL_HOST" ] && [ "$MAIL_HOST" != "$PROVISION_AGENT_HOST" ]; then
-      MAIL_HOST_EXPR="systems.${MAIL_HOST}"
-    fi
-
-    # SSH key secret: needs admin keys + agent's host
-    add_secret "secrets/$USERNAME-ssh-key.age" \
-      "adminKeys ++ [ $AGENT_HOST_EXPR ]"
-
-    # SSH passphrase: same recipients as SSH key
-    add_secret "secrets/$USERNAME-ssh-passphrase.age" \
-      "adminKeys ++ [ $AGENT_HOST_EXPR ]"
-
-    # Mail password: needs admin keys + agent's host + mail server host
-    if [ "$MAIL_PROVISION" = "true" ]; then
-      if [ -n "$MAIL_HOST_EXPR" ]; then
-        add_secret "secrets/$USERNAME-mail-password.age" \
-          "adminKeys ++ [ $AGENT_HOST_EXPR $MAIL_HOST_EXPR ]"
-      else
-        add_secret "secrets/$USERNAME-mail-password.age" \
-          "adminKeys ++ [ $AGENT_HOST_EXPR ]"
-      fi
-    fi
-
-    # Bitwarden password: needs admin keys + agent's host
-    add_secret "secrets/$USERNAME-bitwarden-password.age" \
-      "adminKeys ++ [ $AGENT_HOST_EXPR ]"
-
-    # --- Step 4: Validate secrets.nix ---
-    echo "==> Validating secrets.nix..."
-    if ! "$NIX"/bin/nix eval --file "$SECRETS_NIX" --json > /dev/null 2>&1; then
-      echo "Error: secrets.nix is invalid after modification!" >&2
-      echo "Please fix manually: $SECRETS_NIX" >&2
-      exit 1
-    fi
-    echo "    secrets.nix is valid"
-
-    # --- Step 5: Create .age files ---
-    echo "==> Creating .age secret files..."
-    cd "$SECRETS_DIR"
-
-    create_age_secret() {
-      local SECRET_PATH="$1"
       local VALUE_FILE="$2"
-      if [ -f "$SECRET_PATH" ]; then
-        echo "    $SECRET_PATH already exists, skipping"
+      if "$SOPS"/bin/sops -d --extract "[\"$SECRET_NAME\"]" "$HOST_YAML" >/dev/null 2>&1; then
+        echo "    $SECRET_NAME already exists in $HOST_YAML, skipping"
       else
-        EDITOR="cp $VALUE_FILE" agenix -e "$SECRET_PATH"
-        echo "    Created $SECRET_PATH"
+        # Merge via the EDITOR hook rather than `sops set` so the plaintext
+        # value never lands on a command line.
+        SECRET_NAME="$SECRET_NAME" VALUE_FILE="$VALUE_FILE" \
+          EDITOR="$TMPDIR/sops-merge-editor" \
+          "$SOPS"/bin/sops "$HOST_YAML"
+        echo "    Added $SECRET_NAME to $HOST_YAML"
       fi
     }
 
-    create_age_secret "secrets/$USERNAME-ssh-key.age" "$SSH_KEY"
-    create_age_secret "secrets/$USERNAME-ssh-passphrase.age" "$TMPDIR/ssh-passphrase"
+    set_sops_secret "$USERNAME-ssh-key" "$SSH_KEY"
+    set_sops_secret "$USERNAME-ssh-passphrase" "$TMPDIR/ssh-passphrase"
     if [ "$MAIL_PROVISION" = "true" ]; then
-      create_age_secret "secrets/$USERNAME-mail-password.age" "$TMPDIR/mail-password"
+      set_sops_secret "$USERNAME-mail-password" "$TMPDIR/mail-password"
+      if [ -n "$MAIL_HOST" ] && [ "$MAIL_HOST" != "$PROVISION_AGENT_HOST" ]; then
+        echo "    NOTE: Stalwart provisioning on '$MAIL_HOST' also needs"
+        echo "    $USERNAME-mail-password — add the SAME value to a sops file"
+        echo "    decryptable on $MAIL_HOST (e.g. secrets/$MAIL_HOST.yaml)."
+      fi
     fi
-    create_age_secret "secrets/$USERNAME-bitwarden-password.age" "$TMPDIR/bitwarden-password"
+    set_sops_secret "$USERNAME-bitwarden-password" "$TMPDIR/bitwarden-password"
 
-    # --- Step 6: Print snippets for nixos-config ---
+    # --- Step 4: Print snippets for nixos-config ---
     echo ""
     echo "==> SSH public key (add to keystone.keys in modules/keystone.nix):"
     echo "    keystone.keys.\"$USERNAME\".hosts.<hostname>.publicKey = \"$(cat "$SSH_KEY.pub")\";"
     echo ""
-    echo "==> Agenix declarations (add to host config):"
-    echo "    age.secrets.$USERNAME-ssh-key = {"
-    echo "      file = \"\${inputs.agenix-secrets}/secrets/$USERNAME-ssh-key.age\";"
-    echo "      owner = \"$USERNAME\";"
-    echo "      mode = \"0400\";"
-    echo "    };"
-    echo "    age.secrets.$USERNAME-ssh-passphrase = {"
-    echo "      file = \"\${inputs.agenix-secrets}/secrets/$USERNAME-ssh-passphrase.age\";"
-    echo "      owner = \"$USERNAME\";"
-    echo "      mode = \"0400\";"
-    echo "    };"
-    if [ "$MAIL_PROVISION" = "true" ]; then
-      echo "    age.secrets.$USERNAME-mail-password = {"
-      echo "      file = \"\${inputs.agenix-secrets}/secrets/$USERNAME-mail-password.age\";"
+    echo "==> Secret declarations (add to host config):"
+    for SECRET in ssh-key ssh-passphrase bitwarden-password; do
+      echo "    keystone.secrets.provided.\"$USERNAME-$SECRET\" = {"
       echo "      owner = \"$USERNAME\";"
-      echo "      mode = \"0400\";"
+      echo "      scope = \"host\";"
+      echo "    };"
+    done
+    if [ "$MAIL_PROVISION" = "true" ]; then
+      echo "    keystone.secrets.provided.\"$USERNAME-mail-password\" = {"
+      echo "      owner = \"$USERNAME\";"
+      echo "      scope = \"host\";"
       echo "    };"
     fi
-    echo "    age.secrets.$USERNAME-bitwarden-password = {"
-    echo "      file = \"\${inputs.agenix-secrets}/secrets/$USERNAME-bitwarden-password.age\";"
-    echo "      owner = \"$USERNAME\";"
-    echo "      mode = \"0400\";"
-    echo "    };"
 
-    # --- Step 7: hwrekey (unless --skip-rekey) ---
+    # --- Step 5: Rekey (unless --skip-rekey) ---
     if [ "$SKIP_REKEY" = "true" ]; then
       echo ""
-      echo "==> Skipping hwrekey (--skip-rekey). Run manually:"
-      echo "    hwrekey -m \"provision: create $USERNAME secrets\""
+      echo "==> Skipping rekey (--skip-rekey). Run manually if recipients changed:"
+      echo "    ks secrets rekey"
     else
       echo ""
-      echo "==> Running hwrekey..."
-      hwrekey -m "provision: create $USERNAME secrets"
+      echo "==> Running ks secrets rekey..."
+      ks secrets rekey
     fi
+    echo ""
+    echo "==> Done. Commit the updated secrets/ files."
 
     echo ""
     echo "==> Provisioning complete for $USERNAME"

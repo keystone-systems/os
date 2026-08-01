@@ -63,7 +63,7 @@ keystone.hardwareKey = {
   keys.yubi-black = {
     description = "Primary YubiKey 5 NFC";
     sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAC3...";
-    ageIdentity = "AGE-PLUGIN-YUBIKEY-...";  # Optional, for agenix
+    ageIdentity = "AGE-PLUGIN-YUBIKEY-...";  # Optional, for sops
   };
   rootKeys = [ "yubi-black" ];
   gpgAgent = { enable = true; enableSSHSupport = true; };

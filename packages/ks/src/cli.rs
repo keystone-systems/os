@@ -4,8 +4,8 @@ use clap::{Args, Parser, Subcommand};
 
 use crate::cmd::{
     agent_loop::AgentLoopArgs, notifications::NotificationArgs, photos::PhotosCommand,
-    projects::ProjectArgs, screenshots::ScreenshotsCommand, tasks::TaskArgs,
-    update_menu::UpdateMenuCommand,
+    projects::ProjectArgs, screenshots::ScreenshotsCommand, secrets::SecretsCommand,
+    tasks::TaskArgs, update_menu::UpdateMenuCommand,
 };
 
 /// Walker menu provider backends. Each provider is a subcommand under `ks
@@ -183,6 +183,17 @@ pub enum Command {
         command: ScreenshotsCommand,
     },
 
+    /// Manage sops-encrypted secrets in the config repo.
+    ///
+    /// Secrets live in-repo under `secrets/` as sops-encrypted YAML.
+    /// `.sops.yaml` is generated from `hosts.nix` host keys and
+    /// `secrets/recipients.nix` — regenerate it with `ks secrets sync`,
+    /// re-encrypt after recipient changes with `ks secrets rekey`.
+    Secrets {
+        #[command(subcommand)]
+        command: SecretsCommand,
+    },
+
     /// Refresh generated Keystone agent assets.
     SyncAgentAssets,
 
@@ -346,7 +357,7 @@ pub enum HardwareKeyCommand {
         json: bool,
     },
 
-    /// TODO stub for managing agenix secrets from hardware-key metadata.
+    /// TODO stub for managing sops recipients from hardware-key metadata.
     Secrets {
         #[arg(long)]
         json: bool,

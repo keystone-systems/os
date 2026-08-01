@@ -31,7 +31,7 @@ What this covers:
 What it does **not** cover:
 
 - Anything under `keystone.os.*` — those modules live in `modules/os/` and
-  assume `systemd.services`, `nix.settings`, `users.users`, `age.secrets`,
+  assume `systemd.services`, `nix.settings`, `users.users`, `sops.secrets`,
   and friends. None of those option namespaces exist in standalone
   home-manager.
 - launchd daemons / user agents.
@@ -39,13 +39,14 @@ What it does **not** cover:
   preferences as Nix).
 - Touch ID for sudo, sshd activation, system-level user/group management,
   dscl, declarative Homebrew.
-- agenix-darwin — no system-level secret decryption. Anything that would
-  read `/run/agenix/<name>` on a NixOS host has to be re-engineered on
-  Darwin to read from `gh auth token`, the macOS Keychain, or a manually
-  managed file path.
+- sops-nix's darwin module — no system-level secret decryption. Anything
+  that would read `/run/secrets/<name>` on a NixOS host has to be
+  re-engineered on Darwin to read from `gh auth token`, the macOS Keychain,
+  or a manually managed file path. See `conventions/secrets.md` for the
+  secrets model.
 
 This asymmetry is why `keystone.terminal.githubTokenNix` exists with
-`source = "gh-auth"` as its default: there is no agenix on the macbook to
+`source = "gh-auth"` as its default: there is no sops-nix on the macbook to
 materialize the file, so the home-manager activation script shells out to
 `gh` instead.
 
@@ -66,10 +67,10 @@ Symmetric system surface with NixOS:
   `nix-github-access-token.service` oneshot from
   `keystone.os.githubTokenNix`) gain a Darwin code path emitting a launchd
   daemon with `RunAtLoad = true` and an equivalent script body.
-- **`agenix.darwinModules.default`** — declares `age.secrets.<name>` at the
-  system level, identifies the macbook by an SSH host key, and decrypts to
-  `/etc/agenix/<name>` (default) or `/run/agenix/<name>` (with a tmpfs
-  option). Per-host recipient sets work the same as Linux.
+- **`sops-nix.darwinModules.sops`** — declares `sops.secrets.<name>` at the
+  system level, identifies the macbook by an SSH host key (via ssh-to-age),
+  and decrypts to `/run/secrets/<name>`. Per-file recipient sets work the
+  same as Linux (`conventions/secrets.md`).
 - **System `nix.settings`** — managed `/etc/nix/nix.conf` instead of just
   per-user. Closes the per-user/per-daemon split; the nix-daemon picks up
   `access-tokens` from system config.
@@ -102,7 +103,7 @@ who don't want nix-darwin.
 | Cost dimension | Cold cache | Warm cache |
 |---|---|---|
 | Eval (per Darwin host) | +5–10s for module-system pass | +1–3s |
-| Build (closure delta) | +500MB–1.5GB store paths (system-toplevel + nix-darwin modules + agenix-darwin) | unchanged on home-manager-only edits |
+| Build (closure delta) | +500MB–1.5GB store paths (system-toplevel + nix-darwin modules + sops-nix) | unchanged on home-manager-only edits |
 | Activation (`darwin-rebuild switch`) | +5–15s wall-clock vs home-manager switch | same |
 | Disk steady-state | +500MB–2GB (retained generations) | — |
 
@@ -138,7 +139,7 @@ modules change.
 
 The breakpoint comes the moment you want **any** of:
 
-- agenix-darwin (root-readable secrets on the macbook)
+- sops-nix on darwin (root-readable secrets on the macbook)
 - Declarative `system.defaults`
 - Touch ID for sudo
 - Declarative Homebrew
@@ -160,7 +161,7 @@ Tracked in detail under issue #554. High-level steps:
 2. Branch `mkDarwinInventoryHost` to call `nix-darwin.lib.darwinSystem`
    and emit `darwinConfigurations.<host>` for hosts that opt in. Keep the
    standalone `homeConfigurations` path for hosts that don't.
-3. Wire `agenix.darwinModules.default` and pick a system identity (e.g.
+3. Wire `sops-nix.darwinModules.sops` and pick a system identity (e.g.
    the macbook's `/etc/ssh/ssh_host_ed25519_key.pub`, generated once via
    `launchctl start com.openssh.sshd-keygen-wrapper`; or a manually
    managed key).
@@ -189,7 +190,7 @@ keystone.terminal.githubTokenNix = {
 This is the documented bridge — symmetric in *effect* with the NixOS
 `keystone.os.githubTokenNix` (authenticated nix-daemon GitHub access),
 asymmetric in *implementation* (per-user file vs system file; gh CLI vs
-agenix).
+sops-nix).
 
 See `conventions/tool.nix.md` "Darwin parity (per-user nix.conf)" for the
 authoritative convention.

@@ -29,7 +29,7 @@ Classify the issue to select the right label:
 | Category            | Label    | Examples                                              |
 | ------------------- | -------- | ----------------------------------------------------- |
 | NixOS agent config  | `agent`  | Missing timer, wrong schedule, service unit error     |
-| Secrets/credentials | `agenix` | Missing SSH key secret, mail password not provisioned |
+| Secrets/credentials | `sops` | Missing SSH key secret, mail password not provisioned |
 | Nix store/packages  | `nix`    | Permission denied on store path, missing package      |
 | Infrastructure      | `infra`  | DNS, firewall, service down                           |
 
@@ -78,7 +78,7 @@ Write `issue_draft.md`:
 
 ### Suggested Fix
 
-{If known — e.g., "regenerate store path", "add agenix secret for agent-luce"}
+{If known — e.g., "regenerate store path", "add sops secret for agent-luce"}
 
 ### Context
 

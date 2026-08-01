@@ -58,7 +58,7 @@ the ZFS backup receiver fix — see `os.zfs-backup` rule 17g.
    convention. See `tool.nix` rules 17-21 for home-manager activation
    script requirements.
 8. Rule 1 still applies in spirit for home-manager: if a home-manager
-   activation step must wait for a user systemd unit or an agenix secret
+   activation step must wait for a user systemd unit or a sops secret
    file, express the dependency via `systemd.user.services` instead.
 
 ## Observability requirements

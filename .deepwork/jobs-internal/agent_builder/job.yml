@@ -400,7 +400,7 @@ workflows:
           | --------- | ---------------------- | ---------------- | ----------------- | -------------------------------------------- |
           | GitHub    | github.com             | kdrgo            | OAuth device flow | `~/.config/gh/hosts.yml`                     |
           | Forgejo   | git.ncrmro.com         | drago            | API token         | fj keyfile                                   |
-          | Bitwarden | vaultwarden.ncrmro.com | drago@ncrmro.com | Password file     | `/run/agenix/agent-drago-bitwarden-password` |
+          | Bitwarden | vaultwarden.ncrmro.com | drago@ncrmro.com | Password file     | `/run/secrets/agent-drago-bitwarden-password` |
           ```
 
           ## Quality Criteria
@@ -941,7 +941,7 @@ workflows:
 
           - [ ] Push to Forgejo: `cd .repos/{owner}/{repo} && git add -A && git commit -m "feat: bootstrap agent-space" && git remote add origin ssh://forgejo@git.ncrmro.com:2222/{owner}/{repo}.git && git push -u origin main`
           - [ ] Add NixOS agent config in keystone modules/os/agents.nix
-          - [ ] Create agenix secrets for SSH key, mail password, etc.
+          - [ ] Create sops secrets for SSH key, mail password, etc.
           - [ ] Set up systemd task loop timer
 
           ## Refinements Made
@@ -2712,7 +2712,7 @@ workflows:
           | Category            | Label    | Examples                                              |
           | ------------------- | -------- | ----------------------------------------------------- |
           | NixOS agent config  | `agent`  | Missing timer, wrong schedule, service unit error     |
-          | Secrets/credentials | `agenix` | Missing SSH key secret, mail password not provisioned |
+          | Secrets/credentials | `sops` | Missing SSH key secret, mail password not provisioned |
           | Nix store/packages  | `nix`    | Permission denied on store path, missing package      |
           | Infrastructure      | `infra`  | DNS, firewall, service down                           |
 
@@ -2761,7 +2761,7 @@ workflows:
 
           ### Suggested Fix
 
-          {If known — e.g., "regenerate store path", "add agenix secret for agent-luce"}
+          {If known — e.g., "regenerate store path", "add sops secret for agent-luce"}
 
           ### Context
 

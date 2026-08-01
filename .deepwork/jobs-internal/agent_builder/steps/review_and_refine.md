@@ -94,7 +94,7 @@ Walk the user through what was created, verify everything works, and make adjust
 
 - [ ] Push to Forgejo: `cd .repos/{owner}/{repo} && git add -A && git commit -m "feat: bootstrap agent-space" && git remote add origin ssh://forgejo@git.ncrmro.com:2222/{owner}/{repo}.git && git push -u origin main`
 - [ ] Add NixOS agent config in keystone modules/os/agents.nix
-- [ ] Create agenix secrets for SSH key, mail password, etc.
+- [ ] Create sops secrets for SSH key, mail password, etc.
 - [ ] Set up systemd task loop timer
 
 ## Refinements Made

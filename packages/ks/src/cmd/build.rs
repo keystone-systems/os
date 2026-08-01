@@ -175,7 +175,7 @@ async fn commit_flake_lock(repo_root: &Path) -> Result<()> {
     let commit_status = tokio::process::Command::new("git")
         .args(["-C"])
         .arg(repo_root)
-        .args(["commit", "-m", "chore: relock keystone + agenix-secrets"])
+        .args(["commit", "-m", "chore: relock keystone"])
         .status()
         .await
         .context("Failed to commit flake.lock")?;

@@ -31,7 +31,7 @@ what is and isn't available inside the sandbox.
 - **ks-config / keystone repo**: MUST NOT be mounted — use `ks agent` or `ks doctor` for infrastructure work
 - **D-Bus**: no session or system bus
 - **Desktop / display**: no Wayland compositor (VNC is host-side only)
-- **agenix secrets**: `/run/agenix/` is not mounted — secrets are passed via env vars or CLI args
+- **sops secrets**: `/run/secrets/` is not mounted — secrets are passed via env vars or CLI args
 
 ## MCP Servers Inside Containers
 

@@ -19,25 +19,25 @@ in
 {
   config = mkIf (osCfg.enable && cfg != { } && hasTailscaleAgents) {
     assertions = mapAttrsToList (name: _: {
-      assertion = config.age.secrets ? "agent-${name}-tailscale-auth-key";
+      assertion = config.keystone.secrets.provided ? "agent-${name}-tailscale-auth-key";
       message = ''
-        Agent '${name}' requires agenix secret "agent-${name}-tailscale-auth-key".
+        Agent '${name}' requires sops secret "agent-${name}-tailscale-auth-key".
 
-        1. Create a headscale pre-auth key (run on mercury):
-           headscale preauthkeys create --user ${name} --reusable --expiration 87600h
+        Pre-auth keys are issued credentials — prefer a short TTL and re-issue
+        rather than storing a long-lived key (see docs/SECRETS.md).
+
+        1. Create a headscale pre-auth key (run on the headscale host):
+           headscale preauthkeys create --user ${name} --reusable --expiration 720h
            # Copy the generated key
 
-        2. Add to agenix-secrets/secrets.nix:
-           "secrets/agent-${name}-tailscale-auth-key.age".publicKeys = adminKeys ++ [ systems.workstation ];
+        2. Add it to the agent host's sops file:
+           ks secrets edit secrets/<hostname>.yaml
+           # add: agent-${name}-tailscale-auth-key: <the pre-auth key>
 
-        3. Create the secret (paste the pre-auth key from step 1):
-           cd agenix-secrets && agenix -e secrets/agent-${name}-tailscale-auth-key.age
-
-        4. Declare in host config:
-           age.secrets.agent-${name}-tailscale-auth-key = {
-             file = "${"$"}{inputs.agenix-secrets}/secrets/agent-${name}-tailscale-auth-key.age";
+        3. Declare in host config:
+           keystone.secrets.provided."agent-${name}-tailscale-auth-key" = {
              owner = "agent-${name}";
-             mode = "0400";
+             scope = "host";
            };
       '';
     }) tailscaleAgents;
@@ -60,19 +60,17 @@ in
           stateDir = "/var/lib/tailscale/agent-${name}-tailscaled.state";
           socketPath = "/run/tailscale/agent-${name}-tailscaled.socket";
           tunName = "tailscale-agent-${name}";
-          authKeyPath = "/run/agenix/agent-${name}-tailscale-auth-key";
+          authKeyPath = config.keystone.secrets.provided."agent-${name}-tailscale-auth-key".path;
         in
         {
           "agent-${name}-tailscaled" = {
             description = "Tailscale daemon for agent-${name}";
 
             wantedBy = [ "agent-tailscale.target" ];
-            after = [
-              "network-online.target"
-              "agenix.service"
-            ];
+            # Secrets are installed during system activation (sops-nix), so no
+            # explicit unit ordering on secret installation is needed.
+            after = [ "network-online.target" ];
             wants = [ "network-online.target" ];
-            requires = [ "agenix.service" ];
 
             serviceConfig = {
               Type = "notify";

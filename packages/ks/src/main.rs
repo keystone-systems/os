@@ -112,6 +112,7 @@ async fn main() -> Result<()> {
             Command::Photos { command } => run_photos_command(command).await,
             Command::HardwareKey { command } => run_hardware_key_command(command, flake).await,
             Command::Screenshots { command } => run_screenshots_command(command).await,
+            Command::Secrets { command } => cmd::secrets::execute(command, flake).await,
             Command::SyncAgentAssets => run_sync_agent_assets_command().await,
             Command::SyncHostKeys => run_sync_host_keys_command(flake).await,
             Command::Grafana { args } => run_grafana_command(args, flake).await,

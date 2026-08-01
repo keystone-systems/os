@@ -116,7 +116,7 @@ let
             enable = true;
             services.seaweedfs = {
               enable = true;
-              s3ConfigFile = "/run/agenix/seaweedfs-s3-config";
+              s3ConfigFile = "/run/secrets/seaweedfs-s3-config";
             };
           };
         };

@@ -1,17 +1,17 @@
 # Keystone OS — GitHub token for the nix daemon.
 #
-# Materializes /etc/nix/access-tokens.conf from a root-readable agenix
+# Materializes /etc/nix/access-tokens.conf from a root-readable sops
 # secret and `!include`s it into nix.conf so flake fetches authenticate
 # to GitHub and hit the 5000/hr authenticated rate ceiling instead of
 # the 60/hr anonymous one.
 #
-# The token value never enters the Nix store: the secret stays in
-# /run/agenix, and a hardened systemd oneshot copies it into the
+# The token value never enters the Nix store: the secret stays in the
+# sops runtime dir, and a hardened systemd oneshot copies it into the
 # include file at activation time.
 #
 # Auto-discovery order (when `tokenFile` is unset):
-#   1. /run/agenix/nix-github-token             — dedicated nix-daemon secret
-#   2. /run/agenix/${adminUsername}-github-token — user-home PAT shared as os-level
+#   1. nix-github-token              — dedicated nix-daemon secret
+#   2. ${adminUsername}-github-token — user-home PAT shared as os-level
 #   3. (nothing found) — module stays inert, no assertion failure
 #
 # See conventions/tool.nix.md for the os-level access-tokens convention.
@@ -29,10 +29,10 @@ let
   effectiveTokenFile =
     if cfg.tokenFile != null then
       cfg.tokenFile
-    else if lib.hasAttrByPath [ "age" "secrets" "nix-github-token" ] config then
-      lib.getAttrFromPath [ "age" "secrets" "nix-github-token" "path" ] config
-    else if lib.hasAttrByPath [ "age" "secrets" userPatSecretName ] config then
-      lib.getAttrFromPath [ "age" "secrets" userPatSecretName "path" ] config
+    else if config.keystone.secrets.provided ? "nix-github-token" then
+      config.keystone.secrets.provided."nix-github-token".path
+    else if config.keystone.secrets.provided ? ${userPatSecretName} then
+      config.keystone.secrets.provided.${userPatSecretName}.path
     else
       null;
 
@@ -46,11 +46,11 @@ in
       type = lib.types.bool;
       default = false;
       description = ''
-        Wire an agenix-decrypted GitHub token into /etc/nix/nix.conf via
+        Wire a sops-decrypted GitHub token into /etc/nix/nix.conf via
         a root-readable include file, so the nix daemon uses the
         authenticated 5000/hr GitHub rate-limit ceiling for flake fetches.
 
-        Token source is auto-discovered from declared agenix secrets when
+        Token source is auto-discovered from declared keystone secrets when
         `tokenFile` is unset — first `nix-github-token` (dedicated), then
         `''${adminUsername}-github-token` (user-PAT shared at os-level).
         The module stays inert if neither is declared.
@@ -60,11 +60,11 @@ in
     tokenFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "/run/agenix/nix-github-token";
+      example = "/run/secrets/nix-github-token";
       description = ''
         Explicit path to the decrypted token file. Overrides the auto-
-        discovery chain. The adopter is responsible for declaring an
-        `age.secrets.<name>` entry that produces this file with
+        discovery chain. The adopter is responsible for declaring a
+        `keystone.secrets.provided.<name>` entry that produces this file with
         `owner = "root"; mode = "0440";` (group-readable) when the same
         secret backs the user shell env, or `mode = "0400";` when
         dedicated to the nix daemon.
@@ -98,9 +98,9 @@ in
 
     systemd.services.nix-github-access-token = {
       description = "Materialize ${cfg.includePath} from ${effectiveTokenFile}";
+      # Secrets are installed during system activation (sops-nix), before
+      # systemd units start — no explicit ordering needed.
       wantedBy = [ "multi-user.target" ];
-      after = [ "agenix.service" ];
-      requires = [ "agenix.service" ];
 
       serviceConfig = {
         Type = "oneshot";
@@ -109,7 +109,7 @@ in
         ProtectSystem = "strict";
         ProtectHome = true;
         ReadWritePaths = [ (builtins.dirOf cfg.includePath) ];
-        # /run/agenix is a tmpfs mount; PrivateTmp would shadow it.
+        # /run/secrets lives on a ramfs mount; PrivateTmp would shadow it.
         PrivateTmp = false;
       };
 

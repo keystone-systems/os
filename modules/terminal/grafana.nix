@@ -3,7 +3,7 @@
 # Provides Grafana MCP server configuration for AI coding tools.
 # When enabled, adds the `grafana` MCP server to all configured CLI coding
 # agents (Claude Code, Gemini CLI, Codex, OpenCode) and exports the
-# GRAFANA_API_KEY environment variable from the agenix runtime secret.
+# GRAFANA_API_KEY environment variable from the sops runtime secret.
 #
 # ## Example Usage
 #
@@ -52,11 +52,11 @@ in
       };
     };
 
-    # Export GRAFANA_API_KEY from agenix secret at shell login.
+    # Export GRAFANA_API_KEY from the sops runtime secret at shell login.
     # Cannot use home.sessionVariables — the secret is a runtime file, not a Nix store path.
     programs.zsh.initContent = ''
-      if [ -f /run/agenix/grafana-api-token ]; then
-        export GRAFANA_API_KEY="$(tr -d '\n' < /run/agenix/grafana-api-token)"
+      if [ -f /run/secrets/grafana-api-token ]; then
+        export GRAFANA_API_KEY="$(tr -d '\n' < /run/secrets/grafana-api-token)"
       fi
     '';
   };

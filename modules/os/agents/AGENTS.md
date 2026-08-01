@@ -123,7 +123,7 @@ keystone.os.agents.drago = {
 };
 ```
 
-**Required agenix secrets** (per agent):
+**Required sops secrets** (per agent):
 
 - `agent-{name}-ssh-key` — SSH private key
 - `agent-{name}-ssh-passphrase` — SSH key passphrase
@@ -155,7 +155,7 @@ agentctl <agent-name> <command> [args...]
 | `opencode`                           | Interactive OpenCode session in agent notes dir         |
 | `mail`                               | Send structured email via `agent-mail`                  |
 | `vnc`                                | Open remote-viewer to the agent's VNC desktop           |
-| `provision`                          | Generate SSH keypair, mail password, and agenix secrets |
+| `provision`                          | Generate SSH keypair, mail password, and sops secrets |
 
 **SECURITY**: Per-agent helper scripts hardcode `XDG_RUNTIME_DIR` and allowlist safe
 systemctl verbs to prevent LD_PRELOAD injection.

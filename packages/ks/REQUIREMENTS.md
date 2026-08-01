@@ -16,9 +16,9 @@ This document defines the functional requirements for `ks`, the primary configur
 
 ## 3. Secrets Repository
 
-- The TUI MUST ask whether the user wants a separate secrets repository (private encrypted repo for agenix secrets) or a single combined repo.
+- The TUI MUST ask whether the user wants a in-repo sops secrets directory (the default) or a separate private secrets repo.
 - When using a separate secrets repo, the TUI MUST support self-hosted git (e.g., Forgejo on Headscale VPN) as the remote.
-- Secrets MUST be encrypted using age (agenix-compatible format).
+- Secrets MUST be encrypted using age recipients via sops.
 
 ## 4. Key Management
 

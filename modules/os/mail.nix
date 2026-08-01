@@ -8,29 +8,23 @@
 # This module provides a basic Stalwart mail server configuration.
 # On first boot, Stalwart generates a random admin password in the logs.
 #
-# ## Setting Admin Password with Agenix
+# ## Setting a Managed Admin Password
 #
 # To use a managed admin password instead, extend this config in your host:
 #
 # ```nix
-# # 1. Add to secrets.nix:
-# "secrets/stalwart-admin-password.age".publicKeys = adminKeys ++ [ systems.yourhost ];
-#
-# # 2. Create the secret with a SHA-512 hashed password (NOT plaintext).
+# # 1. Create the secret with a SHA-512 hashed password (NOT plaintext).
 # #    fallback-admin.secret requires a $6$ hash format.
 # #    Generate the hash: mkpasswd -m sha-512 "your-password"
-# #    Then store it:     echo -n '$6$...' | agenix -e secrets/stalwart-admin-password.age
+# #    Then add it to the host's sops file:
+# #    ks secrets edit secrets/<hostname>.yaml   # stalwart-admin-password: $6$...
 #
-# # 3. In your host configuration:
-# age.secrets.stalwart-admin-password = {
-#   file = ../../secrets/stalwart-admin-password.age;
-#   owner = "root";
-#   mode = "0400";
-# };
+# # 2. In your host configuration:
+# keystone.secrets.provided.stalwart-admin-password = { };
 #
 # services.stalwart-mail = {
 #   credentials = {
-#     admin_password = config.age.secrets.stalwart-admin-password.path;
+#     admin_password = config.keystone.secrets.provided.stalwart-admin-password.path;
 #   };
 #   settings.authentication.fallback-admin = {
 #     user = "admin";
@@ -62,10 +56,10 @@ let
   # This is NOT filtered by agent.host — provisioning runs on the mail server,
   # which is typically a different host from the agent's designated host.
   #
-  # CRITICAL (agenix): agent-{name}-mail-password must list BOTH the agent's
-  # host (for himalaya client) AND this server's host key (for Stalwart
-  # provisioning) in its publicKeys recipients. Otherwise agenix will fail
-  # to decrypt at activation time on this host.
+  # CRITICAL (sops): agent-{name}-mail-password must be decryptable on BOTH
+  # the agent's host (for himalaya client) AND this server's host (for
+  # Stalwart provisioning) — declare it in a sops file whose recipients
+  # include both hosts. Otherwise decryption fails at activation time here.
   provisionAgents = filterAttrs (_: a: a.mail.provision) config.keystone.os.agents;
   hasProvisionAgents = provisionAgents != { };
 
@@ -240,14 +234,14 @@ in
         assertions = mkIf hasProvisionAgents (
           [
             {
-              assertion = config.age.secrets ? "stalwart-admin-password";
-              message = "Agent mail provisioning requires agenix secret 'stalwart-admin-password' for Stalwart admin API access.";
+              assertion = config.keystone.secrets.provided ? "stalwart-admin-password";
+              message = "Agent mail provisioning requires sops secret 'stalwart-admin-password' for Stalwart admin API access.";
             }
           ]
           ++ (mapAttrsToList (name: _: {
-            assertion = config.age.secrets ? "agent-${name}-mail-password";
+            assertion = config.keystone.secrets.provided ? "agent-${name}-mail-password";
             message = ''
-              Agent '${name}' has mail.provision = true but agenix secret "agent-${name}-mail-password" is not declared.
+              Agent '${name}' has mail.provision = true but sops secret "agent-${name}-mail-password" is not declared.
               This secret must contain the plaintext password for the agent's Stalwart account.
             '';
           }) provisionAgents)
@@ -264,8 +258,14 @@ in
               username = "agent-${name}";
               mailAddr =
                 if agentCfg.mail.address != null then agentCfg.mail.address else "${username}@${topDomain}";
-              adminPasswordPath = "/run/agenix/stalwart-admin-password";
-              agentPasswordPath = "/run/agenix/${username}-mail-password";
+              # `or` fallbacks keep the missing-secret case surfacing as the
+              # assertions above, not as an attribute error.
+              adminPasswordPath =
+                config.keystone.secrets.provided.stalwart-admin-password.path
+                  or "/run/secrets/stalwart-admin-password";
+              agentPasswordPath =
+                config.keystone.secrets.provided."${username}-mail-password".path
+                  or "/run/secrets/${username}-mail-password";
             in
             nameValuePair "provision-agent-mail-${name}" {
               description = "Provision Stalwart mail account for ${username}";

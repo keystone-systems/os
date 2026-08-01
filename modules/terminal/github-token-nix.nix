@@ -8,7 +8,7 @@
 #
 # This module materializes ~/.config/nix/access-tokens.conf at home-manager
 # activation time from a token source — by default `gh auth token`, which
-# leverages the existing gh CLI login the user already has. No agenix secret
+# leverages the existing gh CLI login the user already has. No provisioned secret
 # is required on macOS for this path.
 #
 # Pair with `keystone.terminal.github` (the PAT module) when you also want
@@ -47,16 +47,16 @@ in
       description = ''
         Where to read the token at activation time.
           gh-auth   : shell out to `gh auth token`. Requires gh CLI logged
-                      in. Recommended on Darwin where agenix is not
+                      in. Recommended on Darwin where sops-nix is not
                       typically wired.
-          tokenFile : read from `tokenFile` (e.g. an agenix runtime path).
+          tokenFile : read from `tokenFile` (e.g. a sops runtime path).
       '';
     };
 
     tokenFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "/run/agenix/nix-github-token";
+      example = "/run/secrets/nix-github-token";
       description = ''
         Path to a token file when `source = "tokenFile"`. Ignored
         otherwise.

@@ -160,7 +160,7 @@ fn resolve_grafana_api_key() -> Result<Option<String>> {
         }
     }
 
-    let runtime_secret = Path::new("/run/agenix/grafana-api-token");
+    let runtime_secret = Path::new("/run/secrets/grafana-api-token");
     if runtime_secret.is_file() {
         return Ok(Some(
             fs::read_to_string(runtime_secret)
@@ -232,7 +232,7 @@ async fn apply_dashboards(repo_root: &Path) -> Result<()> {
             )
         }
         eprintln!(
-            "Warning: Keystone Grafana API token is not configured on this host. Set GRAFANA_API_KEY or define /run/agenix/grafana-api-token."
+            "Warning: Keystone Grafana API token is not configured on this host. Set GRAFANA_API_KEY or define /run/secrets/grafana-api-token."
         );
         return Ok(());
     };
@@ -321,7 +321,7 @@ async fn export_dashboard(repo_root: &Path, uid: &str) -> Result<()> {
     let grafana_url = resolve_grafana_url(repo_root).await?;
     let Some(api_key) = resolve_grafana_api_key()? else {
         anyhow::bail!(
-            "Keystone Grafana API token is not configured on this host. Set GRAFANA_API_KEY or define /run/agenix/grafana-api-token."
+            "Keystone Grafana API token is not configured on this host. Set GRAFANA_API_KEY or define /run/secrets/grafana-api-token."
         )
     };
 

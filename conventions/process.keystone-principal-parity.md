@@ -47,7 +47,7 @@ discipline that enforces that policy.
    MUST be documented in a code comment at the point of divergence, explaining
    why.
 9. Acceptable divergences include: agents needing auto-created repos, agents
-   needing SSH key provisioning from agenix secrets, humans requiring password
+   needing SSH key provisioning from sops secrets, humans requiring password
    change on first web login, and service-account-specific scoping.
 10. The PR description MUST call out any intentional divergence from principal
     parity, with rationale.
@@ -97,7 +97,7 @@ mapAttrs' (name: agentCfg: mkProvisionService {
   systemGroup = "agents";
   tokenPrefix = "api-agent-${name}";
   mustChangePass = false;
-  sshPubkey = agentPublicKey name;     # agent-specific: SSH key from agenix
+  sshPubkey = agentPublicKey name;     # agent-specific: SSH key from the secrets repo
   repoName = agentCfg.git.repoName;   # agent-specific: auto-created repo
   adminUsers = cfg.adminUsers;         # agent-specific: human collaborators
   # ...

@@ -10,13 +10,22 @@ The server module provides unified nginx reverse proxy, ACME wildcard certificat
 ## Quick Start
 
 ```nix
+# Cloudflare API token for ACME (env-file content lives under the
+# acme-env key of secrets/services/cloudflare.yaml)
+keystone.secrets.provided.cloudflare-api-token = {
+  owner = "acme";
+  group = "acme";
+  scope = "service:cloudflare";
+  key = "acme-env";
+};
+
 keystone.server = {
   enable = true;
   domain = "example.com";
   tailscaleIP = "100.64.0.6";
   acme = {
     enable = true;
-    credentialsFile = config.age.secrets.cloudflare-api-token.path;
+    credentialsFile = config.keystone.secrets.provided.cloudflare-api-token.path;
   };
   services = {
     immich.enable = true;      # -> photos.example.com
@@ -86,24 +95,26 @@ keystone.server = {
 keystone.server.acme = {
   enable = true;                    # Enable wildcard certificate (default: false)
   email = "admin@example.com";      # ACME account email (default: admin@<domain>)
-  credentialsFile = "/run/agenix/cloudflare-api-token";
+  credentialsFile = "/run/secrets/cloudflare-api-token";
   extraDomainNames = [              # Additional domains in cert
     "*.home.example.com"
   ];
 };
 ```
 
-**Cloudflare API Token Secret** (agenix example):
+**Cloudflare API Token Secret** (sops example — see `conventions/secrets.md`):
 
 ```nix
-# In your host configuration
-age.secrets.cloudflare-api-token = {
-  file = "${inputs.agenix-secrets}/secrets/cloudflare-api-token.age";
+# In your host configuration (env-file content lives under the
+# acme-env key of secrets/services/cloudflare.yaml)
+keystone.secrets.provided.cloudflare-api-token = {
   owner = "acme";
   group = "acme";
+  scope = "service:cloudflare";
+  key = "acme-env";
 };
 
-# Secret file content:
+# Secret value (the acme-env key's content):
 # CLOUDFLARE_DNS_API_TOKEN=your_token_here
 ```
 
@@ -171,11 +182,13 @@ keystone.headscale = {
 ```nix
 { config, inputs, ... }:
 {
-  # Cloudflare API token for ACME
-  age.secrets.cloudflare-api-token = {
-    file = "${inputs.agenix-secrets}/secrets/cloudflare-api-token.age";
+  # Cloudflare API token for ACME (env-file content lives under the
+  # acme-env key of secrets/services/cloudflare.yaml)
+  keystone.secrets.provided.cloudflare-api-token = {
     owner = "acme";
     group = "acme";
+    scope = "service:cloudflare";
+    key = "acme-env";
   };
 
   keystone.server = {
@@ -184,7 +197,7 @@ keystone.headscale = {
     tailscaleIP = "100.64.0.6";
     acme = {
       enable = true;
-      credentialsFile = config.age.secrets.cloudflare-api-token.path;
+      credentialsFile = config.keystone.secrets.provided.cloudflare-api-token.path;
       extraDomainNames = [ "*.home.ncrmro.com" ];
     };
     services = {
@@ -224,13 +237,22 @@ let
   oceanConfig = inputs.self.nixosConfigurations.ocean.config;
 in
 {
+  # Cloudflare API token for ACME (env-file content lives under the
+  # acme-env key of secrets/services/cloudflare.yaml)
+  keystone.secrets.provided.cloudflare-api-token = {
+    owner = "acme";
+    group = "acme";
+    scope = "service:cloudflare";
+    key = "acme-env";
+  };
+
   keystone.server = {
     enable = true;
     domain = "ncrmro.com";
     tailscaleIP = "100.64.0.38";
     acme = {
       enable = true;
-      credentialsFile = config.age.secrets.cloudflare-api-token.path;
+      credentialsFile = config.keystone.secrets.provided.cloudflare-api-token.path;
     };
     services = {
       headscale.enable = true;

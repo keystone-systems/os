@@ -30,7 +30,7 @@ keystone.terminal.mail = {
   displayName = "My Name";
   login = "me";
   host = "mail.example.com";
-  passwordCommand = "cat /run/agenix/mail-password";
+  passwordCommand = "cat /run/secrets/mail-password";
 };
 
 keystone.terminal.calendar.enable = true;

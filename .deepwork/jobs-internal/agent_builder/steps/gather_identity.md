@@ -96,7 +96,7 @@ show the user what a complete identity looks like.
 | --------- | ---------------------- | ---------------- | ----------------- | -------------------------------------------- |
 | GitHub    | github.com             | kdrgo            | OAuth device flow | `~/.config/gh/hosts.yml`                     |
 | Forgejo   | git.ncrmro.com         | drago            | API token         | fj keyfile                                   |
-| Bitwarden | vaultwarden.ncrmro.com | drago@ncrmro.com | Password file     | `/run/agenix/agent-drago-bitwarden-password` |
+| Bitwarden | vaultwarden.ncrmro.com | drago@ncrmro.com | Password file     | `/run/secrets/agent-drago-bitwarden-password` |
 ```
 
 ## Quality Criteria

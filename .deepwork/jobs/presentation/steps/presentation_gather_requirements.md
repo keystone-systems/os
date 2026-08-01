@@ -49,7 +49,7 @@ A structured requirements document covering all inputs needed by downstream step
 
 ## Key messages
 1. Keystone is a fully declarative NixOS platform — you never configure a server by hand.
-2. Secrets are encrypted at rest with agenix and unlocked at boot via TPM/hardware key.
+2. Secrets are encrypted at rest with sops and unlocked at boot via TPM/hardware key.
 3. The dev workflow is: edit → `ks build` to verify → `ks update` to deploy.
 
 ## Opening hook

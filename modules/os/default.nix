@@ -155,7 +155,7 @@ let
           enable = mkOption {
             type = types.bool;
             default = false;
-            description = "Auto-load SSH key into ssh-agent at login using agenix passphrase";
+            description = "Auto-load SSH key into ssh-agent at login using a sops-managed passphrase";
           };
         };
 
@@ -756,7 +756,8 @@ in
     i18n.defaultLocale = lib.mkDefault "en_US.UTF-8";
 
     environment.systemPackages = [
-      pkgs.keystone.agenix
+      pkgs.sops
+      pkgs.ssh-to-age
     ]
     ++ lib.optionals isBaremetal [ pkgs.lm_sensors ];
   };

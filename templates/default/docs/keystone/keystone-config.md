@@ -69,7 +69,7 @@ keystone.lib.mkSystemFlake {
     workstation = { kind = "workstation"; };
     laptop      = { kind = "laptop"; };
     server      = { kind = "server"; };
-    macbook     = { kind = "macbook"; };   # Home Manager only — no NixOS, no agenix
+    macbook     = { kind = "macbook"; };   # Home Manager only — no NixOS, no sops secrets
   };
 }
 ```
@@ -103,7 +103,7 @@ the file follows.
 | Host, hardware | One Linux host's disks/CPU/firmware | `hosts/<name>/hardware.nix` |
 | Host, user (macOS) | A `macbook` host | `hosts/<name>/configuration.nix` |
 | Shared infra | A service whose host every other host should know about | `keystoneServices.<service>.host` |
-| Secret | Anything that mustn't land in the Nix store | `secrets/<name>.age` + `age.secrets.*` |
+| Secret | Anything that mustn't land in the Nix store | `secrets/<scope>.yaml` (via `ks secrets edit`) + `keystone.secrets.provided.<name>` |
 
 Two questions resolve every entry: **fleet vs per-host**, and **system vs
 user**.
@@ -167,7 +167,7 @@ access to it.
 - `hosts/<name>/` — one directory per attribute in `hosts = { ... }`
 - `hosts/<name>/configuration.nix` — per-host overrides
 - `hosts/<name>/hardware.nix` — Linux hardware metadata (no macbook)
-- `secrets/*.age` + `secrets.nix` — agenix; see [`secrets/README.md`](../../secrets/README.md)
+- `secrets/*.yaml` + `secrets/recipients.nix` — sops; see [`secrets/README.md`](../../secrets/README.md)
 - `docs/keystone/` — these docs; edit freely
 
 `server` is just an example name. Rename to anything that fits — keep the
@@ -181,7 +181,7 @@ entry in `hosts = { ... }` and the directory under `hosts/` in sync.
   asking your AI agent to handle common workflows
 - Keystone's helper source:
   [`lib/templates.nix`](https://github.com/ncrmro/keystone/blob/main/lib/templates.nix)
-- agenix: [ryantm/agenix](https://github.com/ryantm/agenix)
+- sops-nix: [Mic92/sops-nix](https://github.com/Mic92/sops-nix)
 - Nix fundamentals (when the question isn't about keystone):
   [nix.dev](https://nix.dev),
   [NixOS manual](https://nixos.org/manual/nixos/stable/),

@@ -20,7 +20,7 @@
 # TODO: Configure Forgejo LFS to use SeaweedFS S3 as storage backend
 #
 # S3 credentials are supplied via a JSON identity config file at s3ConfigFile.
-# Generate with agenix and set keystone.server.services.seaweedfs.s3ConfigFile.
+# Store as a sops secret and set keystone.server.services.seaweedfs.s3ConfigFile.
 # Example identity file (JSON):
 #   {
 #     "identities": [
@@ -87,11 +87,11 @@ in
       s3ConfigFile = lib.mkOption {
         type = lib.types.nullOr lib.types.path;
         default = null;
-        example = "/run/agenix/seaweedfs-s3-config";
+        example = "/run/secrets/seaweedfs-s3-config";
         description = ''
           Path to the SeaweedFS S3 identity/credentials JSON config file.
           When null, S3 access control is disabled (anonymous access).
-          Use an agenix secret for this in production.
+          Use a sops secret for this in production.
 
           Expected JSON format:
             {

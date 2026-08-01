@@ -100,11 +100,14 @@ in
                     displayName = mkDefault agentCfg.fullName;
                     login = mkDefault username;
                     host = mkDefault (if topDomain != null then "mail.${topDomain}" else "");
-                    # CRITICAL: agenix secrets and most editors add a trailing newline.
+                    # CRITICAL: sops secrets and most editors add a trailing newline.
                     # Stalwart rejects passwords with trailing whitespace, so we must
                     # strip it. Without this, IMAP/SMTP auth fails.
                     # tr is available via the agent's home-manager profile PATH (coreutils).
-                    passwordCommand = mkDefault "tr -d '\\n' < /run/agenix/agent-${name}-mail-password";
+                    passwordCommand = mkDefault "tr -d '\\n' < ${
+                      config.keystone.secrets.provided."agent-${name}-mail-password".path
+                        or "/run/secrets/agent-${name}-mail-password"
+                    }";
                     imap.port = mkDefault agentCfg.mail.imap.port;
                     smtp.port = mkDefault agentCfg.mail.smtp.port;
                   };
@@ -137,13 +140,16 @@ in
                     );
                     baseUrl = mkDefault (if topDomain != null then "https://vaultwarden.${topDomain}" else "");
                     # Agents are unattended — use a custom pinentry that reads the master
-                    # password from the agenix secret instead of prompting interactively.
-                    pinentry = pkgs.writeShellScriptBin "rbw-pinentry-agenix" ''
+                    # password from the sops secret instead of prompting interactively.
+                    pinentry = pkgs.writeShellScriptBin "rbw-pinentry-secrets" ''
                       echo "OK Pleased to meet you"
                       while IFS= read -r line; do
                         case "$line" in
                           GETPIN)
-                            printf "D %s\n" "$(tr -d '\n' < /run/agenix/agent-${name}-bitwarden-password)"
+                            printf "D %s\n" "$(tr -d '\n' < ${
+                              config.keystone.secrets.provided."agent-${name}-bitwarden-password".path
+                                or "/run/secrets/agent-${name}-bitwarden-password"
+                            })"
                             echo "OK"
                             ;;
                           BYE)

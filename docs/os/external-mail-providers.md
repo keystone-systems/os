@@ -62,7 +62,7 @@ keystone.terminal.mail = {
 
 ### Agent (keystone.os.agents)
 
-Agents using a Gmail account follow the same pattern. The `passwordCommand` must read from wherever the agent's credentials are stored (typically agenix):
+Agents using a Gmail account follow the same pattern. The `passwordCommand` must read from wherever the agent's credentials are stored (typically a sops secret under /run/secrets/):
 
 ```nix
 keystone.os.agents.drago = {
@@ -77,7 +77,7 @@ keystone.terminal.mail = {
   displayName = "Drago";
   login = "agent@gmail.com";
   host = "imap.gmail.com";
-  passwordCommand = "cat /run/agenix/drago-gmail-app-password";
+  passwordCommand = "cat /run/secrets/drago-gmail-app-password";
   smtp = {
     host = "smtp.gmail.com";
     port = 465;
@@ -167,7 +167,7 @@ keystone.terminal.mail = {
   displayName = "Agent";
   login = "agent@icloud.com";
   host = "imap.mail.me.com";
-  passwordCommand = "cat /run/agenix/drago-icloud-app-password";
+  passwordCommand = "cat /run/secrets/drago-icloud-app-password";
   smtp = {
     host = "smtp.mail.me.com";
     port = 587;
@@ -185,7 +185,7 @@ keystone.terminal.calendar = {
   accountName = "icloud";
   url = "https://caldav.icloud.com";
   login = "agent@icloud.com";
-  passwordCommand = "cat /run/agenix/drago-icloud-app-password";
+  passwordCommand = "cat /run/secrets/drago-icloud-app-password";
 };
 
 keystone.terminal.contacts = {
@@ -193,7 +193,7 @@ keystone.terminal.contacts = {
   accountName = "icloud";
   url = "https://contacts.icloud.com";
   login = "agent@icloud.com";
-  passwordCommand = "cat /run/agenix/drago-icloud-app-password";
+  passwordCommand = "cat /run/secrets/drago-icloud-app-password";
 };
 ```
 

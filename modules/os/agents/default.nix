@@ -11,7 +11,7 @@
 # - Stalwart mail account with himalaya CLI
 # - Vaultwarden/Bitwarden integration with per-agent collections
 # - Per-agent Tailscale instances with UID-based routing
-# - SSH key management via agenix (ssh-agent + git signing)
+# - SSH key management via sops secrets (ssh-agent + git signing)
 #
 # Usage:
 #   keystone.domain = "ks.systems";
@@ -40,7 +40,7 @@
 #
 #   ONLY created on the agent's designated host (uses `localAgents`, filtered
 #   by host == networking.hostName):
-#   - SSH secrets + ssh-agent service (agenix assertions for private key/passphrase)
+#   - SSH secrets + ssh-agent service (secret assertions for private key/passphrase)
 #   - Desktop environment (labwc, wayvnc)
 #   - Mail client config (himalaya, mail-password assertion)
 #   - Home Manager terminal environment
@@ -49,12 +49,13 @@
 #   - Mail account provisioning (where Stalwart runs, filtered by mail.provision)
 #   - Git account provisioning (where Forgejo runs, filtered by git.provision)
 #
-#   Agenix implication: secrets like agent-{name}-mail-password may need
-#   recipients on BOTH the agent's host (for himalaya) AND the server host
-#   (for Stalwart provisioning). See agenix-secrets/secrets.nix.
+#   Sops implication: secrets like agent-{name}-mail-password may need to be
+#   decryptable on BOTH the agent's host (for himalaya) AND the server host
+#   (for Stalwart provisioning) — place them in a sops file whose recipients
+#   include both hosts.
 #
 # SSH: Each agent gets an ssh-agent systemd service that auto-loads its
-# private key from agenix using the passphrase secret. Git is configured
+# private key using the sops-managed passphrase secret. Git is configured
 # to sign commits with the SSH key. The agent's public key is added to
 # its own ~/.ssh/authorized_keys for sandbox access.
 #

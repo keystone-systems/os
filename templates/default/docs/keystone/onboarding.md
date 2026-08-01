@@ -25,7 +25,7 @@ first boot.
   bootstrap.
 - The temporary `keystone` LUKS password and TPM-less unlock replaced with a
   user-chosen password and TPM auto-unlock.
-- (Optional) An agenix-encrypted GitHub PAT wired in so `ks update` and
+- (Optional) A sops-encrypted GitHub PAT wired in so `ks update` and
   `nix flake update` don't trip the 60 req/hr anonymous rate limit.
 
 ## Anatomy of each step
@@ -281,7 +281,7 @@ host:
 1. Replace the temporary `changeme` user password with one you choose.
 2. Generate a per-host SSH key that gives this target its own outbound
    identity — useful once the fleet has more than one host (so it can
-   SSH to siblings) and required by Step 8 if you wire up agenix
+   SSH to siblings) and required by Step 8 if you wire up sops
    (the host's pubkey becomes a recipient for system-scoped secrets).
 
 The driver's bootstrap key in `admin.sshKeys` is *not* removed — it
@@ -305,7 +305,7 @@ Copy the new pubkey output. **On your driver**, edit your `keystone-config`
 repo and add it to `admin.sshKeys` in `flake.nix` *alongside* the existing
 driver key — this is what enables fleet-internal SSH (target reaches other
 hosts that share the same `admin.sshKeys`). If your fleet is single-host
-for now, you can skip this addition; the key still serves as an agenix
+for now, you can skip this addition; the key still serves as a secrets
 recipient in Step 8.
 
 Commit and push the repo change (assuming you've initialized a Git remote;
@@ -383,7 +383,7 @@ deleting).
 
 ---
 
-## Step 8 — (Optional) Add an agenix-encrypted GitHub PAT
+## Step 8 — (Optional) Add a sops-encrypted GitHub PAT
 
 **Goal:** Stop hitting GitHub's 60 req/hr anonymous rate limit (the source of
 recurring `403 API rate limit exceeded` errors during `ks update` and
@@ -392,8 +392,9 @@ recurring `403 API rate limit exceeded` errors during `ks update` and
 See [`github-token.md`](github-token.md) for the full walkthrough. Summary:
 
 1. Generate a fine-grained PAT at <https://github.com/settings/personal-access-tokens>
-2. Encrypt it with agenix into `secrets/<username>-github-token.age`.
-3. Uncomment the `age.secrets` block in `flake.nix` and the host configuration.
+2. Encrypt it with `ks secrets edit` into the host's `secrets/<host>.yaml`.
+3. Uncomment the `keystone.secrets.provided` block in
+   `hosts/<host>/configuration.nix` (see [`github-token.md`](github-token.md)).
 4. Rebuild and reboot.
 
 Without this, you'll still install fine — it just makes subsequent updates

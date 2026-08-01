@@ -24,10 +24,12 @@
       # inputs.browser-previews.follows = "browser-previews";
     };
 
-    # No separate `agenix` input is needed: Keystone's operating-system module
-    # already imports `agenix.nixosModules.default`, so `age.secrets.*` is
-    # available on every host out of the box. See Step 8 of
-    # docs/keystone/onboarding.md for how to start using it.
+    # No separate `sops-nix` input is needed: Keystone's operating-system module
+    # already imports `sops-nix.nixosModules.sops`, and `mkSystemFlake` points
+    # `keystone.secrets.dir` at this repo's `secrets/` directory by default —
+    # so `keystone.secrets.provided.*` works on every host once your recipients
+    # are set up. See Step 8 of docs/keystone/onboarding.md for how to start
+    # using it.
   };
 
   outputs =
@@ -137,7 +139,7 @@
         #
         # `kind = "macbook"` makes mkSystemFlake emit a `homeConfigurations.<name>`
         # output (not `nixosConfigurations`). The macbook host has no
-        # hardware.nix, no system services, no agenix — it's just Home Manager
+        # hardware.nix, no system services, no sops secrets — it's just Home Manager
         # packages + dotfiles for a user on someone else's macOS install.
         # See hosts/macbook/configuration.nix for the module shape and deploy
         # command.

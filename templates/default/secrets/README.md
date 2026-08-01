@@ -1,6 +1,6 @@
 # secrets/
 
-Agenix-encrypted secrets live here. The directory ships empty because secrets
+sops-encrypted secrets live here. The directory ships empty because secrets
 are specific to your fleet — there's nothing meaningful for the template to
 encrypt up front.
 
@@ -12,39 +12,43 @@ full walkthrough.
 
 ## How it works
 
-- `../secrets.nix` lists recipients — which age public keys can decrypt each
-  file. Both your driver (so you can edit secrets later) and every host that
-  consumes the secret at runtime need to be in the `publicKeys` list.
-- `agenix -e secrets/<name>.age` opens an editor, encrypts your input to
-  every listed recipient, and writes the ciphertext as `<name>.age`. The
-  `.age` files are safe to commit.
-- On each consuming host, `age.secrets.<name>.file = ../../secrets/<name>.age`
-  (declared in `flake.nix` or `hosts/<name>/configuration.nix`) wires the
-  runtime decryption. Keystone's operating-system module already imports
-  `agenix.nixosModules.default`, so no extra plumbing is needed.
-- At activation time, agenix decrypts each declared secret into
-  `/run/agenix/<name>` with the owner and mode you specified. Read from there
-  at runtime — never bake the cleartext into `home.sessionVariables` or
-  `nix.settings.access-tokens`, both of which embed the value in the Nix
-  store.
+- Secrets are keys inside sops-encrypted YAML files, scoped by file:
+  `secrets/<hostname>.yaml` (one host), `secrets/shared.yaml` (all hosts),
+  `secrets/services/<name>.yaml` (hosts running a service).
+- `secrets/recipients.nix` lists admin recipients (your editing keys) and
+  per-file host lists. `ks secrets sync` turns it — plus the host keys from
+  the flake — into the generated `.sops.yaml`; never edit `.sops.yaml` by
+  hand. After recipient changes, run `ks secrets rekey`.
+- `ks secrets edit secrets/<file>.yaml` opens an editor and re-encrypts on
+  save. The encrypted YAML files are safe to commit.
+- On each consuming host, declare
+  `keystone.secrets.provided.<name> = { owner = "..."; scope = "host"; }`
+  (in `flake.nix` or `hosts/<name>/configuration.nix`). Keystone's
+  operating-system module already imports `sops-nix.nixosModules.sops`, so
+  no extra plumbing is needed.
+- At activation time, sops-nix decrypts each declared secret into
+  `/run/secrets/<name>` with the owner and mode you specified — read the
+  path from `config.keystone.secrets.provided.<name>.path`. Never bake the
+  cleartext into `home.sessionVariables` or `nix.settings.access-tokens`,
+  both of which embed the value in the Nix store.
 
 ## Don't
 
 - **Don't commit cleartext secrets.** If you accidentally do, rotate the
   underlying credential before relying on `git rm` — git history keeps the
   cleartext until the history is rewritten and force-pushed.
-- **Don't add a `.gitignore` that ignores `*.age`.** The whole point of the
-  `.age` extension is that the ciphertext is safe to track in git.
+- **Don't add a `.gitignore` that ignores `secrets/*.yaml`.** The whole point
+  of sops is that the ciphertext is safe to track in git.
 - **Don't share a single secret across recipients who shouldn't all see it.**
-  Re-encrypt with a narrower `publicKeys` list instead.
+  Move it to a narrower-scoped file (per-host or per-service) instead.
 
-## File naming
+## Secret naming
 
-The convention is `<consumer>-<purpose>.age`. Examples:
+The convention is `<consumer>-<purpose>` for the YAML key. Examples:
 
-- `<username>-github-token.age` — per-user GitHub PAT
-- `server-tailscale-authkey.age` — host-scoped Tailscale auth key
-- `mail-relay-password.age` — service-scoped credential
+- `<username>-github-token` — per-user GitHub PAT
+- `<username>-ssh-passphrase` — per-user SSH key passphrase (per-host file)
+- `mail-relay-password` — service-scoped credential
 
-Match the file basename to the `age.secrets.<name>` declaration so the wiring
-stays grep-able.
+Match the YAML key to the `keystone.secrets.provided.<name>` declaration so
+the wiring stays grep-able.

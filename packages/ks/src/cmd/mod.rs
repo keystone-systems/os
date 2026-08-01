@@ -20,6 +20,7 @@ pub mod print;
 pub mod projects;
 pub mod run_background;
 pub mod screenshots;
+pub mod secrets;
 pub mod ssh;
 pub mod switch;
 pub mod sync_agent_assets;

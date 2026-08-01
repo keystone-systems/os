@@ -1,4 +1,4 @@
-# SSH agent configuration: ssh-agent + git signing + agenix secrets.
+# SSH agent configuration: ssh-agent + git signing + sops secrets.
 {
   lib,
   config,
@@ -20,7 +20,7 @@ let
 in
 {
   config = mkIf (osCfg.enable && cfg != { } && hasSshAgents) {
-    # Only assert agenix secrets on the agent's host — other hosts (e.g. ocean)
+    # Only assert secrets on the agent's host — other hosts (e.g. ocean)
     # import agent-identities for provisioning but don't need SSH key secrets.
     assertions = concatLists (
       mapAttrsToList (
@@ -31,9 +31,9 @@ in
         in
         optionals isAgentHost [
           {
-            assertion = config.age.secrets ? "${username}-ssh-key";
+            assertion = config.keystone.secrets.provided ? "${username}-ssh-key";
             message = ''
-              Agent '${name}' requires agenix secret "${username}-ssh-key".
+              Agent '${name}' requires sops secret "${username}-ssh-key".
 
               1. Generate an SSH key pair for the agent:
                  ssh-keygen -t ed25519 -C "${username}" -f /tmp/${username}-ssh-key
@@ -42,65 +42,57 @@ in
               2. Add the PUBLIC key to the keys registry:
                  keystone.keys."${username}".hosts.<hostname>.publicKey = "$(cat /tmp/${username}-ssh-key.pub)";
 
-              3. Add to agenix-secrets/secrets.nix:
-                 "secrets/${username}-ssh-key.age".publicKeys = adminKeys ++ [ systems.workstation ];
+              3. Enroll the PRIVATE key in the agent host's sops file:
+                 ks secrets edit secrets/${agentCfg.host}.yaml
+                 # add: ${username}-ssh-key: |
+                 #   <private key contents>
+                 rm /tmp/${username}-ssh-key /tmp/${username}-ssh-key.pub
 
-              4. Enroll the PRIVATE key as an agenix secret:
-                 cd agenix-secrets && cp /tmp/${username}-ssh-key secrets/${username}-ssh-key.age.plain
-                 agenix -e secrets/${username}-ssh-key.age  # paste the private key contents
-                 rm /tmp/${username}-ssh-key /tmp/${username}-ssh-key.pub secrets/${username}-ssh-key.age.plain
-
-              5. Declare in host config:
-                 age.secrets.${username}-ssh-key = {
-                   file = "${"$"}{inputs.agenix-secrets}/secrets/${username}-ssh-key.age";
+              4. Declare in host config:
+                 keystone.secrets.provided."${username}-ssh-key" = {
                    owner = "${username}";
-                   mode = "0400";
+                   scope = "host";
                  };
             '';
           }
           {
-            assertion = config.age.secrets ? "${username}-ssh-passphrase";
+            assertion = config.keystone.secrets.provided ? "${username}-ssh-passphrase";
             message = ''
-              Agent '${name}' requires agenix secret "${username}-ssh-passphrase".
+              Agent '${name}' requires sops secret "${username}-ssh-passphrase".
 
-              1. Add to agenix-secrets/secrets.nix:
-                 "secrets/${username}-ssh-passphrase.age".publicKeys = adminKeys ++ [ systems.workstation ];
+              1. Add the passphrase to the agent host's sops file (use the SAME
+                 passphrase from ssh-keygen):
+                 ks secrets edit secrets/${agentCfg.host}.yaml
+                 # add: ${username}-ssh-passphrase: <the passphrase>
 
-              2. Create the secret (use the SAME passphrase from ssh-keygen):
-                 cd agenix-secrets && agenix -e secrets/${username}-ssh-passphrase.age
-
-              3. Declare in host config:
-                 age.secrets.${username}-ssh-passphrase = {
-                   file = "${"$"}{inputs.agenix-secrets}/secrets/${username}-ssh-passphrase.age";
+              2. Declare in host config:
+                 keystone.secrets.provided."${username}-ssh-passphrase" = {
                    owner = "${username}";
-                   mode = "0400";
+                   scope = "host";
                  };
             '';
           }
-          # Bitwarden/Vaultwarden password — rbw pinentry reads from
-          # /run/agenix/agent-{name}-bitwarden-password at runtime. Without
-          # this assertion, the build succeeds but rbw silently fails.
+          # Bitwarden/Vaultwarden password — rbw pinentry reads the decrypted
+          # secret at runtime. Without this assertion, the build succeeds but
+          # rbw silently fails.
           {
-            assertion = config.age.secrets ? "${username}-bitwarden-password";
+            assertion = config.keystone.secrets.provided ? "${username}-bitwarden-password";
             message = ''
-              Agent '${name}' requires agenix secret "${username}-bitwarden-password".
+              Agent '${name}' requires sops secret "${username}-bitwarden-password".
 
-              1. Add to agenix-secrets/secrets.nix:
-                 "secrets/${username}-bitwarden-password.age".publicKeys = adminKeys ++ [ systems.${agentCfg.host} ];
+              1. Add the password to the agent host's sops file:
+                 ks secrets edit secrets/${agentCfg.host}.yaml
+                 # add: ${username}-bitwarden-password: <the password>
 
-              2. Create the secret:
-                 cd agenix-secrets && agenix -e secrets/${username}-bitwarden-password.age
-
-              3. Declare in host config:
-                 age.secrets.${username}-bitwarden-password = {
-                   file = "${"$"}{inputs.agenix-secrets}/secrets/${username}-bitwarden-password.age";
+              2. Declare in host config:
+                 keystone.secrets.provided."${username}-bitwarden-password" = {
                    owner = "${username}";
-                   mode = "0400";
+                   scope = "host";
                  };
 
-              4. Create a Vaultwarden account for ${username} at
+              3. Create a Vaultwarden account for ${username} at
                  https://vaultwarden.${if topDomain != null then topDomain else "example.com"}
-                 using the SAME password as the agenix secret.
+                 using the SAME password as the sops secret.
             '';
           }
         ]
@@ -118,8 +110,13 @@ in
           username = "agent-${name}";
           resolved = agentsWithUids.${name};
           uid = resolved.uid;
-          sshKeyPath = "/run/agenix/${username}-ssh-key";
-          sshPassphrasePath = "/run/agenix/${username}-ssh-passphrase";
+          # `or` fallbacks keep the missing-secret case surfacing as the
+          # assertions above, not as an attribute error.
+          sshKeyPath =
+            config.keystone.secrets.provided."${username}-ssh-key".path or "/run/secrets/${username}-ssh-key";
+          sshPassphrasePath =
+            config.keystone.secrets.provided."${username}-ssh-passphrase".path
+              or "/run/secrets/${username}-ssh-passphrase";
           homesService = if useZfs then "zfs-agent-datasets.service" else "agent-homes.service";
           # Script that outputs the passphrase for SSH_ASKPASS
           askpassScript = pkgs.writeShellScript "ssh-askpass-${username}" ''

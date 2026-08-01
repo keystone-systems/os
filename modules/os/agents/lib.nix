@@ -186,7 +186,7 @@ let
       in
       chromeMcpPortBase + 1 + idx;
 
-  # TODO: Re-enable per-agent Tailscale after fixing agenix.service dependency
+  # TODO: Re-enable per-agent Tailscale once auth-key issuance is wired to the sops secrets flow
   tailscaleAgents = { };
   hasTailscaleAgents = false;
 

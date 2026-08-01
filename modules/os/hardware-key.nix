@@ -3,7 +3,7 @@
 # Enables FIDO2/YubiKey integration for system authentication.
 # Provides support for:
 # - GPG/SSH agent with hardware key support
-# - age-plugin-yubikey for agenix secrets
+# - age-plugin-yubikey for sops secrets
 #
 # Hardware key SSH public keys and age identities are declared in
 # keystone.keys.<user>.hardwareKeys — this module only handles
@@ -107,7 +107,7 @@ in
     # Required packages for hardware key management
     environment.systemPackages = with pkgs; [
       yubikey-manager # ykman CLI for YubiKey configuration
-      age-plugin-yubikey # age encryption with YubiKey (for agenix)
+      age-plugin-yubikey # age encryption with YubiKey (for sops)
       pam_u2f # PAM module for FIDO2 authentication
       yubico-piv-tool # PIV operations
       yubikey-personalization # Personalization tools

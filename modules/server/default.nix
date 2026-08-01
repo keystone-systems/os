@@ -11,7 +11,7 @@
 #   keystone.server = {
 #     enable = true;
 #     tailscaleIP = "100.64.0.6";
-#     acme.credentialsFile = config.age.secrets.cloudflare-api-token.path;
+#     acme.credentialsFile = config.keystone.secrets.provided.cloudflare-api-token.path;
 #
 #     services.immich.enable = true;      # -> photos.example.com, port 2283, tailscale
 #     services.vaultwarden.enable = true; # -> vaultwarden.example.com, port 8222

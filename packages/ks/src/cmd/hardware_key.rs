@@ -101,10 +101,6 @@ struct AgeYubikeyConfig {
     identities: Vec<AgeYubikeyIdentity>,
     #[serde(default)]
     identity_path: String,
-    #[serde(default)]
-    secrets_flake_input: Option<String>,
-    #[serde(default)]
-    config_repo_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -233,9 +229,7 @@ async fn eval_doctor_bundle(
                 nix_string_literal(user)
             )
         })
-        .unwrap_or_else(|| {
-            "{ enable = false; identities = []; identityPath = \"\"; secretsFlakeInput = null; configRepoPath = \"\"; }".to_string()
-        });
+        .unwrap_or_else(|| "{ enable = false; identities = []; identityPath = \"\"; }".to_string());
 
     let apply_expr = format!(
         "cfg: {{
@@ -244,7 +238,7 @@ async fn eval_doctor_bundle(
           tpmEnabled = cfg.keystone.os.tpm.enable;
           secureBootEnabled = cfg.keystone.os.secureBoot.enable;
           storageType = cfg.keystone.os.storage.type;
-          secretsRepo = cfg.keystone.secrets.repo;
+          secretsRepo = cfg.keystone.secrets.dir;
           ageYubikey = {};
         }}",
         age_yubikey_expr
@@ -683,25 +677,6 @@ pub async fn execute_doctor(
         },
     ));
 
-    if !current_age_cfg.config_repo_path.is_empty() {
-        let configured = fs::canonicalize(&current_age_cfg.config_repo_path)
-            .unwrap_or_else(|_| PathBuf::from(&current_age_cfg.config_repo_path));
-        let actual = fs::canonicalize(&repo_root).unwrap_or_else(|_| repo_root.clone());
-        checks.push(check(
-            "age-config-repo-path",
-            if configured == actual { "ok" } else { "warn" },
-            if configured == actual {
-                format!("configRepoPath matches {}", actual.display())
-            } else {
-                format!(
-                    "configRepoPath points to {} but repo discovery resolved {}",
-                    configured.display(),
-                    actual.display()
-                )
-            },
-        ));
-    }
-
     checks.push(match ykman_probe {
         Some(ref probe) if probe.success() => {
             if connected_serials.is_empty() {
@@ -883,15 +858,9 @@ pub async fn execute_doctor(
         );
     }
 
-    if current_age_cfg.secrets_flake_input.is_some() {
-        notes.push(
-            "A separate agenix secrets flake input is configured. `ks hardware-key secrets` is the planned home for recipient management and rekey orchestration."
-                .to_string(),
-        );
-    }
     if detect_same_repo_secrets_layout(&repo_root, secrets_repo.as_deref()) {
         notes.push(
-            "A same-repo agenix layout was detected. `ks hardware-key secrets` should manage recipients and rekey in place here without a separate flake-input update step."
+            "A same-repo sops layout was detected. Manage recipients with `ks secrets sync` and re-encrypt with `ks secrets rekey`."
                 .to_string(),
         );
     }
@@ -929,20 +898,9 @@ pub async fn execute_secrets_todo(
         .ok_or_else(|| anyhow!("Could not resolve current host from hosts.nix"))?;
     let current_user = repo::resolve_current_hm_user(&repo_root, &host).await?;
     let eval = eval_doctor_bundle(&repo_root, &host, current_user.as_deref()).await?;
-    let current_age_cfg = eval.age_yubikey;
     let secrets_repo = eval.secrets_repo;
 
     let mut detected_layouts = Vec::new();
-    if let Some(input) = current_age_cfg.secrets_flake_input.as_deref() {
-        detected_layouts.push(format!(
-            "flake-input workflow: rekey managed checkout and update flake input `{}`",
-            input
-        ));
-    }
-    if repo_root.join("agenix-secrets").is_dir() {
-        detected_layouts
-            .push("local agenix-secrets checkout present under the config repo".to_string());
-    }
     if detect_same_repo_secrets_layout(&repo_root, secrets_repo.as_deref()) {
         detected_layouts.push(
             "same-repo workflow: manage recipients and rekey secrets directly in the config repo"
@@ -951,19 +909,16 @@ pub async fn execute_secrets_todo(
     }
     if detected_layouts.is_empty() {
         detected_layouts.push(
-            "manual workflow only detected; no flake-input or same-repo secrets layout was inferred"
-                .to_string(),
+            "manual workflow only detected; no same-repo secrets layout was inferred".to_string(),
         );
     }
 
     let plans = vec![
-        "Update agenix recipients from registered hardware-key metadata before rekeying secrets."
+        "Update sops recipients from registered hardware-key metadata before rekeying secrets."
             .to_string(),
-        "Support separate `agenix-secrets` flake inputs by committing/pushing that checkout and then updating the parent flake lock."
+        "Fold recipient management into `ks secrets sync` so `secrets/recipients.nix` is derived from registered hardware keys."
             .to_string(),
-        "Support same-repo secrets layouts by editing and rekeying in place without a flake-input update step."
-            .to_string(),
-        "Reconcile `keystone.secrets.repo`, local checkout discovery, and home-manager `ageYubikey` settings so the workflow is source-of-truth driven."
+        "Reconcile `keystone.secrets.dir` discovery and home-manager `ageYubikey` settings so the workflow is source-of-truth driven."
             .to_string(),
     ];
 

@@ -151,7 +151,7 @@ fn mark_bootloader_safe() -> Result<()> {
 ///
 /// Exit 4 is NixOS' "warning: the following units failed: …" outcome.
 /// The system *is* on the new generation by then: `/run/current-system`
-/// and `/nix/var/nix/profiles/system` are bumped, agenix has run, `/etc`
+/// and `/nix/var/nix/profiles/system` are bumped, secrets have been installed, `/etc`
 /// is current, and the configured units have been
 /// started/restarted/reloaded. The warning typically reflects a unit
 /// that happens to be in `activating (auto-restart)` state during the

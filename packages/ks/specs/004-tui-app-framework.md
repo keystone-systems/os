@@ -181,7 +181,7 @@ The implementation MUST follow these phases:
 
 ### Phase 3 — ISO Build + Deployment
 
-- **Deliverables**: Agenix secrets baking into ISO (US-007), mDNS ISO discovery (US-008),
+- **Deliverables**: Sops secrets baking into ISO (US-007), mDNS ISO discovery (US-008),
   nixos-anywhere deployment (US-008).
 - **Entry criteria**: Phase 2 complete; user has a functioning nixos-config repo.
 - **Exit criteria**: Full flow from `ks` launch to deployed NixOS system works

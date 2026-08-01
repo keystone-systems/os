@@ -44,17 +44,19 @@ placeholders, paste into your agent, and iterate from there.
 
 ## Secrets
 
-**Add an agenix-encrypted secret:**
+**Add a sops-encrypted secret:**
 
-> I want to add an agenix-encrypted `<name>` secret consumed by the
-> `<host>` host. Walk me through encrypting it, declaring `age.secrets.*`,
-> and reading it at runtime without leaking through the Nix store.
+> I want to add a sops-encrypted `<name>` secret consumed by the
+> `<host>` host. Walk me through encrypting it with `ks secrets edit`,
+> declaring `keystone.secrets.provided.<name>`, and reading it at runtime
+> via its `.path` accessor without leaking through the Nix store.
 
 **Rotate a secret near expiry:**
 
 > The `<name>` secret is approaching expiry. Walk me through generating
-> a fresh credential, re-encrypting `secrets/<name>.age` with the same
-> recipients, committing, deploying, and revoking the old credential.
+> a fresh credential, re-encrypting the value in the appropriate
+> `secrets/*.yaml` sops file (`ks secrets edit` / `ks secrets rekey`),
+> committing, deploying, and revoking the old credential.
 
 ## Operations
 
@@ -89,7 +91,7 @@ placeholders, paste into your agent, and iterate from there.
 > with the temporary credentials (`admin/keystone` login, LUKS password
 > `keystone`), then guide me through Steps 6–8 of `onboarding.md` to
 > replace the temporary credentials with per-host SSH key, TPM unlock,
-> and agenix.
+> and sops secrets.
 
 ---
 

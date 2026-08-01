@@ -183,10 +183,12 @@ ks build                    # Home-manager profiles when host integration matter
 Agents MUST run `ks build` when a change affects host integration, generated
 assets, or behavior that isolated flake checks cannot validate.
 
-For agenix user-home secrets, agents MUST ensure both sides of the contract are
-updated together: the encrypted secret recipients must include every host where
-that Home Manager user is installed, and the corresponding `age.secrets.<name>`
-declaration must exist on each of those hosts.
+For sops user-home secrets, agents MUST ensure both sides of the contract are
+updated together: the secret's sops file (`secrets/<host>.yaml`, or a
+shared/service file with matching entries in `secrets/recipients.nix`) must be
+encrypted to every host where that Home Manager user is installed, and the
+corresponding `keystone.secrets.provided.<name>` declaration must exist on
+each of those hosts.
 
 ### Validation commands
 
@@ -251,7 +253,7 @@ and `ks switch` regenerates them as committable git diffs.
 
 User-facing docs that ship into every scaffolded `keystone-config` repo
 (onboarding walkthrough, `mkSystemFlake` reference, ISO build + USB write,
-agenix PAT setup, agent prompt library) are **canonically located** in
+secrets PAT setup, agent prompt library) are **canonically located** in
 `templates/default/docs/keystone/`. The keystone repo's own
 `docs/keystone/` directory is a flat set of in-repo symlinks pointing back
 into that template path.

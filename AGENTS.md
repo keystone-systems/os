@@ -71,7 +71,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 
 `claude-code`, `gemini-cli`, `codex`, `opencode`, `deepwork`, `keystone-deepwork-jobs`,
 `keystone-conventions`, `chrome-devtools-mcp`, `grafana-mcp`, `google-chrome`, `ghostty`,
-`yazi`, `himalaya`, `calendula`, `cardamum`, `comodoro`, `cfait`, `agenix`, `slidev`
+`yazi`, `himalaya`, `calendula`, `cardamum`, `comodoro`, `cfait`, `slidev`
 
 ## Important Notes
 

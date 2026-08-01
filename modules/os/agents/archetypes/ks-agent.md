@@ -30,7 +30,6 @@ nixos-config/
 ├── hosts/<name>/                Per-host NixOS configuration
 ├── modules/                     Shared NixOS modules
 ├── .repos/keystone/             Local keystone clone (gitignored)
-└── .repos/agenix-secrets/       Encrypted secrets (gitignored)
 ```
 
 ## Core Capabilities

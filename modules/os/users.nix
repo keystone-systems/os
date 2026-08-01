@@ -248,33 +248,26 @@ in
           message = "Desktop screenshot sync requires keystone.services.immich.host to be set.";
         }
       ]
-      # Validate agenix secret exists when sshAutoLoad is enabled
-      # (auto-declared below when secrets.repo is set, so this only fires
-      # when secrets.repo is null and no manual declaration exists)
+      # Validate the sops secret exists when sshAutoLoad is enabled
+      # (auto-declared below when secrets.dir is set, so this only fires
+      # when secrets.dir is null and no manual declaration exists)
       ++ concatLists (
         mapAttrsToList (
           username: userCfg:
           optional userCfg.sshAutoLoad.enable {
-            assertion = config.age.secrets ? "${hostname}-ssh-passphrase";
+            assertion = config.keystone.secrets.provided ? "${username}-ssh-passphrase";
             message = ''
-              User '${username}' has sshAutoLoad enabled but the secret file "${hostname}-ssh-passphrase.age" is missing.
+              User '${username}' has sshAutoLoad enabled but the secret "${username}-ssh-passphrase" is missing.
 
-              1. Add to agenix-secrets/secrets.nix:
-                 "secrets/${hostname}-ssh-passphrase.age".publicKeys = adminKeys ++ [ systems.${hostname} ];
+              1. Add the passphrase to this host's sops file:
+                 ks secrets edit secrets/${hostname}.yaml
+                 # add: ${username}-ssh-passphrase: <the SSH key passphrase>
 
-              2. Create the secret (enter the SSH key passphrase):
-                 cd agenix-secrets && agenix -e secrets/${hostname}-ssh-passphrase.age
-
-              3. Commit, push, and update flake:
-                 git add -A && git commit -m "Add ${hostname} SSH passphrase" && git push
-                 cd .. && nix flake update agenix-secrets
-
-              If keystone.secrets.repo is set, the age.secrets declaration is automatic.
-              Otherwise, add manually to host config:
-                age.secrets.${hostname}-ssh-passphrase = {
-                  file = "${"$"}{inputs.agenix-secrets}/secrets/${hostname}-ssh-passphrase.age";
+              If keystone.secrets.dir is set, the declaration is automatic.
+              Otherwise, declare manually in host config:
+                keystone.secrets.provided."${username}-ssh-passphrase" = {
                   owner = "${username}";
-                  mode = "0400";
+                  scope = "host";
                 };
             '';
           }
@@ -286,20 +279,21 @@ in
           mapAttrsToList (
             username: userCfg:
             optional
-              (userCfg.desktop.screenshotSync.enable && !(config.age.secrets ? "${username}-immich-api-key"))
+              (
+                userCfg.desktop.screenshotSync.enable
+                && !(config.keystone.secrets.provided ? "${username}-immich-api-key")
+              )
               ''
-                Screenshot sync is enabled for user '${username}', but agenix secret "${username}-immich-api-key" is not declared yet.
+                Screenshot sync is enabled for user '${username}', but the sops secret "${username}-immich-api-key" is not declared yet.
 
                 To finish setup:
-                1. Add to agenix-secrets/secrets.nix:
-                   "secrets/${username}-immich-api-key.age".publicKeys = adminKeys ++ [ systems.${hostname} ];
-                2. Create the secret with the user's Immich API key:
-                   cd agenix-secrets && agenix -e secrets/${username}-immich-api-key.age
-                3. If keystone.secrets.repo is null, declare it in host config:
-                   age.secrets.${username}-immich-api-key = {
-                     file = "${"$"}{inputs.agenix-secrets}/secrets/${username}-immich-api-key.age";
+                1. Add the user's Immich API key to the shared sops file:
+                   ks secrets edit secrets/shared.yaml
+                   # add: ${username}-immich-api-key: <the API key>
+                2. If keystone.secrets.dir is null, declare it in host config:
+                   keystone.secrets.provided."${username}-immich-api-key" = {
                      owner = "${username}";
-                     mode = "0400";
+                     scope = "shared";
                    };
 
                 TODO: automate Immich API key provisioning and secret enrollment from Keystone tooling.
@@ -336,24 +330,22 @@ in
           ) cfg
         );
 
-      # Auto-declare age.secrets for sshAutoLoad when secrets.repo is set
-      age.secrets = mkIf (config.keystone.secrets.repo != null) (
+      # Auto-declare secrets for sshAutoLoad/screenshotSync when secrets.dir is set
+      keystone.secrets.provided = mkIf (config.keystone.secrets.dir != null) (
         listToAttrs (
           concatLists (
             mapAttrsToList (
               username: userCfg:
               (optional userCfg.sshAutoLoad.enable (
-                nameValuePair "${hostname}-ssh-passphrase" {
-                  file = "${config.keystone.secrets.repo}/secrets/${hostname}-ssh-passphrase.age";
+                nameValuePair "${username}-ssh-passphrase" {
                   owner = username;
-                  mode = "0400";
+                  scope = "host";
                 }
               ))
               ++ (optional userCfg.desktop.screenshotSync.enable (
                 nameValuePair "${username}-immich-api-key" {
-                  file = "${config.keystone.secrets.repo}/secrets/${username}-immich-api-key.age";
                   owner = username;
-                  mode = "0400";
+                  scope = "shared";
                 }
               ))
             ) cfg
@@ -439,7 +431,11 @@ in
                 export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
                 exec ${pkgs.keystone.ks}/bin/ks screenshots sync \
                   --url ${lib.escapeShellArg immichServerUrl} \
-                  --api-key-file /run/agenix/${username}-immich-api-key \
+                  --api-key-file ${
+                    # `or` keeps the undeclared-secret case a warning (above), not an eval error.
+                    config.keystone.secrets.provided."${username}-immich-api-key".path
+                      or "/run/secrets/${username}-immich-api-key"
+                  } \
                   --album-name ${lib.escapeShellArg "Screenshots - ${username}"} \
                   --host-name ${lib.escapeShellArg hostname} \
                   --account-name ${lib.escapeShellArg username} \

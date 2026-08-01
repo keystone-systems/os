@@ -1,4 +1,4 @@
-//! Secrets component — agenix secret management.
+//! Secrets component — sops secret management.
 
 use crate::action::{Action, Screen};
 use crate::component::Component;

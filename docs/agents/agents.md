@@ -35,7 +35,7 @@ agentctl <agent-name> <command> [args...]
 | `claude`                                              | Start interactive Claude session in agent notes directory |
 | `mail`                                                | Send structured email to the agent                        |
 | `vnc`                                                 | Open remote-viewer to the agent's VNC desktop             |
-| `provision`                                           | Generate SSH keypair, mail password, and agenix secrets   |
+| `provision`                                           | Generate SSH keypair, mail password, and sops secrets   |
 
 **Examples**:
 
@@ -47,8 +47,8 @@ agentctl drago list-timers
 agentctl drago tasks
 agentctl drago email
 agentctl drago mail task --subject "Fix CI pipeline"
-agentctl drago provision                  # full flow incl. hwrekey
-agentctl drago provision --skip-rekey     # skip hwrekey at end
+agentctl drago provision                  # full flow incl. ks secrets rekey
+agentctl drago provision --skip-rekey     # skip the rekey at end
 ```
 
 **Security model**: agentctl dispatches through a per-agent Nix-generated helper script that is the sole sudoers target. The helper hardcodes `XDG_RUNTIME_DIR` internally (no `SETENV` needed) and rejects dangerous systemctl verbs (`edit`, `set-environment`, `import-environment`). See the `SECURITY:` comment in `modules/os/agents.nix` for the full threat model.

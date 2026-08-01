@@ -66,10 +66,9 @@
     };
 
     # Secret management
-    agenix = {
-      url = "github:ryantm/agenix";
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
-      inputs.home-manager.follows = "home-manager";
     };
 
     # NixOS tools
@@ -123,7 +122,7 @@
       browser-previews,
       ghostty,
       yazi,
-      agenix,
+      sops-nix,
       nix-index-database,
       nixos-hardware,
       kinda-nvim-hx,
@@ -144,7 +143,7 @@
           himalaya
           llm-agents
           browser-previews
-          agenix
+          sops-nix
           nix-index-database
           nixos-hardware
           kinda-nvim-hx
@@ -244,7 +243,6 @@
             browser-previews
             ghostty
             yazi
-            agenix
             deepwork
             grafana-mcp-src
             lfs-s3-src
@@ -295,7 +293,7 @@
             home-manager.nixosModules.home-manager
             disko.nixosModules.disko
             lanzaboote.nixosModules.lanzaboote
-            agenix.nixosModules.default
+            sops-nix.nixosModules.sops
             ./modules/domain.nix
             ./modules/services.nix
             ./modules/hosts.nix
@@ -338,6 +336,11 @@
           imports = [
             ./modules/domain.nix
             ./modules/services.nix
+            # Secrets interface — server services resolve credential paths
+            # through keystone.secrets.provided (its backend defines sops.*,
+            # so the sops-nix module must come along).
+            sops-nix.nixosModules.sops
+            ./modules/secrets.nix
             ./modules/server
           ];
         };
@@ -346,6 +349,11 @@
         binaryCacheClient = {
           imports = [
             ./modules/domain.nix
+            # Secrets interface — push token resolves through
+            # keystone.secrets.provided (its backend defines sops.*, so the
+            # sops-nix module must come along).
+            sops-nix.nixosModules.sops
+            ./modules/secrets.nix
             ./modules/binary-cache-client.nix
           ];
         };
@@ -441,7 +449,7 @@
               pkgs
               lib
               nixpkgs
-              agenix
+              sops-nix
               home-manager
               ;
             self = self;
@@ -761,7 +769,7 @@
             Each step builds on the last and ends with a quick verification.
             You can stop after Step 2 if you only need a configured flake,
             after Step 5 once a host is up, or carry on through Step 8 for
-            secureboot + TPM + agenix.
+            secureboot + TPM + sops secrets.
 
             README.md has the file layout reference.
           '';

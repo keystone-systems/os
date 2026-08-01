@@ -191,20 +191,19 @@ keystone.hardwareKey = {
 };
 ```
 
-### 2. Agenix secrets.nix (age encryption)
+### 2. Admin recipients (age encryption)
+
+Admin recipients live in the consumer repo's `secrets/recipients.nix` (see
+`conventions/secrets.md`); `ks secrets sync` folds them into the generated
+`.sops.yaml`:
 
 ```nix
-yubikeys = {
-  ncrmro-yubi-black = "age1yubikey1q...";  # Serial: 36854515
-  ncrmro-yubi-green = "age1yubikey1q...";  # Serial: 36862273
+admins = {
+  yubi-black = "age1yubikey1q...";  # Serial: 36854515
+  yubi-green = "age1yubikey1q...";  # Serial: 36862273
+  ncrmro-laptop = "ssh-ed25519 AAAA...";
+  ncrmro-workstation = "ssh-ed25519 AAAA...";
 };
-
-adminKeys = [
-  users.ncrmro-laptop
-  users.ncrmro-workstation
-  yubikeys.ncrmro-yubi-black
-  yubikeys.ncrmro-yubi-green
-];
 ```
 
 ### 3. Home Manager (age identity file)
@@ -221,38 +220,22 @@ keystone.terminal.ageYubikey = {
 
 ### 4. Re-key All Secrets
 
-Use `hwrekey` to re-encrypt all secrets and handle the submodule workflow automatically:
+Use `ks secrets rekey` from the consumer repo to regenerate `.sops.yaml` and
+re-encrypt every sops file to the current recipient set (touch prompt per
+file, no SSH password):
 
 ```bash
-cd agenix-secrets
-hwrekey
+ks secrets rekey
+git add .sops.yaml secrets/
+git commit -m "chore: rekey secrets"
 ```
 
-This runs the full workflow:
-
-1. `agenix --rekey` using your YubiKey identity (touch prompt per secret, no SSH password)
-2. Commits and pushes the rekeyed secrets in the submodule
-3. Runs `nix flake update <secretsFlakeInput>` in the parent repo
-4. Commits the submodule pointer + `flake.lock` together in the parent repo
-
-`hwrekey` is provided by `keystone.terminal.ageYubikey` — see the [Terminal Module](terminal.md#hwrekey---secrets-rekeying) docs for configuration.
-
-If you prefer the manual workflow:
-
-```bash
-cd agenix-secrets
-agenix -r
-git add -A && git commit -m "chore: rekey secrets" && git push
-cd ..
-nix flake update agenix-secrets
-git add agenix-secrets flake.lock
-git commit -m "chore: update agenix-secrets (rekey)"
-```
+The YubiKey identity file is provided by `keystone.terminal.ageYubikey` — see the [Terminal Module](terminal.md#secrets-rekeying-ks-secrets-rekey) docs for configuration.
 
 ### 5. Commit and Rebuild
 
 ```bash
-# In nixos-config (if not already committed by hwrekey)
+# In the consumer repo
 git add modules/ home-manager/
 git commit -m "enroll new YubiKey: <serial>"
 

@@ -90,38 +90,29 @@ Common Keystone zellij keybindings:
 - `Ctrl+T`: Create a new tab and name it immediately
 - `Ctrl+W`: Close the current tab
 
-## hwrekey — Secrets Rekeying
+## Secrets Rekeying (`ks secrets rekey`)
 
-The `hwrekey` command automates re-encrypting agenix secrets with your YubiKey and (optionally) handling the full submodule commit/push/flake-update workflow.
+Secrets are sops-encrypted files committed to the consumer repo (see `conventions/secrets.md`). `ks secrets rekey` regenerates the repo's `.sops.yaml` from `hosts.nix` and `secrets/recipients.nix`, then re-encrypts every sops file under `secrets/` to the current recipient set.
 
-### Enable
+### YubiKey identities
 
-`hwrekey` is available when `keystone.terminal.ageYubikey.enable = true`.
+`keystone.terminal.ageYubikey` manages the age YubiKey identity file that sops uses for decryption during editing and rekeying:
 
 ```nix
 keystone.terminal.ageYubikey = {
   enable = true;
   identities = [ "AGE-PLUGIN-YUBIKEY-..." ];
-  # Optional: enable submodule workflow
-  secretsFlakeInput = "agenix-secrets";
 };
 ```
 
 ### Usage
 
 ```bash
-cd agenix-secrets
-hwrekey
+# From the consumer repo (e.g. ks-config)
+ks secrets rekey
 ```
 
-### What It Does
-
-1. Runs `agenix --rekey` using the YubiKey identity file (touch prompt per secret, no SSH password)
-2. If `secretsFlakeInput` is set:
-   - Commits and pushes the rekeyed secrets in the current (submodule) repo
-   - Runs `nix flake update <secretsFlakeInput>` in the parent repo
-   - Commits the submodule pointer + `flake.lock` together in the parent repo
-3. If `secretsFlakeInput` is null, only runs the rekey — you commit manually
+Expect a YubiKey touch prompt per file. Commit the rekeyed ciphertexts and the regenerated `.sops.yaml` afterward.
 
 ### Options
 
@@ -130,11 +121,10 @@ hwrekey
 | `enable`            | bool        | `false`                       | Enable age-plugin-yubikey identity management       |
 | `identities`        | list of str | `[]`                          | YubiKey identity strings (`AGE-PLUGIN-YUBIKEY-...`) |
 | `identityPath`      | str         | `~/.age/yubikey-identity.txt` | Path to the combined identity file                  |
-| `secretsFlakeInput` | null or str | `null`                        | Flake input name for the secrets submodule          |
 
 ### When to Use
 
-Run `hwrekey` after any change to `secrets.nix` that adds or removes key recipients (e.g., enrolling a new YubiKey, adding a new host key, removing a decommissioned machine). See [Hardware Keys](hardware-keys.md) for the full YubiKey enrollment workflow.
+Run `ks secrets rekey` after any recipient change (enrolling a new YubiKey, adding a new host to `hosts.nix` or `secrets/recipients.nix`, removing a decommissioned machine). See [Hardware Keys](hardware-keys.md) for the full YubiKey enrollment workflow.
 
 ## Conventions
 

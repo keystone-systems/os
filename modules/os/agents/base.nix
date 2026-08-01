@@ -25,7 +25,7 @@ in
       warnings = concatLists (
         mapAttrsToList (
           name: agentCfg:
-          optional agentCfg.grafana.mcp.enable "Agent '${name}' has grafana.mcp.enable = true. Ensure the agenix secret 'grafana-api-token' is provisioned and decryptable on this host."
+          optional agentCfg.grafana.mcp.enable "Agent '${name}' has grafana.mcp.enable = true. Ensure the sops secret 'grafana-api-token' is provisioned and decryptable on this host."
         ) cfg
       );
 

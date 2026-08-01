@@ -9,7 +9,7 @@
 #     # url is auto-derived from keystone.domain (https://cache.<domain>)
 #     publicKey = "cache.example.com-1:AAAA...=";
 #
-#     push.enable = true;  # tokenFile defaults to /run/agenix/attic-push-token
+#     push.enable = true;  # tokenFile defaults to the shared attic-push-token sops secret
 #   };
 #
 {
@@ -21,6 +21,11 @@
 with lib;
 let
   cfg = config.keystone.binaryCache;
+  effectiveTokenFile =
+    if cfg.push.tokenFile != null then
+      cfg.push.tokenFile
+    else
+      config.keystone.secrets.provided.attic-push-token.path;
 in
 {
   options.keystone.binaryCache = {
@@ -51,20 +56,22 @@ in
       };
 
       tokenFile = mkOption {
-        type = types.path;
-        default = "/run/agenix/attic-push-token";
-        description = "Path to Attic auth token. Defaults to conventional agenix secret.";
+        type = types.nullOr types.path;
+        default = null;
+        description = ''
+          Path to Attic auth token. When null, keystone declares the shared
+          `attic-push-token` sops secret and uses its runtime path.
+        '';
       };
     };
   };
 
   config = mkIf cfg.enable {
-    assertions =
-      lib.optional (cfg.push.enable && cfg.push.tokenFile == "/run/agenix/attic-push-token")
-        {
-          assertion = config.age.secrets ? "attic-push-token";
-          message = "keystone.binaryCache.push requires age.secrets.\"attic-push-token\" to be declared.";
-        };
+    # Auto-declare the conventional push token secret unless the consumer
+    # points tokenFile somewhere else.
+    keystone.secrets.provided = mkIf (cfg.push.enable && cfg.push.tokenFile == null) {
+      attic-push-token.scope = "shared";
+    };
 
     nix.settings.substituters = mkAfter [
       # Append cacheName because nix probes <url>/nix-cache-info, and attic
@@ -85,7 +92,7 @@ in
         Type = "simple";
         DynamicUser = true;
         StateDirectory = "attic-watch-store";
-        LoadCredential = "token:${cfg.push.tokenFile}";
+        LoadCredential = "token:${effectiveTokenFile}";
         ExecStart = pkgs.writeShellScript "attic-watch-store" ''
           set -eu
           export XDG_CONFIG_HOME="/var/lib/attic-watch-store"

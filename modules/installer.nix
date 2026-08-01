@@ -103,9 +103,9 @@ in
             keystoneInputs.disko.nixosModules.disko
             keystoneInputs.lanzaboote.nixosModules.lanzaboote
             keystoneInputs.home-manager.nixosModules.default
-            # agenix provides the `age` option namespace — users.nix references
-            # age.secrets even behind mkIf false, and NixOS checks option paths exist
-            keystoneInputs.agenix.nixosModules.default
+            # sops-nix provides the `sops` option namespace — modules/secrets.nix
+            # defines sops.secrets even behind mkIf, and NixOS checks option paths exist
+            keystoneInputs.sops-nix.nixosModules.sops
             ./domain.nix
             ./services.nix
             ./hosts.nix

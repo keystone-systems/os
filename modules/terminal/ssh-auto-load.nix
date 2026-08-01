@@ -1,16 +1,17 @@
 # Keystone Terminal SSH Auto-Load
 #
 # Systemd user service that auto-loads an SSH private key into ssh-agent at login
-# using an agenix-managed passphrase. Eliminates the manual passphrase prompt on
+# using a sops-managed passphrase. Eliminates the manual passphrase prompt on
 # first SSH/git use after login.
 #
 # ## Security Model
 #
-# SSH private keys are host-bound (generated locally, never stored in agenix).
-# Only the passphrase is stored in agenix, with separate per-host secrets since
-# each machine has a different key+passphrase pair.
+# SSH private keys are host-bound (generated locally, never stored in the
+# secrets repo). Only the passphrase is stored as a sops secret in each
+# host's secrets file, since every machine has a different key+passphrase
+# pair.
 #
-# SECURITY: The passphrase file at /run/agenix/* is root-owned, mode 0400,
+# SECURITY: The passphrase file at /run/secrets/* is root-owned, mode 0400,
 # readable only by the specified user. The askpass script simply cats it —
 # this is the same pattern used by agents.nix for agent SSH keys.
 #
@@ -20,13 +21,12 @@
 # # In home-manager config:
 # keystone.terminal.sshAutoLoad = {
 #   enable = true;
-#   # passphrasePath auto-derives from hostname: /run/agenix/${hostname}-ssh-passphrase
+#   # passphrasePath defaults to /run/secrets/${username}-ssh-passphrase
 #   # keyFile defaults to ~/.ssh/id_ed25519
 # };
 #
 # # In NixOS host config:
-# age.secrets.ncrmro-laptop-ssh-passphrase = {
-#   file = "${inputs.agenix-secrets}/secrets/ncrmro-laptop-ssh-passphrase.age";
+# keystone.secrets.provided."ncrmro-ssh-passphrase" = {
 #   owner = "ncrmro";
 #   mode = "0400";
 # };
@@ -36,28 +36,26 @@
   config,
   lib,
   pkgs,
-  osConfig ? { },
   ...
 }:
 with lib;
 let
   cfg = config.keystone.terminal.sshAutoLoad;
   sshCfg = config.keystone.terminal.ssh;
-  hostname = if osConfig ? networking.hostName then osConfig.networking.hostName else "unknown";
 in
 {
   options.keystone.terminal.sshAutoLoad = {
     enable = mkOption {
       type = types.bool;
       default = false;
-      description = "Auto-load SSH key into ssh-agent at login using agenix passphrase";
+      description = "Auto-load SSH key into ssh-agent at login using a sops-managed passphrase";
     };
 
     passphrasePath = mkOption {
       type = types.str;
-      default = "/run/agenix/${hostname}-ssh-passphrase";
-      defaultText = literalExpression ''"/run/agenix/''${osConfig.networking.hostName}-ssh-passphrase"'';
-      description = "Path to the agenix-decrypted passphrase file. Auto-derived from hostname.";
+      default = "/run/secrets/${config.home.username}-ssh-passphrase";
+      defaultText = literalExpression ''"/run/secrets/''${config.home.username}-ssh-passphrase"'';
+      description = "Path to the decrypted passphrase file installed by sops-nix.";
     };
 
     keyFile = mkOption {

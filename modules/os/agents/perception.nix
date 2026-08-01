@@ -56,19 +56,17 @@ in
     warnings = concatLists (
       mapAttrsToList (
         name: _:
-        optional (!(config.age.secrets ? "agent-${name}-immich-api-key")) ''
-          Screenshot sync is enabled for agent '${name}', but agenix secret "agent-${name}-immich-api-key" is not declared yet.
+        optional (!(config.keystone.secrets.provided ? "agent-${name}-immich-api-key")) ''
+          Screenshot sync is enabled for agent '${name}', but the sops secret "agent-${name}-immich-api-key" is not declared yet.
 
           To finish setup:
-          1. Add to agenix-secrets/secrets.nix:
-             "secrets/agent-${name}-immich-api-key.age".publicKeys = adminKeys ++ [ systems.${config.networking.hostName} ];
-          2. Create the secret with the agent Immich API key:
-             cd agenix-secrets && agenix -e secrets/agent-${name}-immich-api-key.age
-          3. If keystone.secrets.repo is null, declare it in host config:
-             age.secrets.agent-${name}-immich-api-key = {
-               file = "${"$"}{inputs.agenix-secrets}/secrets/agent-${name}-immich-api-key.age";
+          1. Add the agent's Immich API key to this host's sops file:
+             ks secrets edit secrets/${config.networking.hostName}.yaml
+             # add: agent-${name}-immich-api-key: <the API key>
+          2. If keystone.secrets.dir is null, declare it in host config:
+             keystone.secrets.provided."agent-${name}-immich-api-key" = {
                owner = "agent-${name}";
-               mode = "0400";
+               scope = "host";
              };
 
           TODO: automate Immich API key provisioning and secret enrollment from Keystone tooling.
@@ -76,14 +74,13 @@ in
       ) screenshotAgents
     );
 
-    age.secrets = mkIf (config.keystone.secrets.repo != null) (
+    keystone.secrets.provided = mkIf (config.keystone.secrets.dir != null) (
       listToAttrs (
         concatLists (
           mapAttrsToList (name: _: [
             (nameValuePair "agent-${name}-immich-api-key" {
-              file = "${config.keystone.secrets.repo}/secrets/agent-${name}-immich-api-key.age";
               owner = "agent-${name}";
-              mode = "0400";
+              scope = "host";
             })
           ]) screenshotAgents
         )
@@ -110,7 +107,11 @@ in
               export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
               exec ${pkgs.keystone.ks}/bin/ks screenshots sync \
                 --url ${lib.escapeShellArg immichServerUrl} \
-                --api-key-file /run/agenix/agent-${name}-immich-api-key \
+                --api-key-file ${
+                  # `or` keeps the undeclared-secret case a warning (above), not an eval error.
+                  config.keystone.secrets.provided."agent-${name}-immich-api-key".path
+                    or "/run/secrets/agent-${name}-immich-api-key"
+                } \
                 --album-name ${lib.escapeShellArg "Screenshots - ${username}"} \
                 --host-name ${lib.escapeShellArg config.networking.hostName} \
                 --account-name ${lib.escapeShellArg username} \

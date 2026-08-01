@@ -101,11 +101,11 @@ Build a comprehensive snapshot of the fleet's current state to inform the update
      ```
    - Note the issue URL next to each finding in the health section — do not create duplicates
 
-7. **Check for agenix-secrets changes**
-   - If `agenix-secrets/` exists in nixos-config, check if it's clean and up to date:
+7. **Check for secrets changes**
+   - Check whether `secrets/` in nixos-config has uncommitted or unpushed changes:
      ```bash
-     git -C <nixos-config-path>/agenix-secrets status --short
-     git -C <nixos-config-path>/agenix-secrets log origin/main..HEAD --oneline
+     git -C <nixos-config-path> status --short -- secrets/
+     git -C <nixos-config-path> log origin/main..HEAD --oneline -- secrets/
      ```
 
 ## Output Format

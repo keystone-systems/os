@@ -500,7 +500,7 @@ let
             # The keystone terminal module is imported with only its root
             # `keystone.terminal.enable = true;` — none of the opt-in
             # subsystems (mail, calendar, deepwork, agent-mail, forgejo,
-            # grafana, agenix-tools, etc.) are enabled, so they no-op under
+            # grafana, secrets tooling, etc.) are enabled, so they no-op under
             # their own `mkIf` guards. This keeps the ISO closure small
             # without the `_module.args.terminalMinimal` argument that
             # historically wrapped this site — that gate caused an infinite
@@ -867,6 +867,13 @@ rec {
           null;
       repoRootString = if effectiveRepoRoot == null then null else toString effectiveRepoRoot;
 
+      # Default keystone.secrets.dir to the repo's secrets/ directory when it
+      # exists, so keystone.secrets.provided.* declarations materialize
+      # without every adopter wiring the option by hand. Per-host config can
+      # still override it — this is only a mkDefault.
+      defaultSecretsDir =
+        if effectiveRepoRoot == null then null else resolveOptionalPath (effectiveRepoRoot + "/secrets");
+
       hostFilePath =
         name: file:
         if hostsRoot == null then null else resolveOptionalPath (hostsRoot + "/${name}/${file}");
@@ -1005,6 +1012,9 @@ rec {
               }
               ++ lib.optional (sharedAgents != { }) {
                 keystone.os.agents = sharedAgents;
+              }
+              ++ lib.optional (defaultSecretsDir != null) {
+                keystone.secrets.dir = lib.mkDefault defaultSecretsDir;
               }
               ++ sharedSystemModules
               ++ modules;

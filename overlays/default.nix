@@ -12,7 +12,6 @@
   browser-previews,
   ghostty,
   yazi,
-  agenix,
   deepwork,
   grafana-mcp-src,
   lfs-s3-src,
@@ -49,7 +48,6 @@ let
   browser-previews-flake = browser-previews;
   ghostty-flake = ghostty;
   yazi-flake = yazi;
-  agenix-flake = agenix;
   deepwork-flake = deepwork;
 in
 final: prev:
@@ -120,7 +118,6 @@ in
     google-chrome = browser-previews-flake.packages.${system}.google-chrome;
     # Desktop tools from flake inputs
     yazi = yazi-flake.packages.${system}.default;
-    agenix = agenix-flake.packages.${system}.default;
     deepwork = deepwork-flake.packages.${system}.default;
     deepwork-library-jobs = final.callPackage deepwork-library-jobs-src {
       deepwork-src = deepwork-flake;

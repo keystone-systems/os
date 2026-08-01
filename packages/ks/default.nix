@@ -18,6 +18,8 @@
   openssh,
   pandoc,
   polkit,
+  sops,
+  ssh-to-age,
   sudo,
   systemd,
   python3Packages,
@@ -66,6 +68,8 @@ let
       openssh
       pandoc
       python3Packages.weasyprint
+      sops
+      ssh-to-age
     ]
     ++ lib.optionals stdenv.hostPlatform.isLinux [
       cups

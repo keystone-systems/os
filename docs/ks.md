@@ -135,7 +135,7 @@ Inspect hardware-key wiring for the current host and current user.
 
 - `doctor` validates registered SSH hardware keys, host root-key wiring, current-user `ageYubikey` identities, local YubiKey visibility, FIDO2 device visibility, and disk-unlock status when available.
 - With no selector, `doctor` prefers the current user’s registered keys and falls back to all registered keys when no current-user keys exist.
-- `secrets` is an explicit TODO stub for future agenix recipient and rekey orchestration. It currently reports the detected secrets layout and the planned implementation path.
+- `secrets` recipient and rekey orchestration lives under `ks secrets` (`edit`, `sync`, `rekey`) — see `conventions/secrets.md`. `ks hardware-key secrets` still only reports the detected secrets layout.
 
 Examples:
 
@@ -189,7 +189,7 @@ Examples:
 ```bash
 ks screenshots sync
 ks screenshots sync --directory ~/Pictures --album-name "Screenshots - alice"
-ks screenshots sync --url https://photos.example.com --api-key-file /run/agenix/alice-immich-api-key
+ks screenshots sync --url https://photos.example.com --api-key-file /run/secrets/alice-immich-api-key
 ```
 
 ### `ks switch`

@@ -77,6 +77,8 @@ let
         TOP_DOMAIN="${topDomain}"
         MAIL_HOST="${mailHost}"
         OPENSSL="${pkgs.openssl}"
+        SOPS="${pkgs.sops}"
+        JQ="${pkgs.jq}"
         COREUTILS="${pkgs.coreutils}"
         GNUGREP="${pkgs.gnugrep}"
         GNUSED="${pkgs.gnused}"

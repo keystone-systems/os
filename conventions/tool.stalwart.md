@@ -107,7 +107,7 @@ is a prerequisite for DAV provisioning (see `process.agentic-team`).
 14. All agents with `mail.provision = true` MUST be granted read-write access to the
     team calendar and team addressbook via CalDAV/CardDAV ACLs at provisioning time.
 
-15. The team account password MUST be managed as an agenix secret (`stalwart-team-password`)
+15. The team account password MUST be managed as a sops secret (`stalwart-team-password`, see `secrets.md`)
     with recipients including the mail server host key.
 
 16. The team resources MUST be provisioned once by `modules/os/mail.nix` during system
@@ -137,7 +137,7 @@ End-to-end provisioning for agent `drago` on Stalwart at `mail.ncrmro.com`:
 ```bash
 # 1. Variables (baked in at provisioning time by keystone)
 USERNAME="agent-drago"
-AGENT_PASS=$(cat /run/agenix/agent-drago-mail-password)
+AGENT_PASS=$(cat /run/secrets/agent-drago-mail-password)
 API="http://127.0.0.1:8082"
 
 # 2. Personal calendar (check-then-create, idempotent)

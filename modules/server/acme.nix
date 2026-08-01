@@ -7,11 +7,13 @@
 #   The credentialsFile must contain:
 #   CLOUDFLARE_DNS_API_TOKEN=your_token
 #
-#   Example with agenix:
-#   age.secrets.cloudflare-api-token = {
-#     file = "${inputs.agenix-secrets}/secrets/cloudflare-api-token.age";
+#   Example (the env-file content lives under the `acme-env` key of
+#   secrets/services/cloudflare.yaml):
+#   keystone.secrets.provided.cloudflare-api-token = {
 #     owner = "acme";
 #     group = "acme";
+#     scope = "service:cloudflare";
+#     key = "acme-env";
 #   };
 #
 {
@@ -22,6 +24,13 @@
 let
   cfg = config.keystone.server;
   domain = config.keystone.domain;
+  effectiveCredentialsFile =
+    if cfg.acme.credentialsFile != null then
+      cfg.acme.credentialsFile
+    else
+      # `or` fallback keeps the missing-secret case surfacing as the
+      # assertion below, not as an attribute error.
+      config.keystone.secrets.provided.cloudflare-api-token.path or "/run/secrets/cloudflare-api-token";
 in
 {
   options.keystone.server.acme = {
@@ -41,8 +50,11 @@ in
 
     credentialsFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
-      default = "/run/agenix/cloudflare-api-token";
-      description = "Path to Cloudflare API token for DNS-01 challenge. Defaults to conventional agenix secret.";
+      default = null;
+      description = ''
+        Path to Cloudflare API token for DNS-01 challenge. When null, uses
+        the conventional `cloudflare-api-token` sops secret.
+      '';
     };
 
     extraDomainNames = lib.mkOption {
@@ -57,15 +69,9 @@ in
   };
 
   config = lib.mkIf (cfg.enable && cfg.acme.enable && domain != null) {
-    assertions = [
-      {
-        assertion = cfg.acme.credentialsFile != null;
-        message = "keystone.server.acme.credentialsFile must be set for ACME DNS-01 challenge";
-      }
-    ]
-    ++ lib.optional (cfg.acme.credentialsFile == "/run/agenix/cloudflare-api-token") {
-      assertion = config.age.secrets ? "cloudflare-api-token";
-      message = "keystone.server.acme requires age.secrets.\"cloudflare-api-token\" to be declared.";
+    assertions = lib.optional (cfg.acme.credentialsFile == null) {
+      assertion = config.keystone.secrets.provided ? "cloudflare-api-token";
+      message = "keystone.server.acme requires keystone.secrets.provided.\"cloudflare-api-token\" to be declared.";
     };
 
     security.acme = {
@@ -76,7 +82,7 @@ in
         domain = "*.${domain}";
         extraDomainNames = [ domain ] ++ cfg.acme.extraDomainNames;
         dnsProvider = "cloudflare";
-        environmentFile = cfg.acme.credentialsFile;
+        environmentFile = effectiveCredentialsFile;
         group = "nginx";
         extraLegoFlags = [ "--dns.resolvers=1.1.1.1:53" ];
       };
