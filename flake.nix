@@ -663,6 +663,9 @@
                 pkgs.nixos-rebuild
                 # `install` shells out to nixos-anywhere for metal reinstalls.
                 pkgs.nixos-anywhere
+                # `install` clones the fleet's seed checkouts into a staging
+                # tree handed to nixos-anywhere as --extra-files.
+                pkgs.git
               ];
               text = builtins.readFile ./bin/ks-fleet;
             };

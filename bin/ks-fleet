@@ -30,8 +30,14 @@ flags:
   --as vm|machine   force a realization for the named hosts
   --erase-confirm H retype the hostname to authorize `install` erasing it
   --dry-run         install: run every guard, verify the target's identity,
-                    print the exact nixos-anywhere command, and stop before
-                    touching the disk. Safe to run against a live machine.
+                    print the exact nixos-anywhere command and the seed plan,
+                    and stop before touching the disk or cloning anything.
+                    Safe to run against a live machine.
+  --verify-addr A   install: check the installed host at this address instead
+                    of the fleetMeta target. A reinstall can come up on a
+                    different lease than the one pinned (e.g. pinned on wi-fi,
+                    installed over ethernet). Also settable per host as
+                    fleetMeta `install.verifyTarget`.
   --durable         machine deploys use `switch` instead of `test`
   --no-deploy       test: smoke only, skip deploy/boot
   --allow-degraded  smoke passes on systemd state 'degraded' (e.g. vm boots
@@ -74,7 +80,9 @@ DEPLOY_MODE="test"
 NO_DEPLOY=0
 ALLOW_DEGRADED=0
 TIMEOUT=180
+TIMEOUT_SET=0
 ERASE_CONFIRM=""
+VERIFY_ADDR=""
 DRY_RUN=0
 
 CMD="${1:-}"
@@ -130,6 +138,11 @@ while (($#)); do
     ;;
   --timeout)
     TIMEOUT="${2:?}"
+    TIMEOUT_SET=1
+    shift 2
+    ;;
+  --verify-addr)
+    VERIFY_ADDR="${2:?}"
     shift 2
     ;;
   -*) die "unknown flag: $1" ;;
@@ -256,8 +269,11 @@ verify_host_key() {
   want="${want%% *}"
   # ssh-keyscan prefixes banner lines with '#', and those carry three fields
   # too, so select on the key type rather than on field count.
+  # `|| true`: under errexit+pipefail an unreachable target makes this
+  # assignment fail, which aborts the script with no message at all. The
+  # explicit check below is the intended, legible failure.
   live="$(ssh-keyscan -T 10 -t "$type" "$target" 2>/dev/null |
-    awk -v t="$type" '$1 !~ /^#/ && $2 == t { print $3; exit }')"
+    awk -v t="$type" '$1 !~ /^#/ && $2 == t { print $3; exit }')" || true
   [[ -n $live ]] || die "$h: no $type host key from $target (is it powered on?)"
   [[ $live == "$want" ]] ||
     die "$h: host key at $target does not match fleetMeta. Refusing to erase.
@@ -373,6 +389,108 @@ nixos_anywhere_target_args() {
   fi
 }
 
+# The first home-manager activation hard-requires an editable checkout that a
+# fresh install cannot have: `stowDotfiles` exits 1 when the dotfiles repo is
+# absent, and because it runs before the write boundary that aborts the whole
+# activation -- the user lands with no shell, editor or compositor config.
+# Nothing in the OS provisions it (`keystone.repos` is a URL registry, not a
+# provisioner), so seed it here from the machine driving the install, which by
+# definition already has the repo. A declared remote is the fallback. That
+# remote is whatever fleetMeta names -- a forge is never assumed, because a
+# fleet's config may live on its own Forgejo rather than a public host.
+INSTALL_TMP=""
+SEED_DIR=""
+
+install_cleanup() {
+  [[ -n $INSTALL_TMP ]] && rm -rf "$INSTALL_TMP"
+  [[ -n $SEED_DIR ]] && rm -rf "$SEED_DIR"
+  return 0
+}
+
+install_stage_seed() {
+  local h="$1" seed count i path src remote ref
+  seed="$(jq -c '.install.seed // empty' <<<"$(host_json "$h")")"
+  [[ -n $seed && $seed != null ]] || return 0
+  count="$(jq '.repos // [] | length' <<<"$seed")"
+  ((count > 0)) || return 0
+
+  ((DRY_RUN)) || SEED_DIR="$(mktemp -d)"
+  for ((i = 0; i < count; i++)); do
+    path="$(jq -r ".repos[$i].path" <<<"$seed")"
+    src="$(jq -r ".repos[$i].localSource // empty" <<<"$seed")"
+    remote="$(jq -r ".repos[$i].remote // empty" <<<"$seed")"
+    ref="$(jq -r ".repos[$i].ref // \"main\"" <<<"$seed")"
+
+    if [[ -n $src ]] && git -C "$src" rev-parse --git-dir >/dev/null 2>&1; then
+      echo "$h: seed /$path <- $src (this machine)"
+      ((DRY_RUN)) && continue
+      mkdir -p "$SEED_DIR/$(dirname "$path")"
+      # Clone rather than copy: committed state and local branches travel, but
+      # uncommitted edits and untracked files never get seeded onto a host.
+      git clone --quiet --no-hardlinks --branch "$ref" "$src" "$SEED_DIR/$path" ||
+        die "$h: cannot clone $src"
+    else
+      [[ -n $remote ]] ||
+        die "$h: seed /$path has no usable localSource and no remote"
+      echo "$h: seed /$path <- $remote (no local checkout)"
+      ((DRY_RUN)) && continue
+      mkdir -p "$SEED_DIR/$(dirname "$path")"
+      git clone --quiet --branch "$ref" "$remote" "$SEED_DIR/$path" ||
+        die "$h: cannot clone $remote"
+    fi
+    # Whichever source was used, the checkout must point at the canonical
+    # remote, or the first fetch on the new host goes nowhere useful.
+    [[ -n $remote ]] &&
+      git -C "$SEED_DIR/$path" remote set-url origin "$remote"
+  done
+
+  # tar extracts with --no-same-owner, so everything lands root-owned. Chown
+  # the whole user tree, not just the repo: a root-owned ~/repos breaks
+  # keystoneEnsurePaths exactly as the 9p share does in the vm variant.
+  ((DRY_RUN)) && return 0
+  [[ -d $SEED_DIR/home ]] && chmod 755 "$SEED_DIR/home"
+  return 0
+}
+
+# Assert the seeded checkouts actually arrived and are usable by their owner.
+# `smoke` is the functional proof -- a failed seed fails home-manager, which
+# makes the system degraded -- but this says which checkout and why.
+install_verify_seed() {
+  local h="$1" seed count i path uid
+  seed="$(jq -c '.install.seed // empty' <<<"$(host_json "$h")")"
+  [[ -n $seed && $seed != null ]] || return 0
+  count="$(jq '.repos // [] | length' <<<"$seed")"
+  for ((i = 0; i < count; i++)); do
+    path="$(jq -r ".repos[$i].path" <<<"$seed")"
+    # shellcheck disable=SC2029 # $path is a local value the target cannot know
+    "${SSH_CMD[@]}" "test -d '/$path/.git'" 2>/dev/null || {
+      echo "$h: seeded checkout /$path is missing" >&2
+      return 1
+    }
+    # shellcheck disable=SC2029
+    uid="$("${SSH_CMD[@]}" "stat -c %u '/$path'" 2>/dev/null)" || true
+    [[ -n $uid && $uid != 0 ]] || {
+      echo "$h: /$path is still root-owned; the --chown did not apply" >&2
+      return 1
+    }
+    echo "$h: seeded /$path present, owned by uid $uid"
+  done
+}
+
+# A fresh install often answers on a different address than fleetMeta pins:
+# the pinned target may be the wi-fi lease, while the install runs over
+# ethernet and the installed system keeps the wired lease. Verifying the wrong
+# address makes a good install look like a failed one.
+install_verify_addr() {
+  local h="$1" j addr user
+  j="$(host_json "$h")"
+  addr="${VERIFY_ADDR:-$(jq -r '.install.verifyTarget // empty' <<<"$j")}"
+  [[ -n $addr && $addr != null ]] || return 0
+  user="$(jq -r '.machine.user // "root"' <<<"$j")"
+  SSH_CMD=(ssh -o BatchMode=yes -o ConnectTimeout=5 "$user@$addr")
+  echo "$h: verifying at $user@$addr"
+}
+
 # DESTROYS the target disk. See the `install` entry in usage().
 machine_install() {
   local h="$1" j io addr target pinned passphrase keypath disk tmp
@@ -399,6 +517,11 @@ machine_install() {
   preflight_root_ssh "$h" "$addr" || die "$h: root ssh preflight failed; not erasing"
   preflight_wired_route "$h" "$addr" || die "$h: wireless route; not erasing"
 
+  # Stage before the erase: a seed that cannot be resolved should stop the run
+  # while the disk is still intact, not after it has been repartitioned.
+  trap install_cleanup EXIT
+  install_stage_seed "$h"
+
   if ((DRY_RUN)); then
     echo "$h: DRY RUN -- nothing will be written"
     echo "  target:     $addr"
@@ -416,8 +539,7 @@ machine_install() {
   # Keep secrets and the captured host identity off disk-backed storage.
   tmp="$(mktemp -d /dev/shm/ks-fleet.XXXXXX 2>/dev/null || mktemp -d)"
   chmod 700 "$tmp"
-  # shellcheck disable=SC2064 # expand $tmp now, not at trap time
-  trap "rm -rf '$tmp'" EXIT
+  INSTALL_TMP="$tmp"
   printf '%s' "$passphrase" >"$tmp/secret.key"
   chmod 600 "$tmp/secret.key"
 
@@ -460,6 +582,15 @@ machine_install() {
     --ssh-option ControlPath="$INSTALL_SSH_CONTROL"
     --ssh-option ControlPersist=15m
   )
+  # Extra files land in the new root before nixos-install runs, so the very
+  # first home-manager activation already has the checkouts it requires.
+  if [[ -n $SEED_DIR ]]; then
+    args+=(--extra-files "$SEED_DIR")
+    while read -r cpath cowner; do
+      [[ -n $cpath ]] && args+=(--chown "$cpath" "$cowner")
+    done < <(jq -r '.install.seed.chown // {} | to_entries[] | "\(.key) \(.value)"' \
+      <<<"$(host_json "$h")")
+  fi
   mapfile -t target_args < <(nixos_anywhere_target_args "$addr")
   args+=("${target_args[@]}")
 
@@ -607,8 +738,15 @@ install)
   machine_install "$h"
   ((DRY_RUN)) && exit 0
   ssh_for "$h" machine
+  install_verify_addr "$h"
+  # A fresh install has no remote unlock, so the host stops at a passphrase
+  # prompt and stays unreachable until someone answers it. Say so, and wait
+  # long enough for a human to walk to the machine.
+  ((TIMEOUT_SET)) || TIMEOUT=900
+  echo "$h: waiting for boot -- type the LUKS passphrase at its console"
   wait_ssh || die "$h: installed but unreachable within ${TIMEOUT}s"
   smoke "$h" || die "$h: booted but not healthy"
+  install_verify_seed "$h" || die "$h: seeded checkouts missing or unusable"
   install_verify_credentials "$h" || die "$h: boot-credential invariant failed"
   echo "$h: reinstall verified"
   ;;
