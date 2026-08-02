@@ -266,6 +266,34 @@ verify_host_key() {
   echo "$h: host key verified against fleetMeta ($target)"
 }
 
+# nixos-anywhere authenticates as root and retries hard when it cannot. On a
+# host whose root accepts only sk-* hardware credentials, an unattached
+# authenticator turns into a burst of failed auth, which trips sshd's throttle,
+# which then surfaces as `Connection reset by peer` -- a network-shaped symptom
+# for a credential-shaped cause. One probe up front converts that into a
+# two-second, legible failure, and lets --dry-run catch it before an erase.
+preflight_root_ssh() {
+  local h="$1" addr="$2"
+  ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null "$addr" true 2>/dev/null && {
+    echo "$h: root ssh authenticated"
+    return 0
+  }
+  {
+    echo "ks-fleet: $h: cannot authenticate to $addr"
+    echo "  nixos-anywhere installs as root, so this must work before an erase."
+    if ssh-add -L 2>/dev/null | grep -q '^sk-'; then
+      echo "  an sk-* credential is in the agent -- is the authenticator attached?"
+    else
+      echo "  no sk-* credential is loaded in the ssh agent."
+      echo "  if root here is hardware-only, attach the security key and retry."
+    fi
+    echo "  a stale known_hosts entry for this address will also refuse; the"
+    echo "  install itself bypasses known_hosts, but your own ssh will not."
+  } >&2
+  return 1
+}
+
 # nixos-anywhere gained --target-host and deprecated the positional form.
 # Support both so this works across the versions in circulation.
 nixos_anywhere_target_args() {
@@ -299,6 +327,7 @@ machine_install() {
 
   verify_host_key "$h" "$target" "$pinned"
   addr="root@$target"
+  preflight_root_ssh "$h" "$addr" || die "$h: root ssh preflight failed; not erasing"
 
   if ((DRY_RUN)); then
     echo "$h: DRY RUN -- nothing will be written"
