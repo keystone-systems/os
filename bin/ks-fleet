@@ -272,11 +272,24 @@ verify_host_key() {
 # which then surfaces as `Connection reset by peer` -- a network-shaped symptom
 # for a credential-shaped cause. One probe up front converts that into a
 # two-second, legible failure, and lets --dry-run catch it before an erase.
+#
+# The probe also opens a shared control socket. Where root is hardware-only,
+# every new ssh connection costs a separate touch, and nixos-anywhere makes
+# several before it kexecs -- so an unattended install is impossible and an
+# attended one is a sequence of blind touches. One master connection, reused
+# by the probe and by nixos-anywhere, turns that into a single touch. The
+# socket dies at kexec by design; the installer is a different machine.
+INSTALL_SSH_CONTROL=""
+
 preflight_root_ssh() {
   local h="$1" addr="$2"
+  INSTALL_SSH_CONTROL="${TMPDIR:-/tmp}/ks-fleet-install-$h.sock"
+  rm -f "$INSTALL_SSH_CONTROL"
   ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null "$addr" true 2>/dev/null && {
-    echo "$h: root ssh authenticated"
+    -o UserKnownHostsFile=/dev/null \
+    -o ControlMaster=auto -o ControlPath="$INSTALL_SSH_CONTROL" \
+    -o ControlPersist=15m "$addr" true 2>/dev/null && {
+    echo "$h: root ssh authenticated (connection shared; one touch covers the run)"
     return 0
   }
   {
@@ -292,6 +305,53 @@ preflight_root_ssh() {
     echo "  install itself bypasses known_hosts, but your own ssh will not."
   } >&2
   return 1
+}
+
+# The kexec installer is a different machine on the same hardware: it
+# re-applies the addresses and routes it snapshotted from the running system,
+# but it carries no NetworkManager, no wpa_supplicant and no wireless
+# firmware. A host reached over wi-fi therefore goes silent the moment kexec
+# fires, with the disk still untouched and no way back except a power cycle.
+# That is what happened to ks-test-delltop on 2026-08-02. Kexec is the point
+# of no return for reachability, so this check runs before it, not after.
+preflight_wired_route() {
+  local h="$1" addr="$2" iface
+
+  iface="$(install_ssh "$addr" \
+    "ip -o route get 1.1.1.1 2>/dev/null | grep -o 'dev [^ ]*' | head -1 | cut -d' ' -f2")" || {
+    echo "$h: WARNING cannot read the target's default route; wireless check skipped" >&2
+    return 0
+  }
+  [[ -n $iface ]] || {
+    echo "$h: WARNING target reports no default route; wireless check skipped" >&2
+    return 0
+  }
+
+  if [[ "$(install_ssh "$addr" "test -d /sys/class/net/$iface/wireless && echo wireless || echo wired")" == wireless ]]; then
+    {
+      echo "ks-fleet: $h: reached over the wireless interface '$iface'"
+      echo "  the nixos-anywhere kexec installer has no wireless support, so the"
+      echo "  host goes unreachable at kexec and the install cannot finish."
+      echo "  connect $h to wired ethernet and rerun. to override, set"
+      echo "  KS_INSTALL_ALLOW_WIRELESS=1 -- expect to power-cycle the machine."
+    } >&2
+    [[ ${KS_INSTALL_ALLOW_WIRELESS:-0} == 1 ]] || return 1
+    echo "$h: WARNING continuing over wireless because KS_INSTALL_ALLOW_WIRELESS=1" >&2
+    return 0
+  fi
+  echo "$h: reached over wired interface '$iface'; kexec can keep the network"
+}
+
+# Run a command on the install target, reusing the preflight's control socket.
+install_ssh() {
+  local addr="$1" cmd="$2" opts=(-o BatchMode=yes -o ConnectTimeout=10
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+  [[ -n $INSTALL_SSH_CONTROL ]] &&
+    opts+=(-o ControlMaster=auto -o ControlPath="$INSTALL_SSH_CONTROL")
+  # $cmd is built here on purpose: the caller interpolates local values (the
+  # interface name) that the target cannot know.
+  # shellcheck disable=SC2029
+  ssh "${opts[@]}" "$addr" "$cmd" 2>/dev/null
 }
 
 # nixos-anywhere gained --target-host and deprecated the positional form.
@@ -328,6 +388,7 @@ machine_install() {
   verify_host_key "$h" "$target" "$pinned"
   addr="root@$target"
   preflight_root_ssh "$h" "$addr" || die "$h: root ssh preflight failed; not erasing"
+  preflight_wired_route "$h" "$addr" || die "$h: wireless route; not erasing"
 
   if ((DRY_RUN)); then
     echo "$h: DRY RUN -- nothing will be written"
@@ -369,6 +430,13 @@ machine_install() {
     --ssh-option UserKnownHostsFile=/dev/null
     --copy-host-keys
     --flake "$FLAKE#$h" --disk-encryption-keys "$keypath" "$tmp/secret.key"
+  )
+  # Reuse the master opened by the preflight, so the pre-kexec phase costs
+  # the one touch already spent rather than one per connection.
+  [[ -n $INSTALL_SSH_CONTROL ]] && args+=(
+    --ssh-option ControlMaster=auto
+    --ssh-option ControlPath="$INSTALL_SSH_CONTROL"
+    --ssh-option ControlPersist=15m
   )
   mapfile -t target_args < <(nixos_anywhere_target_args "$addr")
   args+=("${target_args[@]}")
