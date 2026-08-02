@@ -146,6 +146,38 @@ ks hardware-key doctor ncrmro/yubi-black --json
 ks hardware-key secrets --json
 ```
 
+### `ks kube`
+
+```bash
+ks kube sudo [--cluster NAME] [--user NAME] -- <kubectl args...>
+```
+
+Per-command Kubernetes privilege escalation via RBAC impersonation. Day-to-day
+kubectl runs with an unprivileged identity; `ks kube sudo` re-runs one command
+as `kubectl --as=<user> --as-group=keystone:sudoers <args...>`, then exits with
+kubectl's status.
+
+- The impersonated user defaults to `$USER`; override with `--user`.
+- Elevated rights come from the `keystone:sudoers` impersonation group. Its
+  RBAC bindings live in ks.systems/services `access/sudo.yaml` — escalation is
+  scoped by that role, never `system:masters` (impersonating `system:*`
+  identities is refused).
+- The environment (including `KUBECONFIG`) passes through untouched. `--cluster`
+  is accepted but reserved: kubectl currently resolves the cluster from the
+  kubeconfig/current context; the flag becomes a selector once a cluster
+  registry exists.
+- One stderr line announces the impersonated identity and group before exec.
+- No root or `ks approve` gate is required today: enforcement is server-side
+  RBAC. A polkit approval ceremony lands when
+  `keystone.security.privilegedApproval` grows non-root `runAs` support.
+
+Examples:
+
+```bash
+ks kube sudo -- delete pod stuck-pod -n prod
+ks kube sudo --user alice -- get secrets -A
+```
+
 ### `ks photos`
 
 ```bash

@@ -3,9 +3,9 @@
 use clap::{Args, Parser, Subcommand};
 
 use crate::cmd::{
-    agent_loop::AgentLoopArgs, notifications::NotificationArgs, photos::PhotosCommand,
-    projects::ProjectArgs, screenshots::ScreenshotsCommand, secrets::SecretsCommand,
-    tasks::TaskArgs, update_menu::UpdateMenuCommand,
+    agent_loop::AgentLoopArgs, kube::KubeCommand, notifications::NotificationArgs,
+    photos::PhotosCommand, projects::ProjectArgs, screenshots::ScreenshotsCommand,
+    secrets::SecretsCommand, tasks::TaskArgs, update_menu::UpdateMenuCommand,
 };
 
 /// Walker menu provider backends. Each provider is a subcommand under `ks
@@ -181,6 +181,17 @@ pub enum Command {
     Screenshots {
         #[command(subcommand)]
         command: ScreenshotsCommand,
+    },
+
+    /// Kubernetes helpers — per-command RBAC impersonation escalation.
+    ///
+    /// `ks kube sudo -- <kubectl args...>` runs one kubectl command as the
+    /// caller's identity plus the `keystone:sudoers` impersonation group,
+    /// whose elevated rights are bound server-side by RBAC
+    /// (ks.systems/services access/sudo.yaml). See [`KubeCommand`].
+    Kube {
+        #[command(subcommand)]
+        command: KubeCommand,
     },
 
     /// Manage sops-encrypted secrets in the config repo.
