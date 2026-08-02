@@ -61,7 +61,7 @@ for `libvirtd` group. All `keystone.os.users` auto-added to `libvirtd` group.
 keystone.hardwareKey = {
   enable = true;
   keys.yubi-black = {
-    description = "Primary YubiKey 5 NFC";
+    description = "Primary YubiKey 5C NFC";
     sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAC3...";
     ageIdentity = "AGE-PLUGIN-YUBIKEY-...";  # Optional, for sops
   };

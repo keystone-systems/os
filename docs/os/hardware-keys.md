@@ -21,16 +21,32 @@ This enables:
 - GPG agent with SSH support
 - YubiKey management tools (`ykman`, `age-plugin-yubikey`, `pam_u2f`, etc.)
 
-## Multi-Key Strategy (Primary + Backup)
+## Multi-Key Strategy (Carry + Deskside)
 
-Use two YubiKeys: a **primary** for daily carry and a **backup** stored securely. Distinguish them with color stickers (YubiKey sells sticker packs) and use color names throughout your configuration.
+Use two YubiKeys: a **primary** for daily carry and a **second** that is always available — either stored securely off-site as a backup, or kept at the workstation as a deskside key. Pick deliberately; the two have different threat models (see the note under the table). Distinguish them with color stickers (YubiKey sells sticker packs) and use color names throughout your configuration.
 
-| Key Name     | Role                  | Storage             | Color           |
-| ------------ | --------------------- | ------------------- | --------------- |
-| `yubi-black` | Primary - daily carry | Keychain            | Black (default) |
-| `yubi-green` | Backup - safe storage | Home safe / lockbox | Green sticker   |
+| Key Name     | Role                   | Storage        | Color           | Serial     |
+| ------------ | ---------------------- | -------------- | --------------- | ---------- |
+| `yubi-black` | Primary - daily carry  | Keychain       | Black (default) | `36854515` |
+| `yubi-green` | Deskside - stays put   | At workstation | Green sticker   | `36862273` |
 
-Both keys should be enrolled for SSH, age encryption, and authorized on all hosts. If the primary is lost, the backup can decrypt all secrets and re-key without downtime.
+`yubi-green` is a deskside key, not an off-site backup: it stays at the
+workstation rather than living in a safe. That keeps a second key always within
+reach for unlock and re-keying, but it means neither key is stored away from the
+machine — an attacker with physical desk access has the deskside key too, so for
+disk unlock it is closer to a convenience factor than an independent one. If you
+want a true lost-both-keys recovery path, it has to be something other than
+these two (recovery passphrase, or a third key stored elsewhere).
+
+Both of ncrmro's keys are physically identical — YubiKey 5C NFC, firmware
+5.7.4, form factor Keychain (USB-C), AAGUID
+`d7781e5d-e353-46aa-afe2-3ca49f13332a` (verified 2026-08-02). The connector is
+therefore useless for telling them apart: rely on the sticker physically and on
+the serial in tooling. Note that USB does not expose the serial in its
+descriptors, so `/sys/bus/usb/devices/*/serial` is empty for both and a
+`hidraw` path cannot be mapped back to a serial — enroll one key at a time.
+
+Both keys should be enrolled for SSH, age encryption, and authorized on all hosts. If the primary is lost, the second key can decrypt all secrets and re-key without downtime.
 
 ### Naming Convention
 
@@ -180,11 +196,11 @@ After completing the YubiKey setup above, add the public keys to your NixOS conf
 keystone.hardwareKey = {
   enable = true;
   keys.yubi-black = {
-    description = "Primary YubiKey 5 NFC (USB-A, black)";
+    description = "Primary YubiKey 5C NFC (USB-C keychain), serial 36854515";
     sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAGnNr... ncrmro-yubi-black";
   };
   keys.yubi-green = {
-    description = "Backup YubiKey 5C NFC (USB-C, green sticker)";
+    description = "Deskside YubiKey 5C NFC (USB-C keychain, green sticker), serial 36862273";
     sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAGnNr... ncrmro-yubi-green";
   };
   rootKeys = [ "yubi-black" "yubi-green" ];
@@ -265,7 +281,7 @@ Stored directly on the YubiKey — no key files to manage. Plug in your YubiKey 
 # Primary key (black)
 ssh-keygen -t ed25519-sk -O resident -O application=ssh:ncrmro-yubi-black -C "ncrmro-yubi-black"
 
-# Backup key (green) — swap YubiKeys and run again
+# Deskside key (green) — swap YubiKeys and run again
 ssh-keygen -t ed25519-sk -O resident -O application=ssh:ncrmro-yubi-green -C "ncrmro-yubi-green" -f ~/.ssh/id_ed25519_sk_yubi_green
 ```
 
