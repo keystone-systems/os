@@ -6,6 +6,7 @@
 }:
 let
   inherit (lib)
+    any
     attrNames
     concatLists
     concatMap
@@ -66,6 +67,17 @@ let
 
   managedLuksNames = config.keystone.hardwareKeyLuksTargets;
   luksNames = unique managedLuksNames;
+
+  # A declared LUKS target states intent. It does not prove that a token is
+  # enrolled in that header. Keep the two apart: `enrolledLuksNames` holds only
+  # the targets whose recorded state proves an enrollment for an enabled key.
+  luksEnrollments = name: installedState.luks.${name}.enrollments or { };
+  targetAssumesEnrolled = name: installedState.luks.${name}.assumeEnrolled or false;
+  hasEnabledEnrollment =
+    name:
+    targetAssumesEnrolled name
+    || any (keyName: enabled ? ${keyName}) (attrNames (luksEnrollments name));
+  enrolledLuksNames = filter hasEnabledEnrollment luksNames;
 
   luksProjection = genAttrs luksNames (
     name:
@@ -146,7 +158,13 @@ let
     in
     map (
       name:
-      finding "KSC-001.4/missing-luks-enrollment" "hardware key '${name}' is enabled but is not recorded as enrolled in LUKS target '${luksName}'"
+      finding "KSC-001.4/missing-luks-enrollment" ''
+        hardware key '${name}' is enabled, but Keystone has no enrollment record for LUKS target '${luksName}'.
+        Keystone does not add fido2-device=auto to this target, so the host unlocks with the passphrase.
+        To use FIDO2 unlock, do these steps:
+          1. Enroll the key: systemd-cryptenroll <device> --fido2-device=auto
+          2. Record the token and credential in keystone.hardwareKeyState.luks.${luksName}.enrollments.${name}
+      ''
     ) (filter (name: targetState == null || !(targetState.enrollments ? ${name})) enabledNames)
   ) luksNames;
 
@@ -154,11 +172,18 @@ let
     mapAttrsToList (
       luksName: state:
       optional (!(config.boot.initrd.luks.devices ? ${luksName})) (
-        finding "KSC-001.4/stale-luks-target" "installed hardware-key state references LUKS target '${luksName}', but that target is no longer configured"
+        finding "KSC-001.4/stale-luks-target" ''
+          hardware-key state records LUKS target '${luksName}', but no configuration defines that target.
+          Delete the record, or add the target back.
+        ''
       )
       ++ map (
         name:
-        finding "KSC-001.4/stale-luks-enrollment" "hardware key '${name}' is disabled but remains recorded in LUKS target '${luksName}'; explicit revocation is pending"
+        finding "KSC-001.4/stale-luks-enrollment" ''
+          hardware key '${name}' is disabled, but LUKS target '${luksName}' still records an enrollment for it.
+          The key can still unlock this volume.
+          To remove access, wipe the LUKS token on the host. Then delete the enrollment record.
+        ''
       ) (filter (name: !(enabled ? ${name})) (attrNames state.enrollments))
     ) installedState.luks
   );
@@ -259,6 +284,20 @@ in
                 uuid = mkOption {
                   type = types.nullOr types.str;
                   default = null;
+                };
+                assumeEnrolled = mkOption {
+                  type = types.bool;
+                  default = false;
+                  description = ''
+                    Set this option to true when a FIDO2 token is enrolled but no
+                    credential appears in "enrollments". Use it only for volumes
+                    that an installer enrolls. The installer creates the credential
+                    after Nix evaluation, so Nix cannot record it.
+
+                    This option turns off the enrollment check. If no token is
+                    enrolled, the host does not boot. Record the credential in
+                    "enrollments" when you can.
+                  '';
                 };
                 enrollments = mkOption {
                   default = { };
@@ -367,7 +406,13 @@ in
         };
       };
 
-      boot.initrd.luks.devices = genAttrs managedLuksNames (_: {
+      # `fido2-device=auto` tells the initrd that a FIDO2 token is enrolled in
+      # this LUKS header. Do not add the option only because a target is
+      # declared. If no token is enrolled, systemd does not fall back to the
+      # passphrase. The initrd fails and the host does not boot. See systemd
+      # issue 19872. This stopped ncrmro-workstation generations 637 to 641.
+      # Add the option only when recorded state shows an enrollment.
+      boot.initrd.luks.devices = genAttrs enrolledLuksNames (_: {
         crypttabExtraOpts = mkAfter [ "fido2-device=auto" ];
       });
     })

@@ -172,6 +172,24 @@ let
 
     # THIS TEST VALIDATES A HARD REQUIREMENT (KSC-001.4)
     # YOU MUST NOT MODIFY THIS TEST UNLESS THE REQUIREMENT CHANGES
+    #
+    # A declared LUKS target must never make the initrd demand a credential
+    # that is not enrolled. systemd does not fall back to the passphrase when
+    # FIDO2 unlock fails (systemd issue 19872), so emitting fido2-device=auto
+    # for an unenrolled target stops the host from booting.
+    testUnenrolledTargetDoesNotDemandFido2AtBoot = {
+      expr = {
+        unenrolled = gaps.boot.initrd.luks.devices.cryptroot.crypttabExtraOpts;
+        enrolled = complete.boot.initrd.luks.devices.cryptroot.crypttabExtraOpts;
+      };
+      expected = {
+        unenrolled = [ ];
+        enrolled = [ "fido2-device=auto" ];
+      };
+    };
+
+    # THIS TEST VALIDATES A HARD REQUIREMENT (KSC-001.4)
+    # YOU MUST NOT MODIFY THIS TEST UNLESS THE REQUIREMENT CHANGES
     testRemovalReportsStaleStateWithoutDeletingIt = {
       expr = {
         codes = codes stale;
