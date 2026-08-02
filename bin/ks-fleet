@@ -284,7 +284,16 @@ INSTALL_SSH_CONTROL=""
 preflight_root_ssh() {
   local h="$1" addr="$2"
   INSTALL_SSH_CONTROL="${TMPDIR:-/tmp}/ks-fleet-install-$h.sock"
-  rm -f "$INSTALL_SSH_CONTROL"
+  # A live socket from a previous invocation is the point: it lets `--dry-run`
+  # and the real run share one authentication. Only clear a dead one -- an
+  # unconditional rm would throw away the touch the operator just spent.
+  if [[ -S $INSTALL_SSH_CONTROL ]]; then
+    if ssh -o ControlPath="$INSTALL_SSH_CONTROL" -O check "$addr" 2>/dev/null; then
+      echo "$h: root ssh reusing the open connection (no new touch needed)"
+      return 0
+    fi
+    rm -f "$INSTALL_SSH_CONTROL"
+  fi
   ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
     -o ControlMaster=auto -o ControlPath="$INSTALL_SSH_CONTROL" \
@@ -425,9 +434,22 @@ machine_install() {
   # itself, which is one fewer root ssh round-trip than fetching them here --
   # and on a host whose root only accepts hardware credentials, one fewer
   # round-trip is one fewer touch.
+  # By default nixos-anywhere lets the target substitute, so the installer
+  # pulls most of the closure from cache.nixos.org over the WAN -- measured at
+  # 2848 destination fetches against 232 pushed paths on ks-test-delltop. The
+  # fleet is on one LAN and the operator's machine already holds the closure it
+  # just built, so pushing beats downloading. This also implies
+  # --no-use-machine-substituters, which stops the installer inheriting
+  # cache.ncrmro.com: that name only resolves on the tailnet, so in the
+  # installer it is pure retry latency.
+  # Compression is off for the same reason -- at LAN speed it costs CPU on both
+  # ends and buys nothing.
   local args=(
     --ssh-option StrictHostKeyChecking=no
     --ssh-option UserKnownHostsFile=/dev/null
+    --ssh-option Compression=no
+    --no-substitute-on-destination
+    --ssh-store-setting compress false
     --copy-host-keys
     --flake "$FLAKE#$h" --disk-encryption-keys "$keypath" "$tmp/secret.key"
   )
