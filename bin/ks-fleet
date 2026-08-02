@@ -305,9 +305,9 @@ machine_install() {
     echo "  target:     $addr"
     echo "  disk:       $disk  (WOULD BE ERASED)"
     echo "  passphrase: handed to disko at $keypath (${#passphrase} chars, not shown)"
-    echo "  command:    nixos-anywhere --flake $FLAKE#$h \\"
+    echo "  command:    nixos-anywhere --copy-host-keys --flake $FLAKE#$h \\"
     echo "                --disk-encryption-keys $keypath <tmpfile> \\"
-    echo "                --extra-files <preserved ssh host identity> $addr"
+    echo "                $addr    (host keys carried across)"
     echo "$h: rerun without --dry-run to erase and reinstall"
     return 0
   fi
@@ -319,29 +319,28 @@ machine_install() {
   chmod 700 "$tmp"
   # shellcheck disable=SC2064 # expand $tmp now, not at trap time
   trap "rm -rf '$tmp'" EXIT
-  mkdir -p "$tmp/extra/etc/ssh"
   printf '%s' "$passphrase" >"$tmp/secret.key"
   chmod 600 "$tmp/secret.key"
 
-  # fleetMeta pins this host's public key, and sops recipients are derived
-  # from host keys, so a reinstall that mints a new identity invalidates both.
-  # Carry the existing key across when the old system is still readable.
-  if ssh -o BatchMode=yes -o ConnectTimeout=10 "$addr" \
-    'cat /etc/ssh/ssh_host_ed25519_key' >"$tmp/extra/etc/ssh/ssh_host_ed25519_key" 2>/dev/null &&
-    [[ -s "$tmp/extra/etc/ssh/ssh_host_ed25519_key" ]]; then
-    chmod 600 "$tmp/extra/etc/ssh/ssh_host_ed25519_key"
-    ssh -o BatchMode=yes -o ConnectTimeout=10 "$addr" \
-      'cat /etc/ssh/ssh_host_ed25519_key.pub' >"$tmp/extra/etc/ssh/ssh_host_ed25519_key.pub" 2>/dev/null || true
-    echo "$h: preserving existing ssh host identity"
-  else
-    rm -f "$tmp/extra/etc/ssh/ssh_host_ed25519_key"
-    echo "$h: WARNING could not read the current host key." >&2
-    echo "$h: the reinstall will mint a new one; update fleetMeta hostPublicKey" >&2
-    echo "$h: and re-key any sops recipients derived from it." >&2
-  fi
-
-  local args=(--flake "$FLAKE#$h" --disk-encryption-keys "$keypath" "$tmp/secret.key")
-  [[ -n "$(ls -A "$tmp/extra/etc/ssh" 2>/dev/null)" ]] && args+=(--extra-files "$tmp/extra")
+  # verify_host_key already authenticated this machine against fleetMeta, and
+  # the host key legitimately changes twice from here -- once when kexec boots
+  # the installer with its own ephemeral key, once when the installed system
+  # comes up. So the install's own ssh cannot pin a single key, and a stale
+  # entry in the operator's known_hosts (delltop's address had one, left by
+  # whatever held it previously) would abort the run outright. Identity is
+  # established before this point, not during it.
+  # fleetMeta pins this host's public key and sops recipients derive from it,
+  # so a reinstall that mints a fresh identity invalidates both.
+  # --copy-host-keys makes nixos-anywhere carry the existing keys across
+  # itself, which is one fewer root ssh round-trip than fetching them here --
+  # and on a host whose root only accepts hardware credentials, one fewer
+  # round-trip is one fewer touch.
+  local args=(
+    --ssh-option StrictHostKeyChecking=no
+    --ssh-option UserKnownHostsFile=/dev/null
+    --copy-host-keys
+    --flake "$FLAKE#$h" --disk-encryption-keys "$keypath" "$tmp/secret.key"
+  )
   mapfile -t target_args < <(nixos_anywhere_target_args "$addr")
   args+=("${target_args[@]}")
 
