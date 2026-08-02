@@ -29,6 +29,9 @@ commands:
 flags:
   --as vm|machine   force a realization for the named hosts
   --erase-confirm H retype the hostname to authorize `install` erasing it
+  --dry-run         install: run every guard, verify the target's identity,
+                    print the exact nixos-anywhere command, and stop before
+                    touching the disk. Safe to run against a live machine.
   --durable         machine deploys use `switch` instead of `test`
   --no-deploy       test: smoke only, skip deploy/boot
   --allow-degraded  smoke passes on systemd state 'degraded' (e.g. vm boots
@@ -72,6 +75,7 @@ NO_DEPLOY=0
 ALLOW_DEGRADED=0
 TIMEOUT=180
 ERASE_CONFIRM=""
+DRY_RUN=0
 
 CMD="${1:-}"
 [[ -n $CMD ]] || {
@@ -111,6 +115,10 @@ while (($#)); do
   --erase-confirm)
     ERASE_CONFIRM="${2:?}"
     shift 2
+    ;;
+  --dry-run)
+    DRY_RUN=1
+    shift
     ;;
   --vm-host)
     VM_HOST="${2:?}"
@@ -292,6 +300,18 @@ machine_install() {
   verify_host_key "$h" "$target" "$pinned"
   addr="root@$target"
 
+  if ((DRY_RUN)); then
+    echo "$h: DRY RUN -- nothing will be written"
+    echo "  target:     $addr"
+    echo "  disk:       $disk  (WOULD BE ERASED)"
+    echo "  passphrase: handed to disko at $keypath (${#passphrase} chars, not shown)"
+    echo "  command:    nixos-anywhere --flake $FLAKE#$h \\"
+    echo "                --disk-encryption-keys $keypath <tmpfile> \\"
+    echo "                --extra-files <preserved ssh host identity> $addr"
+    echo "$h: rerun without --dry-run to erase and reinstall"
+    return 0
+  fi
+
   echo "$h: ERASING $disk on $target -- every byte on that disk is lost."
 
   # Keep secrets and the captured host identity off disk-backed storage.
@@ -467,6 +487,7 @@ install)
   h="${HOSTS[0]}"
   [[ "$(realization "$h")" == machine ]] || die "install requires a machine realization"
   machine_install "$h"
+  ((DRY_RUN)) && exit 0
   ssh_for "$h" machine
   wait_ssh || die "$h: installed but unreachable within ${TIMEOUT}s"
   smoke "$h" || die "$h: booted but not healthy"
