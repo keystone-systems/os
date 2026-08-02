@@ -17,9 +17,18 @@ commands:
   down              stop vm-realized hosts
   deploy            vm: rebuild + restart; machine: nixos-rebuild to target
   test              deploy/boot every host, wait for ssh, run smoke checks
+  install           DESTRUCTIVE. Reinstall a machine from scratch with
+                    nixos-anywhere: disko repartitions the target disk and
+                    every byte on it is lost. Only hosts marked
+                    `install.erasable` in fleetMeta are eligible, and
+                    --erase-confirm <host> is required. The LUKS passphrase
+                    is written to a file and handed to disko, never typed.
+                    This is the metal twin of the disko VM check, so the same
+                    disk-config is proven in both places.
 
 flags:
   --as vm|machine   force a realization for the named hosts
+  --erase-confirm H retype the hostname to authorize `install` erasing it
   --durable         machine deploys use `switch` instead of `test`
   --no-deploy       test: smoke only, skip deploy/boot
   --allow-degraded  smoke passes on systemd state 'degraded' (e.g. vm boots
@@ -37,6 +46,10 @@ environment:
                     vms use /tmp/ksf on the vm host)
   KS_FLEET_VM_USER  ssh user for vm smoke checks (default: root)
   KS_FLEET_VM_HOST  default --vm-host
+  KS_INSTALL_PASSPHRASE
+                    LUKS passphrase written for disko during `install`.
+                    Defaults to the fleetMeta `install.passphrase` value, so
+                    a test host can carry its own known credential.
 
 With no hosts named, a command applies to the whole fleet — which is how a
 mixed fleet (e.g. ks-test-delltop on real hardware, the rest as VMs) is
@@ -58,6 +71,7 @@ DEPLOY_MODE="test"
 NO_DEPLOY=0
 ALLOW_DEGRADED=0
 TIMEOUT=180
+ERASE_CONFIRM=""
 
 CMD="${1:-}"
 [[ -n $CMD ]] || {
@@ -70,7 +84,7 @@ case "$CMD" in
   usage
   exit 0
   ;;
-status | up | down | deploy | test) ;;
+status | up | down | deploy | test | install) ;;
 *) die "unknown command: $CMD" ;;
 esac
 
@@ -93,6 +107,10 @@ while (($#)); do
   --allow-degraded)
     ALLOW_DEGRADED=1
     shift
+    ;;
+  --erase-confirm)
+    ERASE_CONFIRM="${2:?}"
+    shift 2
     ;;
   --vm-host)
     VM_HOST="${2:?}"
@@ -217,6 +235,128 @@ machine_deploy() {
   nixos-rebuild "${args[@]}"
 }
 
+# Confirm the box answering on that address is the box we think it is, by
+# comparing its live host key against the one pinned in fleetMeta. An IP can
+# change under you -- a pinned key cannot -- so this, not the address, is what
+# makes an erase safe to authorize.
+verify_host_key() {
+  local h="$1" target="$2" pinned="$3" type live want
+  [[ -n $pinned && $pinned != null ]] ||
+    die "$h has no machine.hostPublicKey pinned; refusing to erase an unverified target"
+  type="${pinned%% *}"
+  want="${pinned#* }"
+  want="${want%% *}"
+  # ssh-keyscan prefixes banner lines with '#', and those carry three fields
+  # too, so select on the key type rather than on field count.
+  live="$(ssh-keyscan -T 10 -t "$type" "$target" 2>/dev/null |
+    awk -v t="$type" '$1 !~ /^#/ && $2 == t { print $3; exit }')"
+  [[ -n $live ]] || die "$h: no $type host key from $target (is it powered on?)"
+  [[ $live == "$want" ]] ||
+    die "$h: host key at $target does not match fleetMeta. Refusing to erase.
+  pinned: $want
+  live:   $live"
+  echo "$h: host key verified against fleetMeta ($target)"
+}
+
+# nixos-anywhere gained --target-host and deprecated the positional form.
+# Support both so this works across the versions in circulation.
+nixos_anywhere_target_args() {
+  if nixos-anywhere --help 2>&1 | grep -q -- '--target-host'; then
+    printf '%s\n%s\n' --target-host "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+# DESTROYS the target disk. See the `install` entry in usage().
+machine_install() {
+  local h="$1" j io addr target pinned passphrase keypath disk tmp
+  j="$(host_json "$h")"
+  io="$(jq -c '.install // empty' <<<"$j")"
+  [[ -n $io && $io != null ]] || die "$h has no install realization in fleetMeta"
+  [[ "$(jq -r '.erasable // false' <<<"$io")" == true ]] ||
+    die "$h is not marked install.erasable in fleetMeta; refusing to reinstall"
+  [[ $ERASE_CONFIRM == "$h" ]] ||
+    die "refusing to erase $h without: --erase-confirm $h"
+
+  target="$(jq -r .machine.sshTarget <<<"$j")"
+  pinned="$(jq -r '.machine.hostPublicKey // empty' <<<"$j")"
+  keypath="$(jq -r '.diskEncryptionKeyPath // empty' <<<"$io")"
+  disk="$(jq -r '.targetDisk // empty' <<<"$io")"
+  passphrase="${KS_INSTALL_PASSPHRASE:-$(jq -r '.passphrase // empty' <<<"$io")}"
+  [[ -n $keypath ]] ||
+    die "$h: install.diskEncryptionKeyPath unset; disko needs a passphrase file path"
+  [[ -n $passphrase ]] ||
+    die "$h: no passphrase (set KS_INSTALL_PASSPHRASE or install.passphrase)"
+
+  verify_host_key "$h" "$target" "$pinned"
+  addr="root@$target"
+
+  echo "$h: ERASING $disk on $target -- every byte on that disk is lost."
+
+  # Keep secrets and the captured host identity off disk-backed storage.
+  tmp="$(mktemp -d /dev/shm/ks-fleet.XXXXXX 2>/dev/null || mktemp -d)"
+  chmod 700 "$tmp"
+  # shellcheck disable=SC2064 # expand $tmp now, not at trap time
+  trap "rm -rf '$tmp'" EXIT
+  mkdir -p "$tmp/extra/etc/ssh"
+  printf '%s' "$passphrase" >"$tmp/secret.key"
+  chmod 600 "$tmp/secret.key"
+
+  # fleetMeta pins this host's public key, and sops recipients are derived
+  # from host keys, so a reinstall that mints a new identity invalidates both.
+  # Carry the existing key across when the old system is still readable.
+  if ssh -o BatchMode=yes -o ConnectTimeout=10 "$addr" \
+    'cat /etc/ssh/ssh_host_ed25519_key' >"$tmp/extra/etc/ssh/ssh_host_ed25519_key" 2>/dev/null &&
+    [[ -s "$tmp/extra/etc/ssh/ssh_host_ed25519_key" ]]; then
+    chmod 600 "$tmp/extra/etc/ssh/ssh_host_ed25519_key"
+    ssh -o BatchMode=yes -o ConnectTimeout=10 "$addr" \
+      'cat /etc/ssh/ssh_host_ed25519_key.pub' >"$tmp/extra/etc/ssh/ssh_host_ed25519_key.pub" 2>/dev/null || true
+    echo "$h: preserving existing ssh host identity"
+  else
+    rm -f "$tmp/extra/etc/ssh/ssh_host_ed25519_key"
+    echo "$h: WARNING could not read the current host key." >&2
+    echo "$h: the reinstall will mint a new one; update fleetMeta hostPublicKey" >&2
+    echo "$h: and re-key any sops recipients derived from it." >&2
+  fi
+
+  local args=(--flake "$FLAKE#$h" --disk-encryption-keys "$keypath" "$tmp/secret.key")
+  [[ -n "$(ls -A "$tmp/extra/etc/ssh" 2>/dev/null)" ]] && args+=(--extra-files "$tmp/extra")
+  mapfile -t target_args < <(nixos_anywhere_target_args "$addr")
+  args+=("${target_args[@]}")
+
+  echo "$h: nixos-anywhere --flake $FLAKE#$h ... $addr"
+  nixos-anywhere "${args[@]}" || die "$h: nixos-anywhere failed"
+  echo "$h: install finished; waiting for ssh"
+}
+
+# The invariant that stopped ncrmro-workstation booting generations 637-641:
+# the initrd must never ask for a credential the LUKS header does not hold.
+# Checked here because a fresh install is exactly when the two can diverge.
+install_verify_credentials() {
+  local h="$1" targets opts name dump
+  targets="$(nix eval --json "$FLAKE#nixosConfigurations.$h.config.keystone.hardwareKeyLuksTargets" 2>/dev/null)" || return 0
+  for name in $(jq -r '.[]' <<<"$targets" 2>/dev/null); do
+    opts="$(nix eval --json "$FLAKE#nixosConfigurations.$h.config.boot.initrd.luks.devices.\"$name\".crypttabExtraOpts" 2>/dev/null)" || continue
+    grep -q 'fido2-device=auto' <<<"$opts" || {
+      echo "$h: $name requests no FIDO2 credential -- passphrase path retained"
+      continue
+    }
+    dump="$("${SSH_CMD[@]}" "sudo -n cryptsetup luksDump /dev/disk/by-partlabel/disk-*-$name 2>/dev/null" 2>/dev/null)" || true
+    if [[ -z $dump ]]; then
+      echo "$h: WARNING cannot read the $name LUKS header; FIDO2 request unverified" >&2
+      continue
+    fi
+    if grep -q 'systemd-fido2' <<<"$dump"; then
+      echo "$h: $name requests FIDO2 and the header holds a systemd-fido2 token"
+    else
+      echo "$h: FAIL $name initrd requests fido2-device=auto but no token is enrolled." >&2
+      echo "$h: systemd does not fall back to the passphrase here (systemd#19872)." >&2
+      return 1
+    fi
+  done
+}
+
 # Sets SSH_CMD for host+realization. VM host keys are ephemeral (fresh
 # install every boot), so verification is disabled for them only; machines
 # keep normal known_hosts pinning.
@@ -321,6 +461,17 @@ deploy)
       machine_deploy "$h"
     fi
   done
+  ;;
+install)
+  ((${#HOSTS[@]} == 1)) || die "install takes exactly one host"
+  h="${HOSTS[0]}"
+  [[ "$(realization "$h")" == machine ]] || die "install requires a machine realization"
+  machine_install "$h"
+  ssh_for "$h" machine
+  wait_ssh || die "$h: installed but unreachable within ${TIMEOUT}s"
+  smoke "$h" || die "$h: booted but not healthy"
+  install_verify_credentials "$h" || die "$h: boot-credential invariant failed"
+  echo "$h: reinstall verified"
   ;;
 test)
   for h in "${HOSTS[@]}"; do

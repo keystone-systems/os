@@ -661,6 +661,8 @@
                 pkgs.jq
                 pkgs.openssh
                 pkgs.nixos-rebuild
+                # `install` shells out to nixos-anywhere for metal reinstalls.
+                pkgs.nixos-anywhere
               ];
               text = builtins.readFile ./bin/ks-fleet;
             };
