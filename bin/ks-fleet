@@ -650,6 +650,27 @@ wait_ssh() {
   return 1
 }
 
+# A fresh install has no remote unlock, so the host sits at a passphrase prompt
+# and stays unreachable until a person answers it at the console. That has no
+# bounded duration: a 900s cap expired before the operator reached the machine,
+# which turned a good install into a reported failure and left the post-install
+# checks un-run. Wait indefinitely by default and say why every minute; an
+# explicit --timeout still bounds it, which is what CI wants.
+wait_ssh_unlock() {
+  local h="$1" waited=0
+  if ((TIMEOUT_SET)); then
+    wait_ssh
+    return
+  fi
+  while ! "${SSH_CMD[@]}" true 2>/dev/null; do
+    ((waited % 60 == 0)) &&
+      echo "$h: waiting for the LUKS passphrase at its console (${waited}s; --timeout bounds this)"
+    sleep 5
+    waited=$((waited + 5))
+  done
+  return 0
+}
+
 smoke() {
   local h="$1" state
   state="$("${SSH_CMD[@]}" systemctl is-system-running --wait 2>/dev/null)" || true
@@ -739,12 +760,8 @@ install)
   ((DRY_RUN)) && exit 0
   ssh_for "$h" machine
   install_verify_addr "$h"
-  # A fresh install has no remote unlock, so the host stops at a passphrase
-  # prompt and stays unreachable until someone answers it. Say so, and wait
-  # long enough for a human to walk to the machine.
-  ((TIMEOUT_SET)) || TIMEOUT=900
   echo "$h: waiting for boot -- type the LUKS passphrase at its console"
-  wait_ssh || die "$h: installed but unreachable within ${TIMEOUT}s"
+  wait_ssh_unlock "$h" || die "$h: installed but unreachable within ${TIMEOUT}s"
   smoke "$h" || die "$h: booted but not healthy"
   install_verify_seed "$h" || die "$h: seeded checkouts missing or unusable"
   install_verify_credentials "$h" || die "$h: boot-credential invariant failed"

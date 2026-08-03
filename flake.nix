@@ -593,9 +593,36 @@
             system = "x86_64-linux";
             overlays = [ self.overlays.default ];
           };
+          # nixos-anywhere copies the system closure over the legacy `ssh://`
+          # store, which handshakes once per path. Measured installing
+          # ks-test-delltop over a wired gigabit link, that left the wire ~90%
+          # idle: 200 paths/min at 9 MiB/s. Switching the closure copy to
+          # `ssh-ng://` gave 678 paths/min at 131 MiB/s -- 3.4x the paths, and
+          # enough throughput that the network is finally the bottleneck.
+          #
+          # The scheme is hardcoded upstream and `--ssh-store-setting` cannot
+          # change it, hence the patch. `--no-check-sigs` is not optional:
+          # ssh-ng goes through the target's nix daemon, which enforces
+          # require-sigs, so a closure containing locally-built paths dies with
+          # "cannot add path ... lacks a signature by a trusted key". The
+          # legacy path writes directly and never checks.
+          #
+          # --replace-fail so a nixos-anywhere bump that moves these lines
+          # breaks this build loudly, rather than silently reverting to the
+          # slow path.
+          nixos-anywhere-fast = pkgs.nixos-anywhere.overrideAttrs (old: {
+            postPatch = (old.postPatch or "") + ''
+              substituteInPlace src/nixos-anywhere.sh \
+                --replace-fail 'nixCopy --to "ssh://$sshConnection?remote-store=' \
+                               'nixCopy --to "ssh-ng://$sshConnection?remote-store=' \
+                --replace-fail '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy \' \
+                               '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy --no-check-sigs \'
+            '';
+          });
         in
         (
           {
+            inherit nixos-anywhere-fast;
             iso = self.lib.mkInstallerIso { inherit nixpkgs; };
             inherit (pkgs.keystone)
               zesh
@@ -631,7 +658,7 @@
                 pkgs.openssh
                 pkgs.nixos-rebuild
                 # `install` shells out to nixos-anywhere for metal reinstalls.
-                pkgs.nixos-anywhere
+                nixos-anywhere-fast
                 # `install` clones the fleet's seed checkouts into a staging
                 # tree handed to nixos-anywhere as --extra-files.
                 pkgs.git
