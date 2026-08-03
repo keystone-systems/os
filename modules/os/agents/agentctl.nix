@@ -164,17 +164,24 @@ in
             ...
           }:
           {
+            # lib.mkMerge, NOT `//`: mkHomeScriptCommand returns an attrset
+            # the module system dispatches on (`{ _type = "merge"; contents; }`
+            # when it merges). `x // { home.file = ...; }` leaves home.file as a
+            # sibling of _type, and the module system reads only `contents` —
+            # so the file was silently never written.
             config = lib.mkIf config.keystone.terminal.enable (
-              (mkHomeScriptCommand {
-                inherit config pkgs;
-                commandName = "agentctl";
-                relativePath = "modules/os/agents/scripts/agentctl.sh";
-                package = agentctlPackage;
-                extraEnvSetup = ''export AGENTCTL_ENV_FILE="${agentctlEnv}"'';
-              })
-              // {
-                home.file.".config/keystone/agentctl.env".source = agentctlEnv;
-              }
+              lib.mkMerge [
+                (mkHomeScriptCommand {
+                  inherit config pkgs;
+                  commandName = "agentctl";
+                  relativePath = "modules/os/agents/scripts/agentctl.sh";
+                  package = agentctlPackage;
+                  extraEnvSetup = ''export AGENTCTL_ENV_FILE="${agentctlEnv}"'';
+                })
+                {
+                  home.file.".config/keystone/agentctl.env".source = agentctlEnv;
+                }
+              ]
             );
           }
         )
