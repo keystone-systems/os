@@ -190,6 +190,7 @@ let
       let
         account = activeAccounts.${name};
         smtpHost = if account.smtp.host != "" then account.smtp.host else account.host;
+        smtpScheme = if account.smtp.encryption == "tls" then "smtps" else "smtp";
       in
       ''
         [accounts.${name}]
@@ -197,25 +198,19 @@ let
         display-name = "${account.displayName}"
         default = ${if name == defaultAccountName then "true" else "false"}
 
-        backend.type = "imap"
-        backend.host = "${account.host}"
-        backend.port = ${toString account.imap.port}
-        backend.encryption.type = "tls"
-        backend.login = "${account.login}"
-        backend.auth.type = "password"
-        backend.auth.command = "${account.passwordCommand}"
+        imap.server = "imaps://${account.host}:${toString account.imap.port}"
+        imap.sasl.plain.username = "${account.login}"
+        imap.sasl.plain.password.command = "${account.passwordCommand}"
 
-        message.send.backend.type = "smtp"
-        message.send.backend.host = "${smtpHost}"
-        message.send.backend.port = ${toString account.smtp.port}
-        message.send.backend.encryption.type = "${account.smtp.encryption}"
-        message.send.backend.login = "${account.login}"
-        message.send.backend.auth.type = "password"
-        message.send.backend.auth.command = "${account.passwordCommand}"
+        smtp.server = "${smtpScheme}://${smtpHost}:${toString account.smtp.port}"
+        ${optionalString (account.smtp.encryption == "start-tls") "smtp.starttls = true"}
+        smtp.sasl.plain.username = "${account.login}"
+        smtp.sasl.plain.password.command = "${account.passwordCommand}"
 
-        folder.aliases.sent = "${account.folders.sent}"
-        folder.aliases.drafts = "${account.folders.drafts}"
-        folder.aliases.trash = "${account.folders.trash}"
+        mailbox.alias.inbox = "INBOX"
+        mailbox.alias.sent = "${account.folders.sent}"
+        mailbox.alias.drafts = "${account.folders.drafts}"
+        mailbox.alias.trash = "${account.folders.trash}"
       ''
     ) sortedAccountNames
   );

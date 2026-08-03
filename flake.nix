@@ -495,6 +495,13 @@
               home-manager
               ;
           };
+          terminalMail = import ./tests/module/terminal-mail.nix {
+            inherit
+              pkgs
+              self
+              home-manager
+              ;
+          };
           agentTaskLoopHashRegression = import ./tests/module/agent-task-loop-hash-regression.nix {
             inherit pkgs lib;
           };
@@ -526,6 +533,7 @@
           agentctl-regression = agentctlRegression;
           binary-cache-client-merge = binaryCacheClientMerge;
           terminal-zide = terminalZide;
+          terminal-mail = terminalMail;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
           agent-task-loop-ping-pong = agentTaskLoopPingPong;
           agent-runtime-coherence = agentRuntimeCoherence;
@@ -573,6 +581,7 @@
             ln -s ${agentQueueMigration} "$out/agent-queue-migration"
             ln -s ${binaryCacheClientMerge} "$out/binary-cache-client-merge"
             ln -s ${terminalZide} "$out/terminal-zide"
+            ln -s ${terminalMail} "$out/terminal-mail"
           '';
         }
         // {
