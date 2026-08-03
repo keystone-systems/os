@@ -16,12 +16,14 @@
   gnugrep,
   gnused,
   hostname,
+  jq,
   kubectl,
   nix,
   nixos-rebuild,
   openssh,
   pam_u2f,
   sops,
+  ssh-to-age,
   yubikey-manager,
 }:
 writeShellApplication {
@@ -34,12 +36,16 @@ writeShellApplication {
     gnugrep
     gnused
     hostname
+    # `secrets sync` parses nix eval --json and derives age recipients from
+    # each host's ssh key.
+    jq
     kubectl
     nix
     nixos-rebuild
     openssh
     pam_u2f
     sops
+    ssh-to-age
     yubikey-manager
   ];
 
