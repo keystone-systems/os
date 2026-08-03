@@ -125,29 +125,31 @@ in
       );
       candidateScriptArray = lib.concatStringsSep " " (map lib.escapeShellArg candidateScripts);
       runtimePath = lib.makeBinPath runtimeInputs;
-      commandWrapper = pkgs.writeShellScript "hm_${commandName}.sh" ''
+      # One wrapper for both modes, mirroring mkSystemScriptPackage below:
+      # runtimeInputs and extraEnvSetup ALWAYS apply, and the live-checkout exec
+      # loop is emitted only in development mode. Installing the bare package in
+      # production shipped it with no PATH and no environment, silently dropping
+      # both.
+      #
+      # lib.optionalString also stops emitting `for live_script in ; do`, a
+      # shell syntax error, when no checkout is registered.
+      commandWrapper = pkgs.writeShellScriptBin commandName ''
         export PATH="${runtimePath}:$PATH"
         ${extraEnvSetup}
-        for live_script in ${candidateScriptArray}; do
-          if [ -f "$live_script" ]; then
-            exec ${pkgs.bash}/bin/bash "$live_script" "$@"
-          fi
-        done
+        ${lib.optionalString (repoCheckout != null) ''
+          for live_script in ${candidateScriptArray}; do
+            if [ -f "$live_script" ]; then
+              exec ${pkgs.bash}/bin/bash "$live_script" "$@"
+            fi
+          done
+        ''}
 
         exec "${package}/bin/${commandName}" "$@"
       '';
     in
-    lib.mkMerge [
-      (lib.mkIf (repoCheckout == null) {
-        home.packages = [ package ];
-      })
-      (lib.mkIf (repoCheckout != null) {
-        home.file.".local/bin/${commandName}" = {
-          source = commandWrapper;
-          executable = true;
-        };
-      })
-    ];
+    {
+      home.packages = [ commandWrapper ];
+    };
 
   # NixOS system-level counterpart to mkHomeScriptCommand.
   # Returns a derivation suitable for environment.systemPackages that execs the
