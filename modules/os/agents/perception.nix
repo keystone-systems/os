@@ -1,8 +1,11 @@
-# Agent perception layer: screenshot sync and activity processor as systemd user services.
+# Agent perception layer: activity processor as a systemd user service.
 #
 # Services created per agent (when perception.enable = true):
-# - agent-{name}-screenshot-sync: uploads screenshots to Immich on a timer
 # - agent-{name}-perception-processor: collects PDFs, transcripts, photos → notes
+#
+# Screenshot sync to Immich lived here until 2026-08-02. Its only
+# implementation was `ks screenshots sync` in the Rust CLI, which was deleted;
+# no agent enabled it.
 {
   lib,
   config,
@@ -13,177 +16,56 @@ with lib;
 let
   agentsLib = import ./lib.nix { inherit lib config pkgs; };
   inherit (agentsLib) osCfg localAgents;
-  immichServiceCfg = config.keystone.services.immich;
 
   # Filter to agents with perception enabled
   perceptionAgents = filterAttrs (_: agentCfg: agentCfg.perception.enable) localAgents;
-
-  # Filter to agents with perception + desktop (needed for screenshot sync)
-  screenshotAgents = filterAttrs (
-    _: agentCfg: agentCfg.desktop.enable && agentCfg.perception.screenshots.enable
-  ) perceptionAgents;
-
-  immichServerUrl =
-    let
-      immichHostName = immichServiceCfg.host;
-      hostEntry = findFirst (h: h.hostname == immichHostName) null (attrValues config.keystone.hosts);
-      hostTarget =
-        if hostEntry == null then
-          immichHostName
-        else if hostEntry.tailscaleIP != null then
-          hostEntry.tailscaleIP
-        else if hostEntry.sshTarget != null then
-          hostEntry.sshTarget
-        else if hostEntry.fallbackIP != null then
-          hostEntry.fallbackIP
-        else
-          immichHostName;
-    in
-    if config.keystone.domain != null then
-      "https://photos.${config.keystone.domain}"
-    else
-      "http://${hostTarget}:2283";
 in
 {
   config = mkIf (osCfg.enable && perceptionAgents != { }) {
-    assertions = optionals (screenshotAgents != { }) [
-      {
-        assertion = immichServiceCfg.host != null;
-        message = "Agent screenshot sync requires keystone.services.immich.host to be set.";
-      }
-    ];
-
-    warnings = concatLists (
-      mapAttrsToList (
-        name: _:
-        optional (!(config.keystone.secrets.provided ? "agent-${name}-immich-api-key")) ''
-          Screenshot sync is enabled for agent '${name}', but the sops secret "agent-${name}-immich-api-key" is not declared yet.
-
-          To finish setup:
-          1. Add the agent's Immich API key to this host's sops file:
-             ks secrets edit secrets/${config.networking.hostName}.yaml
-             # add: agent-${name}-immich-api-key: <the API key>
-          2. If keystone.secrets.dir is null, declare it in host config:
-             keystone.secrets.provided."agent-${name}-immich-api-key" = {
-               owner = "agent-${name}";
-               scope = "host";
-             };
-
-          TODO: automate Immich API key provisioning and secret enrollment from Keystone tooling.
-        ''
-      ) screenshotAgents
-    );
-
-    keystone.secrets.provided = mkIf (config.keystone.secrets.dir != null) (
-      listToAttrs (
-        concatLists (
-          mapAttrsToList (name: _: [
-            (nameValuePair "agent-${name}-immich-api-key" {
-              owner = "agent-${name}";
-              scope = "host";
-            })
-          ]) screenshotAgents
-        )
-      )
-    );
-
     systemd.user.services = mkMerge (
-      # Screenshot sync services (only for agents with desktop enabled)
-      (mapAttrsToList (
+      mapAttrsToList (
         name: agentCfg:
         let
           username = "agent-${name}";
         in
-        mkIf agentCfg.perception.screenshots.enable {
-          "agent-${name}-screenshot-sync" = {
-            description = "Sync screenshots to Immich for ${username}";
+        mkIf agentCfg.perception.processor.enable {
+          "agent-${name}-perception-processor" = {
+            description = "Perception processor for ${username}";
             unitConfig.ConditionUser = username;
+            environment = {
+              PATH = lib.mkForce "/etc/profiles/per-user/${username}/bin:/run/wrappers/bin:/run/current-system/sw/bin:${lib.makeBinPath [ pkgs.nix ]}";
+            };
             serviceConfig = {
               Type = "oneshot";
-              SyslogIdentifier = "agent-${name}-screenshot-sync";
+              TimeoutStartSec = "30m";
+              SyslogIdentifier = "agent-${name}-perception-processor";
             };
+            # Placeholder — actual script added in Phase 3 (feat/perception-processor)
             script = ''
-              export HOME=/home/${username}
-              export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
-              exec ${pkgs.keystone.ks}/bin/ks screenshots sync \
-                --url ${lib.escapeShellArg immichServerUrl} \
-                --api-key-file ${
-                  # `or` keeps the undeclared-secret case a warning (above), not an eval error.
-                  config.keystone.secrets.provided."agent-${name}-immich-api-key".path
-                    or "/run/secrets/agent-${name}-immich-api-key"
-                } \
-                --album-name ${lib.escapeShellArg "Screenshots - ${username}"} \
-                --host-name ${lib.escapeShellArg config.networking.hostName} \
-                --account-name ${lib.escapeShellArg username} \
-                --state-file "''${XDG_STATE_HOME}/keystone-photos/screenshot-sync.tsv"
+              echo "perception-processor: not yet implemented for ${username}"
             '';
           };
         }
-      ) screenshotAgents)
-      ++
-        # Perception processor services (for all perception agents)
-        (mapAttrsToList (
-          name: agentCfg:
-          let
-            username = "agent-${name}";
-          in
-          mkIf agentCfg.perception.processor.enable {
-            "agent-${name}-perception-processor" = {
-              description = "Perception processor for ${username}";
-              unitConfig.ConditionUser = username;
-              environment = {
-                PATH = lib.mkForce "/etc/profiles/per-user/${username}/bin:/run/wrappers/bin:/run/current-system/sw/bin:${lib.makeBinPath [ pkgs.nix ]}";
-              };
-              serviceConfig = {
-                Type = "oneshot";
-                TimeoutStartSec = "30m";
-                SyslogIdentifier = "agent-${name}-perception-processor";
-              };
-              # Placeholder — actual script added in Phase 3 (feat/perception-processor)
-              script = ''
-                echo "perception-processor: not yet implemented for ${username}"
-              '';
-            };
-          }
-        ) perceptionAgents)
+      ) perceptionAgents
     );
 
     systemd.user.timers = mkMerge (
-      # Screenshot sync timers
-      (mapAttrsToList (
+      mapAttrsToList (
         name: agentCfg:
         let
           username = "agent-${name}";
         in
-        mkIf (agentCfg.perception.screenshots.enable && agentCfg.desktop.enable) {
-          "agent-${name}-screenshot-sync" = {
+        mkIf agentCfg.perception.processor.enable {
+          "agent-${name}-perception-processor" = {
             wantedBy = [ "default.target" ];
             unitConfig.ConditionUser = username;
             timerConfig = {
-              OnCalendar = agentCfg.perception.screenshots.syncOnCalendar;
+              OnCalendar = agentCfg.perception.processor.onCalendar;
               Persistent = true;
             };
           };
         }
-      ) screenshotAgents)
-      ++
-        # Perception processor timers
-        (mapAttrsToList (
-          name: agentCfg:
-          let
-            username = "agent-${name}";
-          in
-          mkIf agentCfg.perception.processor.enable {
-            "agent-${name}-perception-processor" = {
-              wantedBy = [ "default.target" ];
-              unitConfig.ConditionUser = username;
-              timerConfig = {
-                OnCalendar = agentCfg.perception.processor.onCalendar;
-                Persistent = true;
-              };
-            };
-          }
-        ) perceptionAgents)
+      ) perceptionAgents
     );
   };
 }

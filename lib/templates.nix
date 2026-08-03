@@ -478,8 +478,6 @@ let
             programs.zsh.enable = true;
 
             keystone.installer.sshKeys = sshKeys;
-            # TUI is experimental — default off, auto-enabled by keystone.experimental
-            keystone.installer.tui.enable = lib.mkDefault false;
             nixpkgs.overlays = [ self.overlays.default ];
             environment.etc = lib.mkIf (installRepo != null) (
               {

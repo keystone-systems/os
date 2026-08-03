@@ -40,7 +40,11 @@
           keystone.terminal.enable = lib.mkDefault true; # desktop implies terminal
           keystone.desktop.photos.enable = lib.mkDefault config.keystone.experimental;
           keystone.desktop.agents.enable = lib.mkDefault config.keystone.experimental;
-          keystone.desktop.integration.ksPackage = lib.mkDefault pkgs.keystone.ks;
+          # The Walker menus drive `ks menu update`, whose backend lived in
+          # the Rust CLI. The shell CLI covers OS deploy, hardware keys,
+          # secrets, and services — not menus — so this stays null and the
+          # menu entries gate off, exactly like agenixPackage below.
+          keystone.desktop.integration.ksPackage = lib.mkDefault null;
           # integration.agenixPackage stays unset: the desktop secrets menu is
           # agenix-based while keystone secrets moved to sops; the option is
           # null-tolerant, so the menu entry is simply gated off.

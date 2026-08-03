@@ -195,13 +195,12 @@ each of those hosts.
 ```bash
 nix flake check --no-build  # Fast local probe
 nix flake check             # CI parity
-ks build                    # Build home-manager profiles for current host
-ks build --lock             # Full system build + lock + push (requires sudo)
-ks update --dev             # Deploy home-manager profiles only
+ks build                    # Build the system closure for the current host
+ks update --dev             # Deploy the local checkout without pull/lock/push
 ks update                   # Full: pull, lock, build, push, deploy
-ks update --lock            # Pull, lock, build, push, deploy (human-only)
+ks update --lock            # Same; --lock is the default and forces lock mode
 ks switch                   # Fast deploy current local state
-ks doctor                   # Diagnose system health
+ks hardware-key doctor      # Audit hardware-key state against a host
 ```
 
 ### E2E testing
@@ -225,7 +224,7 @@ bin/test-e2e --direct --headless          # same; host defaults to 'laptop'
 bin/test-e2e --direct laptop              # keep SPICE window open for debugging
 ```
 
-**Full ISO + installer (20-30 min)** — installer TUI, `ks install`,
+**Full ISO + installer (20-30 min)** — ISO boot, `ks-fleet install`,
 post-reboot desktop validation:
 
 ```bash

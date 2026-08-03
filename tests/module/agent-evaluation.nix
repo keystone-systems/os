@@ -289,40 +289,6 @@ let
         fi
       fi
 
-      if [ "${name}" = "user-screenshot-sync" ]; then
-        if echo '${userServicesJson}' | grep -q '"keystone-testuser-screenshot-sync"'; then
-          echo "  ✓ Found desktop user screenshot sync service"
-        else
-          echo "  ✗ Missing desktop user screenshot sync service"
-          echo "  Actual user services: ${userServicesJson}"
-          exit 1
-        fi
-        if echo '${userTimersJson}' | grep -q '"keystone-testuser-screenshot-sync"'; then
-          echo "  ✓ Found desktop user screenshot sync timer"
-        else
-          echo "  ✗ Missing desktop user screenshot sync timer"
-          echo "  Actual user timers: ${userTimersJson}"
-          exit 1
-        fi
-      fi
-
-      if [ "${name}" = "agent-screenshot-sync" ]; then
-        if echo '${userServicesJson}' | grep -q '"agent-vision-screenshot-sync"'; then
-          echo "  ✓ Found agent screenshot sync service"
-        else
-          echo "  ✗ Missing agent screenshot sync service"
-          echo "  Actual user services: ${userServicesJson}"
-          exit 1
-        fi
-        if echo '${userTimersJson}' | grep -q '"agent-vision-screenshot-sync"'; then
-          echo "  ✓ Found agent screenshot sync timer"
-        else
-          echo "  ✗ Missing agent screenshot sync timer"
-          echo "  Actual user timers: ${userTimersJson}"
-          exit 1
-        fi
-      fi
-
       touch $out
     '';
 
@@ -993,73 +959,6 @@ let
       }
     ];
 
-    user-screenshot-sync = eval "user-screenshot-sync" [
-      {
-        keystone = {
-          domain = "example.com";
-          hosts.ocean = {
-            hostname = "ocean";
-            role = "server";
-            tailscaleIP = "100.64.0.10";
-          };
-          services.immich.host = "ocean";
-          os = {
-            enable = true;
-            storage = {
-              type = "ext4";
-              devices = [ "/dev/vda" ];
-            };
-            users.testuser = {
-              fullName = "Test User";
-              initialPassword = "testpass";
-              admin = true;
-              desktop = {
-                enable = true;
-                screenshotSync.enable = true;
-              };
-            };
-          };
-        };
-        keystone.secrets.provided."testuser-immich-api-key".owner = "testuser";
-        fileSystems."/" = {
-          device = lib.mkForce "/dev/vda2";
-          fsType = lib.mkForce "ext4";
-        };
-      }
-    ];
-
-    agent-screenshot-sync = eval "agent-screenshot-sync" [
-      {
-        keystone = {
-          domain = "example.com";
-          hosts.ocean = {
-            hostname = "ocean";
-            role = "server";
-            tailscaleIP = "100.64.0.10";
-          };
-          services.immich.host = "ocean";
-          os = {
-            enable = true;
-            storage = {
-              type = "ext4";
-              devices = [ "/dev/vda" ];
-            };
-            agents.vision = {
-              fullName = "Vision Agent";
-              notes.repo = "git@example.com:vision/notes.git";
-              host = "test-host";
-              desktop.enable = true;
-              perception.enable = true;
-            };
-          };
-        };
-        keystone.secrets.provided."agent-vision-immich-api-key".owner = "agent-vision";
-        fileSystems."/" = {
-          device = lib.mkForce "/dev/vda2";
-          fsType = lib.mkForce "ext4";
-        };
-      }
-    ];
   };
 in
 pkgs.runCommand "test-agent-evaluation"

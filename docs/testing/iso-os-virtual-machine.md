@@ -5,6 +5,13 @@ description: End-to-end testing of template generation, installer ISO, desktop v
 
 # ISO and OS virtual machine testing
 
+> **Out of date (2026-08-02).** The interactive installer TUI was deleted with
+> the Rust `ks` CLI. Every `ks install` instruction below is superseded by
+> `ks-fleet install <host>`, which drives disko and nixos-anywhere over the
+> ISO's sshd; `--dry-run` runs the guards without erasing a disk. The ISO is
+> now a reachable live environment, not an installer. The direct-qcow2 and
+> module-test material here is still accurate.
+
 ## Goal
 
 Validate the full Keystone onboarding chain in a VM before touching real hardware:

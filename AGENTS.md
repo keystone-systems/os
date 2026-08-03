@@ -41,7 +41,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 
 ## Packages
 
-- `packages/ks/` — Keystone CLI/TUI: build, deploy, notifications, tasks, projects, doctor
+- `packages/ks/` — Keystone CLI (shell): build, deploy, approve, secrets, hardware-key, kube
 - `packages/fetch-email-source/` — Email notification fetcher (himalaya)
 - `packages/fetch-github-sources/` — GitHub notification fetcher (gh API)
 - `packages/fetch-forgejo-sources/` — Forgejo notification fetcher (curl)

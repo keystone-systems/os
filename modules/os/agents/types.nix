@@ -612,19 +612,8 @@ in
             };
           };
 
-          screenshots = {
-            enable = mkOption {
-              type = types.bool;
-              default = true;
-              description = "Enable screenshot syncing to Immich for ML indexing.";
-            };
-
-            syncOnCalendar = mkOption {
-              type = types.str;
-              default = "*:0/5";
-              description = "Systemd calendar expression for screenshot sync interval.";
-            };
-          };
+          # screenshots.* was removed with the Rust ks CLI: `ks screenshots
+          # sync` was its only implementation.
 
           contacts = {
             enable = mkOption {

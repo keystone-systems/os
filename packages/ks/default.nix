@@ -1,129 +1,54 @@
+# ks — Keystone CLI, a shell front end over nixos-rebuild, ks-fleet,
+# keystone-approve-exec, and the hardware-key tools.
+#
+# The CLI was a 35k-line Rust crate until 2026-08-02. It grew subcommands
+# for photos, screenshots, tasks, projects, and notifications that no
+# module ever wired up, and every one of them cost a Rust toolchain in CI.
+# What the fleet actually invokes is small enough to read in one sitting,
+# so it lives in ks.sh now. Add a subcommand here only when a module, a
+# desktop menu, or the contributor workflow calls it.
 {
   lib,
-  stdenv,
-  craneLib,
-  pkg-config,
-  openssl,
-  zlib,
-  cmake,
-  makeWrapper,
-  bash,
+  writeShellApplication,
+  age-plugin-yubikey,
   coreutils,
-  cups,
-  fzf,
   git,
-  glow,
+  gnugrep,
+  gnused,
   hostname,
+  kubectl,
   nix,
+  nixos-rebuild,
   openssh,
-  pandoc,
-  polkit,
+  pam_u2f,
   sops,
-  ssh-to-age,
-  sudo,
-  systemd,
-  python3Packages,
+  yubikey-manager,
 }:
-let
-  version = "0.1.0";
-  pname = "ks";
+writeShellApplication {
+  name = "ks";
 
-  src = lib.fileset.toSource {
-    root = ./.;
-    fileset = lib.fileset.unions [
-      ./src
-      ./tests
-      ./Cargo.toml
-      ./Cargo.lock
-      ./print.css
-    ];
+  runtimeInputs = [
+    age-plugin-yubikey
+    coreutils
+    git
+    gnugrep
+    gnused
+    hostname
+    kubectl
+    nix
+    nixos-rebuild
+    openssh
+    pam_u2f
+    sops
+    yubikey-manager
+  ];
+
+  text = builtins.readFile ./ks.sh;
+
+  meta = with lib; {
+    description = "Keystone CLI for building, deploying, and enrolling hardware keys";
+    license = licenses.mit;
+    maintainers = [ ];
+    mainProgram = "ks";
   };
-
-  commonArgs = {
-    inherit pname version src;
-    strictDeps = true;
-
-    nativeBuildInputs = [
-      pkg-config
-      cmake
-    ];
-
-    buildInputs = [
-      openssl
-      zlib
-    ];
-  };
-
-  cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-
-  runtimePath = lib.makeBinPath (
-    [
-      bash
-      coreutils
-      fzf
-      git
-      glow
-      hostname
-      nix
-      openssh
-      pandoc
-      python3Packages.weasyprint
-      sops
-      ssh-to-age
-    ]
-    ++ lib.optionals stdenv.hostPlatform.isLinux [
-      cups
-      polkit
-      sudo
-      systemd
-    ]
-  );
-
-  package = craneLib.buildPackage (
-    commonArgs
-    // {
-      inherit cargoArtifacts;
-      doCheck = false;
-
-      nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ makeWrapper ];
-
-      postFixup = ''
-        wrapProgram $out/bin/ks --suffix PATH : "${runtimePath}"
-      '';
-
-      meta = with lib; {
-        description = "Keystone CLI/TUI for infrastructure configuration and management";
-        homepage = "https://github.com/ncrmro/keystone";
-        license = licenses.mit;
-        maintainers = [ ];
-        mainProgram = "ks";
-      };
-    }
-  );
-in
-package.overrideAttrs (old: {
-  passthru = (old.passthru or { }) // {
-    tests = {
-      cargo-test = craneLib.cargoTest (
-        commonArgs
-        // {
-          inherit cargoArtifacts;
-          cargoTestExtraArgs = "--all-features";
-          # CRITICAL: ensure_in_sync_* unit tests in cmd::update_approve
-          # build real git fixtures via Command::new("git"). Without git
-          # on the sandbox PATH the tests panic at fixture setup, not at
-          # the assertion they're meant to exercise.
-          nativeCheckInputs = [ git ];
-        }
-      );
-      cargo-clippy = craneLib.cargoClippy (
-        commonArgs
-        // {
-          inherit cargoArtifacts;
-          cargoClippyExtraArgs = "--all-targets --all-features -- --deny warnings";
-        }
-      );
-      cargo-fmt = craneLib.cargoFmt { inherit (commonArgs) pname version src; };
-    };
-  };
-})
+}

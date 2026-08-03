@@ -200,15 +200,13 @@ shell_code_review:
 
 # =====================================================================
 # Rust Code Review
-# Reviews Rust source files in keystone-tui and keystone-ha packages.
+# Reviews Rust source files in the keystone-ha package.
 # Checks idiomatic Rust patterns, error handling, and project style.
 # =====================================================================
 rust_code_review:
   description: "Review Rust source files against project patterns and idiomatic Rust practices."
   match:
     include:
-      - "packages/ks/src/**/*.rs"
-      - "packages/ks/tests/**/*.rs"
       - "packages/keystone-ha/**/*.rs"
     exclude:
       - "**/target/**"
@@ -216,8 +214,7 @@ rust_code_review:
     strategy: individual
     instructions: |
       Review this Rust source file against idiomatic Rust practices and the
-      project's existing patterns. Reference packages/ks/AGENTS.md
-      for CI validation expectations.
+      project's existing patterns.
 
       Check for:
       - Proper error handling (Result/Option usage, no unwrap in production code)

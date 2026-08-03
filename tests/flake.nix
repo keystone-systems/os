@@ -143,11 +143,10 @@
 
       checks.${system} = {
         # Integration Tests
-        test-installer = import ./integration/installer.nix {
-          inherit pkgs;
-          lib = pkgs.lib;
-        };
-
+        #
+        # test-installer was removed with the Rust installer TUI: it drove the
+        # TUI by keystroke. Installs run through `ks-fleet install`, whose
+        # --dry-run performs the same guards without erasing a disk.
         test-remote-unlock = import ./integration/remote-unlock.nix {
           inherit pkgs lib;
           self = keystone;

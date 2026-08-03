@@ -411,21 +411,6 @@
             overlays = [ self.overlays.default ];
           };
           ks = ksPkgs.keystone.ks;
-          ksRustTests = ks.passthru.tests.cargo-test;
-          ksRustClippy = ks.passthru.tests.cargo-clippy;
-          ksRustFmt = ks.passthru.tests.cargo-fmt;
-          ksHelp = import ./tests/module/ks-help.nix {
-            pkgs = ksPkgs;
-            inherit ks;
-          };
-          ksPhotos = import ./tests/module/keystone-photos.nix {
-            pkgs = ksPkgs;
-            inherit lib ks;
-          };
-          ksApprove = import ./tests/module/ks-approve.nix {
-            pkgs = ksPkgs;
-            inherit ks;
-          };
           approveExecScript = import ./tests/module/approve-exec-script.nix {
             pkgs = ksPkgs;
             lib = ksPkgs.lib;
@@ -493,10 +478,6 @@
             inherit pkgs lib;
             desktopSrc = desktop;
           };
-          keystoneUpdateMenuWiring = import ./tests/module/keystone-update-menu-wiring.nix {
-            inherit pkgs lib;
-            desktopSrc = desktop;
-          };
           keystoneUpdateApproveFlow = import ./tests/module/keystone-update-approve-flow.nix {
             pkgs = ksPkgs;
             inherit lib ks;
@@ -536,19 +517,12 @@
           template-update-channel = templateUpdateChannel;
           template-special-args = templateSpecialArgs;
           server-evaluation = serverEvaluation;
-          ks-help = ksHelp;
-          keystone-photos = ksPhotos;
           keystone-secrets-menu = keystoneSecretsMenu;
           keystone-fingerprint-menu = keystoneFingerprintMenu;
-          keystone-update-menu-wiring = keystoneUpdateMenuWiring;
           keystone-update-approve-flow = keystoneUpdateApproveFlow;
-          ks-approve = ksApprove;
           approve-exec-script = approveExecScript;
           polkit-keystone-approve-cache = polkitKeystoneApproveCache;
           polkit-update-session-inhibit = polkitUpdateSessionInhibit;
-          ks-rust-tests = ksRustTests;
-          ks-rust-clippy = ksRustClippy;
-          ks-rust-fmt = ksRustFmt;
           agentctl-regression = agentctlRegression;
           binary-cache-client-merge = binaryCacheClientMerge;
           terminal-zide = terminalZide;
@@ -571,15 +545,11 @@
             ln -s ${serverEvaluation} "$out/server-evaluation"
           '';
 
-          # ks CLI: Rust build, lint, format, and integration tests
+          # ks CLI and the privileged-approval path it drives. The CLI itself
+          # is a shell script now, so building `ks` runs shellcheck over it.
           check-ks = pkgs.runCommand "check-ks" { } ''
             mkdir -p "$out"
-            ln -s ${ksRustTests} "$out/rust-tests"
-            ln -s ${ksRustClippy} "$out/rust-clippy"
-            ln -s ${ksRustFmt} "$out/rust-fmt"
-            ln -s ${ksHelp} "$out/help"
-            ln -s ${ksPhotos} "$out/photos"
-            ln -s ${ksApprove} "$out/approve"
+            ln -s ${ks} "$out/ks"
             ln -s ${approveExecScript} "$out/approve-exec-script"
             ln -s ${polkitKeystoneApproveCache} "$out/polkit-keystone-approve-cache"
             ln -s ${polkitUpdateSessionInhibit} "$out/polkit-update-session-inhibit"
@@ -591,7 +561,6 @@
             ln -s ${agentctlRegression} "$out/agentctl-regression"
             ln -s ${keystoneSecretsMenu} "$out/keystone-secrets-menu"
             ln -s ${keystoneFingerprintMenu} "$out/keystone-fingerprint-menu"
-            ln -s ${keystoneUpdateMenuWiring} "$out/keystone-update-menu-wiring"
             ln -s ${keystoneUpdateApproveFlow} "$out/keystone-update-approve-flow"
           '';
 

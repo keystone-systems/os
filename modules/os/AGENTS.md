@@ -101,7 +101,7 @@ See `docs/hardware-keys.md` for enrollment workflow.
 
 ## Development and Testing
 
-- `bash packages/ks/ks.sh doctor` — run `ks` directly without rebuilding (it's a plain shell script)
+- `bash packages/ks/ks.sh --help` — run `ks` directly without rebuilding (it's a plain shell script)
 - `agentctl` uses `replaceVars` and **cannot** be tested without a rebuild
 - `./bin/build-vm terminal` — fast VM with host Nix store mounted via 9P
 - `./bin/virtual-machine --name keystone-test-vm --start` — full Libvirt VM with Secure Boot + TPM

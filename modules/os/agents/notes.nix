@@ -135,7 +135,6 @@ in
           "agent-${name}-task-loop" =
             let
               notesDir = agentCfg.notes.path;
-              maxTasks = agentCfg.notes.taskLoop.maxTasks;
               defaultsJson = serializeTaskLoopStage agentCfg.notes.taskLoop.defaults;
               ingestJson = serializeTaskLoopStage agentCfg.notes.taskLoop.ingest;
               prioritizeJson = serializeTaskLoopStage agentCfg.notes.taskLoop.prioritize;
@@ -173,15 +172,12 @@ in
                 SyslogIdentifier = "agent-${name}-task-loop";
                 LogRateLimitIntervalSec = 0;
               };
-              script =
-                if config.keystone.experimental then
-                  ''
-                    exec ${pkgs.keystone.ks}/bin/ks agent-loop --max-tasks=${toString maxTasks}
-                  ''
-                else
-                  ''
-                    exec ${pkgs.bash}/bin/bash ${agentTaskLoopScript name agentCfg}
-                  '';
+              # `ks agent-loop` was the experimental Rust alternative to this
+              # script. The CLI is shell now and the loop was never promoted,
+              # so the shell implementation is the only one.
+              script = ''
+                exec ${pkgs.bash}/bin/bash ${agentTaskLoopScript name agentCfg}
+              '';
             };
 
           "agent-${name}-scheduler" = {

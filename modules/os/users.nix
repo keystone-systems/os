@@ -30,7 +30,6 @@ let
 
   keysCfg = config.keystone.keys;
   hostname = config.networking.hostName;
-  immichServiceCfg = config.keystone.services.immich;
 
   # Whether the keystone desktop NixOS module is imported (gates home-manager desktop config)
   hasDesktopModule = options.keystone ? desktop;
@@ -64,30 +63,6 @@ let
     in
     hostKey ++ u.hwKeys;
 
-  screenshotUsers = filterAttrs (
-    _: userCfg: userCfg.desktop.enable && userCfg.desktop.screenshotSync.enable
-  ) cfg;
-
-  immichServerUrl =
-    let
-      immichHostName = immichServiceCfg.host;
-      hostEntry = findFirst (h: h.hostname == immichHostName) null (attrValues config.keystone.hosts);
-      hostTarget =
-        if hostEntry == null then
-          immichHostName
-        else if hostEntry.tailscaleIP != null then
-          hostEntry.tailscaleIP
-        else if hostEntry.sshTarget != null then
-          hostEntry.sshTarget
-        else if hostEntry.fallbackIP != null then
-          hostEntry.fallbackIP
-        else
-          immichHostName;
-    in
-    if config.keystone.domain != null then
-      "https://photos.${config.keystone.domain}"
-    else
-      "http://${hostTarget}:2283";
 in
 {
   options.keystone.os._autoUserGroups = mkOption {
@@ -233,21 +208,6 @@ in
           message = "All user UIDs must be unique";
         }
       ]
-      ++ concatLists (
-        mapAttrsToList (
-          username: userCfg:
-          optional userCfg.desktop.screenshotSync.enable {
-            assertion = userCfg.desktop.enable;
-            message = "User '${username}' enables desktop.screenshotSync but desktop.enable is false.";
-          }
-        ) cfg
-      )
-      ++ optionals (screenshotUsers != { }) [
-        {
-          assertion = immichServiceCfg.host != null;
-          message = "Desktop screenshot sync requires keystone.services.immich.host to be set.";
-        }
-      ]
       # Validate the sops secret exists when sshAutoLoad is enabled
       # (auto-declared below when secrets.dir is set, so this only fires
       # when secrets.dir is null and no manual declaration exists)
@@ -260,7 +220,7 @@ in
               User '${username}' has sshAutoLoad enabled but the secret "${username}-ssh-passphrase" is missing.
 
               1. Add the passphrase to this host's sops file:
-                 ks secrets edit secrets/${hostname}.yaml
+                 sops secrets/${hostname}.yaml
                  # add: ${username}-ssh-passphrase: <the SSH key passphrase>
 
               If keystone.secrets.dir is set, the declaration is automatic.
@@ -275,32 +235,7 @@ in
       );
 
       warnings =
-        concatLists (
-          mapAttrsToList (
-            username: userCfg:
-            optional
-              (
-                userCfg.desktop.screenshotSync.enable
-                && !(config.keystone.secrets.provided ? "${username}-immich-api-key")
-              )
-              ''
-                Screenshot sync is enabled for user '${username}', but the sops secret "${username}-immich-api-key" is not declared yet.
-
-                To finish setup:
-                1. Add the user's Immich API key to the shared sops file:
-                   ks secrets edit secrets/shared.yaml
-                   # add: ${username}-immich-api-key: <the API key>
-                2. If keystone.secrets.dir is null, declare it in host config:
-                   keystone.secrets.provided."${username}-immich-api-key" = {
-                     owner = "${username}";
-                     scope = "shared";
-                   };
-
-                TODO: automate Immich API key provisioning and secret enrollment from Keystone tooling.
-              ''
-          ) screenshotUsers
-        )
-        ++ optional (hasDesktopModule && length desktopUsernames > 1) ''
+        optional (hasDesktopModule && length desktopUsernames > 1) ''
           Multiple users have keystone.os.users.<name>.desktop.enable = true. Keystone defaulted keystone.desktop.user to "${inferredDesktopUser}".
 
           Set keystone.desktop.user explicitly if a different desktop login user should own the session.
@@ -330,24 +265,18 @@ in
           ) cfg
         );
 
-      # Auto-declare secrets for sshAutoLoad/screenshotSync when secrets.dir is set
+      # Auto-declare secrets for sshAutoLoad when secrets.dir is set
       keystone.secrets.provided = mkIf (config.keystone.secrets.dir != null) (
         listToAttrs (
           concatLists (
             mapAttrsToList (
               username: userCfg:
-              (optional userCfg.sshAutoLoad.enable (
+              optional userCfg.sshAutoLoad.enable (
                 nameValuePair "${username}-ssh-passphrase" {
                   owner = username;
                   scope = "host";
                 }
-              ))
-              ++ (optional userCfg.desktop.screenshotSync.enable (
-                nameValuePair "${username}-immich-api-key" {
-                  owner = username;
-                  scope = "shared";
-                }
-              ))
+              )
             ) cfg
           )
         )
@@ -415,52 +344,6 @@ in
         '';
       };
 
-      systemd.user.services = mkMerge (
-        mapAttrsToList (
-          username: userCfg:
-          mkIf userCfg.desktop.screenshotSync.enable {
-            "keystone-${username}-screenshot-sync" = {
-              description = "Sync screenshots to Immich for ${username}";
-              unitConfig.ConditionUser = username;
-              serviceConfig = {
-                Type = "oneshot";
-                SyslogIdentifier = "keystone-screenshot-sync";
-              };
-              script = ''
-                export HOME=/home/${username}
-                export XDG_STATE_HOME="''${XDG_STATE_HOME:-$HOME/.local/state}"
-                exec ${pkgs.keystone.ks}/bin/ks screenshots sync \
-                  --url ${lib.escapeShellArg immichServerUrl} \
-                  --api-key-file ${
-                    # `or` keeps the undeclared-secret case a warning (above), not an eval error.
-                    config.keystone.secrets.provided."${username}-immich-api-key".path
-                      or "/run/secrets/${username}-immich-api-key"
-                  } \
-                  --album-name ${lib.escapeShellArg "Screenshots - ${username}"} \
-                  --host-name ${lib.escapeShellArg hostname} \
-                  --account-name ${lib.escapeShellArg username} \
-                  --state-file "''${XDG_STATE_HOME}/keystone-photos/screenshot-sync.tsv"
-              '';
-            };
-          }
-        ) screenshotUsers
-      );
-
-      systemd.user.timers = mkMerge (
-        mapAttrsToList (
-          username: userCfg:
-          mkIf userCfg.desktop.screenshotSync.enable {
-            "keystone-${username}-screenshot-sync" = {
-              wantedBy = [ "default.target" ];
-              unitConfig.ConditionUser = username;
-              timerConfig = {
-                OnCalendar = userCfg.desktop.screenshotSync.syncOnCalendar;
-                Persistent = true;
-              };
-            };
-          }
-        ) screenshotUsers
-      );
     })
 
     # Configure home-manager for users with terminal/desktop enabled

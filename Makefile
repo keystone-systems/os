@@ -1,7 +1,6 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help ci fmt check-lockfile test test-checks test-module test-integration test-template test-template-eval
-.PHONY: test-tui-eval test-tui-build
 .PHONY: vm-create vm-start vm-stop vm-destroy vm-reset vm-ssh vm-console vm-display vm-status vm-post-install vm-reset-secureboot
 .PHONY: build-vm-terminal build-vm-desktop build-iso build-iso-ssh
 .PHONY: test-e2e test-e2e-build
@@ -41,7 +40,6 @@ test: ## Run all tests (checks + module + integration)
 	nix build ./tests#test-desktop-isolation --no-link
 	nix build ./tests#test-os-evaluation --no-link
 	nix build ./tests#test-iso-evaluation --no-link
-	nix build ./tests#test-installer --no-link
 	nix build ./tests#test-remote-unlock --no-link
 
 test-checks: ## Run flake checks only (fast validation)
@@ -54,7 +52,6 @@ test-module: ## Run module isolation tests
 	nix build ./tests#test-iso-evaluation --no-link
 
 test-integration: ## Run integration tests
-	nix build ./tests#test-installer --no-link
 	nix build ./tests#test-remote-unlock --no-link
 
 test-template: ## Validate flake template evaluates correctly
@@ -64,15 +61,6 @@ test-template: ## Validate flake template evaluates correctly
 
 test-template-eval: ## Evaluate template configs (TUI output contract)
 	nix build .#checks.x86_64-linux.template-evaluation --print-build-logs
-
-## TUI Config Generation Tests
-## Rust integration tests that generate configs and validate against local modules
-
-test-tui-eval: ## Evaluate TUI-generated configs against local modules
-	cd packages/ks && nix develop ../../ --command cargo test config_evaluates -- --ignored
-
-test-tui-build: ## Build-test TUI-generated configs + ISO (slow, on-demand only)
-	cd packages/ks && nix develop ../../ --command cargo test _builds -- --ignored
 
 ## ISO Building
 

@@ -1,13 +1,17 @@
-# ISO installer configuration with TUI installer
+# ISO installer configuration
 #
 # Provides ISO-specific config layered on top of keystone.os (which handles
 # SSH, firewall, flakes, locale) and keystone.terminal (helix, zsh, starship).
 #
+# The ISO is a reachable live environment, not an interactive installer. Boot
+# it, then run `ks-fleet install <host>` from an operator machine: disko and
+# nixos-anywhere do the partitioning and the install over SSH. The ISO
+# therefore ships the recovery tooling and an sshd with root keys, and starts
+# a plain login shell on tty1.
+#
 # This module adds:
 # - Root SSH login override (keystone.os defaults to prohibit-password)
-# - TUI installer (keystone-installer-ui) auto-starting on tty1
 # - ZFS, Secure Boot, TPM, and disko tooling pre-installed
-# - NetworkManager for TUI installer network detection
 #
 # Usage:
 #   keystone.installer.sshKeys = [ "ssh-ed25519 AAAAC3..." ];
@@ -18,7 +22,6 @@
   ...
 }:
 let
-  ks = pkgs.callPackage ../packages/ks { };
   installerCfg = config.keystone.installer;
 in
 {
@@ -39,12 +42,6 @@ in
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "SSH public keys for root access on the installer ISO";
-    };
-
-    tui.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Whether to install and auto-start the Keystone installer TUI on the ISO (experimental).";
     };
   };
 
@@ -88,108 +85,52 @@ in
       wireless.enable = lib.mkForce false;
     };
 
-    # Include TUI installer and tools for installation
-    environment.systemPackages = [
-      # Provide `ks` in the live installer shell so `ks install` works
-      # immediately after boot.
-      ks
-    ]
-    ++ (with pkgs; [
-      git
-      curl
-      wget
-      htop
-      lsof
-      rsync
-      jq
-      # Tools needed for installation and recovery
-      parted
-      cryptsetup
-      util-linux
-      dosfstools
-      e2fsprogs
-      nix
-      nixos-install-tools
-      disko
-      shadow
-      iproute2
-      networkmanager
-      tpm2-tools
-      # ZFS utilities — use the same package boot.supportedFilesystems selects
-      config.boot.zfs.package
-      # Secure Boot key management
-      sbctl
-    ]);
-
-    # installation-cd-minimal enables NetworkManager by default, but in headless
-    # VM tests that can leave interfaces unconfigured. Use classic DHCP for the
-    # non-TUI path so SSH comes up reliably, and keep NetworkManager for TUI mode.
-    networking.networkmanager.enable = lib.mkForce installerCfg.tui.enable;
-    networking.useDHCP = lib.mkIf (!installerCfg.tui.enable) (lib.mkForce true);
-
-    # tty1 wiring:
-    # - In TUI mode, keystone-installer.service takes over tty1; suppress both
-    #   the static getty and the on-demand autovt so nothing fights for it.
-    # - In non-TUI mode the installer relies on the standard agetty + autologin
-    #   flow. The unit is materialized by the getty module, but
-    #   `installation-cd-base` upstream does not pull it into multi-user.target,
-    #   leaving it "linked but inactive" — boot reaches multi-user with no
-    #   process attached to tty1, so the framebuffer keeps whatever was last
-    #   drawn and the keyboard registers nothing. Explicitly want it.
-    systemd.services."getty@tty1" = {
-      enable = lib.mkIf installerCfg.tui.enable false;
-      wantedBy = lib.mkIf (!installerCfg.tui.enable) [ "multi-user.target" ];
-    };
-    systemd.services."autovt@tty1".enable = lib.mkIf installerCfg.tui.enable false;
-
-    # ks installer service - auto-starts on boot
-    systemd.services.keystone-installer = lib.mkIf installerCfg.tui.enable {
-      description = "Keystone Installer TUI";
-      after = [
-        "network.target"
-        "NetworkManager.service"
-      ];
-      wants = [ "NetworkManager.service" ];
-      wantedBy = [ "multi-user.target" ];
-      conflicts = [
-        "getty@tty1.service"
-        "autovt@tty1.service"
-      ];
-
-      path = with pkgs; [
-        networkmanager
-        iproute2
-        util-linux
+    # Tools for installation. The ISO is a reachable live environment, not an
+    # interactive installer: `ks-fleet install` drives nixos-anywhere against
+    # the sshd configured above.
+    environment.systemPackages = (
+      with pkgs;
+      [
+        git
+        curl
+        wget
+        htop
+        lsof
+        rsync
         jq
-        tpm2-tools
+        # Tools needed for installation and recovery
         parted
         cryptsetup
-        config.boot.zfs.package
+        util-linux
         dosfstools
         e2fsprogs
         nix
         nixos-install-tools
         disko
-        git
         shadow
-      ];
+        iproute2
+        networkmanager
+        tpm2-tools
+        # ZFS utilities — use the same package boot.supportedFilesystems selects
+        config.boot.zfs.package
+        # Secure Boot key management
+        sbctl
+      ]
+    );
 
-      serviceConfig = {
-        Type = "simple";
-        User = "root";
-        # Clear any residual boot output and restore cursor before TUI starts.
-        # Uses /bin/sh because systemd ExecStartPre doesn't support shell redirects.
-        ExecStartPre = "/bin/sh -c '${pkgs.util-linux}/bin/setterm --clear all --cursor on > /dev/tty1'";
-        ExecStart = "${ks}/bin/ks";
-        Restart = "on-failure";
-        RestartSec = "5s";
-        StandardInput = "tty";
-        StandardOutput = "tty";
-        TTYPath = "/dev/tty1";
-        TTYReset = "yes";
-        TTYVHangup = "yes";
-      };
-    };
+    # installation-cd-minimal enables NetworkManager by default, but in headless
+    # VM tests that can leave interfaces unconfigured. Use classic DHCP so SSH
+    # comes up reliably.
+    networking.networkmanager.enable = lib.mkForce false;
+    networking.useDHCP = lib.mkForce true;
+
+    # tty1 wiring: the installer relies on the standard agetty + autologin
+    # flow. The unit is materialized by the getty module, but
+    # `installation-cd-base` upstream does not pull it into multi-user.target,
+    # leaving it "linked but inactive" — boot reaches multi-user with no
+    # process attached to tty1, so the framebuffer keeps whatever was last
+    # drawn and the keyboard registers nothing. Explicitly want it.
+    systemd.services."getty@tty1".wantedBy = [ "multi-user.target" ];
 
     # Suppress boot-status residue on the live installer console.
     # - Plain-shell ISO uses `systemd.show_status=auto`: systemd shows the
@@ -198,27 +139,11 @@ in
     #   multi-user.target is reached. Without this, late-starting services
     #   keep printing to /dev/console after the autologin shell prompt has
     #   already been drawn, leaving residue on tty1.
-    # - TUI ISO uses `systemd.show_status=false`: a curses UI cannot
-    #   tolerate ANY console output, so silence everything from boot start.
-    #   The TUI path also adds `quiet`/`loglevel=0`/console pins to silence
-    #   the underlying kernel scroll — appropriate behind a curses UI,
-    #   counter-productive for the plain-shell flavor where kernel
-    #   warnings should still surface.
+    # - Kernel warnings still surface, which is what the plain-shell flavor
+    #   wants.
     # - Journal records everything regardless of these console flags.
     # - Serial still receives all boot logs for remote debugging.
-    boot.consoleLogLevel = lib.mkIf installerCfg.tui.enable 0;
-    boot.initrd.verbose = lib.mkIf installerCfg.tui.enable false;
-    boot.kernelParams = [
-      (if installerCfg.tui.enable then "systemd.show_status=false" else "systemd.show_status=auto")
-    ]
-    ++ lib.optionals installerCfg.tui.enable [
-      "console=ttyS0,115200"
-      "console=tty1"
-      "quiet"
-      "loglevel=0"
-      "rd.udev.log_level=3"
-      "vt.global_cursor_default=0"
-    ];
+    boot.kernelParams = [ "systemd.show_status=auto" ];
 
     # Ensure SSH starts on boot
     systemd.services.sshd.wantedBy = lib.mkForce [ "multi-user.target" ];

@@ -5,171 +5,104 @@ description: Command reference for the Keystone infrastructure CLI
 
 # ks CLI reference
 
-The `ks` command is the primary interface for building, deploying, and inspecting Keystone-managed infrastructure.
+`ks` builds and deploys Keystone hosts, enrolls hardware keys, opens secrets,
+and escalates single Kubernetes commands. It is a shell script
+(`packages/ks/ks.sh`) that front-ends the tools which do the real work:
+`nixos-rebuild` for this host, `ks-fleet` for every other host,
+`keystone-approve-exec` for privileged execution, and `ykman`/`ssh-keygen`
+for tokens.
 
-## Help
-
-Use any of these forms to view help:
-
-```bash
-ks --help
-ks -h
-ks help
-ks help update
-ks update --help
-ks update -h
-```
+A subcommand belongs in `ks` only when a Keystone module, or the documented
+contributor workflow, invokes it. Anything else belongs in its own script
+under `bin/`.
 
 ## Global behavior
 
-- `HOSTS` is a comma-separated list such as `workstation,ocean`.
-- When `HOSTS` is omitted, `ks` resolves the current host from `hosts.nix`.
-- Repo discovery reads `/run/current-system/keystone-system-flake` (written at activation time by `keystone.systemFlake`). Override with `--flake <path>`.
+- `HOSTS` is a comma-separated list such as `workstation,ocean`. When omitted,
+  `ks` uses the current host.
+- A host that is not the current host is deployed by `ks-fleet deploy`. There
+  is one deploy path, not two.
+- Flake discovery reads `/run/current-system/keystone-system-flake` (written
+  at activation time by `keystone.systemFlake`). Override with `--flake
+  <path>` or `$KS_FLAKE`.
 
 ## Global flags
 
-- `--flake <PATH>`: Override the consumer flake path (default: read from `/run/current-system/keystone-system-flake`).
+- `--flake <PATH>`: consumer flake path.
+- `-h`, `--help`, `help`: show usage.
 
 ## Commands
 
 ### `ks build`
 
 ```bash
-ks build [--lock] [--user USERS] [--all-users] [HOSTS]
+ks build [HOSTS]
 ```
 
-Build Keystone configurations for one or more hosts.
+Build the system closure for each host and print the store paths.
 
-- `--lock`: Build full NixOS system closures instead of home-manager profiles.
-- `--user USERS`: Limit home-manager builds to a comma-separated user list.
-- `--all-users`: Build all home-manager users on each target host.
-
-Examples:
+### `ks switch`
 
 ```bash
-ks build
-ks build workstation,ocean
-ks build --user alice,agent-coder workstation
-ks build --lock ocean
+ks switch [--boot] [HOSTS]
 ```
+
+Build and activate the current local state. No pull, no relock, no push.
+
+- `--boot`: register the generation for next boot instead of switching now.
 
 ### `ks update`
 
 ```bash
-ks update [--debug] [--dev] [--boot] [--pull] [--lock] [--user USERS] [--all-users] [HOSTS]
+ks update [--dev] [--lock] [--boot] [HOSTS]
 ```
 
-Pull, verify, build, and deploy Keystone hosts.
+Pull, relock, build, deploy, and push. Lock mode is the default.
 
-Lock mode (pull latest flake inputs, build, push) is the default behavior.
-Use `--dev` to deploy the current local checkout without locking.
-Use `ks switch` to apply the current local state without any pull, lock, or push steps.
+- `--dev`: skip the pull, relock, and push steps; deploy the local checkout.
+- `--lock`: force lock mode. This is the default.
+- `--boot`: register the generation for next boot instead of switching now.
 
-- `--debug`: Show warnings from `git` and `nix` commands.
-- `--dev`: Build and deploy the current unlocked checkout without pull, lock, or push.
-- `--boot`: Register the new generation for next boot without switching now.
-- `--pull`: Pull managed repos only, then stop. Only takes effect when combined with `--dev`; without `--dev` it is ignored and the full lock-mode cycle runs.
-- `--lock`: Force lock mode explicitly. This is the default; it overrides `--dev` when both are passed.
-- `--user USERS`: Limit home-manager activation to a comma-separated user list.
-- `--all-users`: Activate all home-manager users on each target host.
-
-Examples:
+### `ks activate`
 
 ```bash
-ks update
-ks update --dev workstation
-ks update --boot ocean
-ks update --pull --dev
+ks activate <STORE_PATH>
 ```
 
-### `ks agents`
+Activate a pre-built system closure. Refuses any path outside `/nix/store`.
+This is the verb the privileged-approval allowlist grants — see
+`keystone.security.privilegedApproval`.
+
+### `ks approve`
 
 ```bash
-ks agents <pause|resume|status> <agent|all> [reason]
+ks approve --reason REASON -- COMMAND [ARG ...]
 ```
 
-Control task-loop pause state for one agent or the full agent fleet.
+Run an allowlisted privileged command. `keystone-approve-exec` owns the
+allowlist and is asked to validate the request first, so a rejected request
+never raises an authentication prompt. Execution goes through `pkexec` in a
+graphical session and `sudo` otherwise.
 
-- `pause`: Create the pause marker so scheduled task-loop runs exit before ingest and execution.
-- `resume`: Remove the pause marker and allow scheduled task-loop runs again.
-- `status`: Show whether the target agent task loop is paused.
-
-Examples:
-
-```bash
-ks agents pause drago "waiting for human review"
-ks agents pause all "human focus block"
-ks agents status luce
-ks agents resume all
-```
-
-### `ks docs`
-
-```bash
-ks docs [topic|path]
-```
-
-Browse Keystone Markdown docs in the terminal with `glow` and `fzf`.
-
-- With no argument, `ks docs` opens an interactive picker over Markdown files in `docs/` only.
-- In the picker, type to filter, press Enter to open, and press Esc to cancel.
-- Topic shortcuts: `os`, `terminal`, `desktop`, `agents`.
-- Relative docs paths also work.
-
-Examples:
-
-```bash
-ks docs
-ks docs desktop
-ks docs terminal/terminal.md
-```
-
-### `ks hardware-key`
-
-```bash
-ks hardware-key doctor [user|user/key] [--json]
-ks hardware-key secrets [--json]
-```
-
-Inspect hardware-key wiring for the current host and current user.
-
-- `doctor` validates registered SSH hardware keys, host root-key wiring, current-user `ageYubikey` identities, local YubiKey visibility, FIDO2 device visibility, and disk-unlock status when available.
-- With no selector, `doctor` prefers the current user’s registered keys and falls back to all registered keys when no current-user keys exist.
-- `secrets` recipient and rekey orchestration lives under `ks secrets` (`edit`, `sync`, `rekey`) — see `conventions/secrets.md`. `ks hardware-key secrets` still only reports the detected secrets layout.
-
-Examples:
-
-```bash
-ks hardware-key doctor
-ks hardware-key doctor ncrmro
-ks hardware-key doctor ncrmro/yubi-black --json
-ks hardware-key secrets --json
-```
+Requires `keystone.security.privilegedApproval.enable`.
 
 ### `ks kube`
 
 ```bash
-ks kube sudo [--cluster NAME] [--user NAME] -- <kubectl args...>
+ks kube sudo [--user NAME] [--cluster NAME] -- <kubectl args...>
 ```
 
-Per-command Kubernetes privilege escalation via RBAC impersonation. Day-to-day
-kubectl runs with an unprivileged identity; `ks kube sudo` re-runs one command
-as `kubectl --as=<user> --as-group=keystone:sudoers <args...>`, then exits with
-kubectl's status.
+Per-command Kubernetes privilege escalation via RBAC impersonation. Re-runs
+one command as `kubectl --as=<user> --as-group=keystone:sudoers`, then exits
+with kubectl's status.
 
 - The impersonated user defaults to `$USER`; override with `--user`.
 - Elevated rights come from the `keystone:sudoers` impersonation group. Its
-  RBAC bindings live in ks.systems/services `access/sudo.yaml` — escalation is
-  scoped by that role, never `system:masters` (impersonating `system:*`
-  identities is refused).
-- The environment (including `KUBECONFIG`) passes through untouched. `--cluster`
-  is accepted but reserved: kubectl currently resolves the cluster from the
-  kubeconfig/current context; the flag becomes a selector once a cluster
-  registry exists.
-- One stderr line announces the impersonated identity and group before exec.
-- No root or `ks approve` gate is required today: enforcement is server-side
-  RBAC. A polkit approval ceremony lands when
-  `keystone.security.privilegedApproval` grows non-root `runAs` support.
+  RBAC bindings live in ks.systems/services `access/sudo.yaml`. Impersonating
+  a `system:*` identity is refused.
+- `--cluster` is accepted but reserved: kubectl resolves the cluster from the
+  kubeconfig context.
+- Enforcement is server-side RBAC, so no root or `ks approve` gate applies.
 
 Examples:
 
@@ -178,166 +111,55 @@ ks kube sudo -- delete pod stuck-pod -n prod
 ks kube sudo --user alice -- get secrets -A
 ```
 
-### `ks photos`
+### `ks secrets`
 
 ```bash
-ks photos search [options]
-ks photos people [options]
-ks photos download <asset-id> [options]
-ks photos preview <asset-id>
+ks secrets edit FILE
 ```
 
-Search and preview the remote Immich-backed photo library.
+Open a sops-encrypted file. Recipients come from the hardware-key registry —
+see `keystone.keys` and `hardwareKeyRegistrations.<name>.ageRecipients`.
 
-- `Keystone Photos` is the canonical name for this feature.
-- The public CLI entrypoint is `ks photos`.
-- `immich-search` is legacy spec wording and should not be used for new docs.
-
-Examples:
+### `ks hardware-key`
 
 ```bash
-ks photos search --text "acme"
-ks photos search --album "Screenshots - alice" --tag "receipt" --city "Austin"
-ks photos search --text "nick romero" --kind business-card
-ks photos search --person "Nick Romero" --type photo
-ks photos search --filename "IMG_" --camera-make "Apple" --camera-model "iPhone 15 Pro"
-ks photos people --json
-ks photos search --text "ks build" --type screenshot --from 2026-01-01 --to 2026-03-31
+ks hardware-key doctor [--host HOST] [--strict] [--json]
+ks hardware-key register NAME [--serial SERIAL] [--owner USER] [--repo DIR]
 ```
 
-### `ks screenshots`
+`doctor` delegates to `bin/ks-hardware-key-audit`: it compares committed
+hardware-key state with a live host and is read-only.
 
-```bash
-ks screenshots sync [options]
+`register` enrolls a physically connected token. It reads the serial with
+`ykman`, creates a resident `ed25519-sk` credential (two touches: one for the
+credential, one for the PAM/U2F registration), reads the age recipient from
+`age-plugin-yubikey`, and prints the two blocks a consumer flake needs:
+
+```nix
+keystone.hardwareKeys.<name> = "<serial>";
+keystone.hardwareKeyRegistrations.<name> = {
+  owner = "...";
+  sshPublicKeys = [ ... ];
+  pamU2f = [ ... ];
+  ageRecipients = [ ... ];
+};
 ```
 
-Sync local PNG screenshots into the configured Immich server.
+The key handle is written to `<repo>/hardware-keys/<name>{,.pub}`. `register`
+never edits the flake: enrollment is a fact about hardware, so a human
+reviews the block and commits it.
 
-- `ks screenshots` manages the local screenshot pipeline.
-- `ks photos` remains the remote search and preview surface.
+## Removed commands
 
-Examples:
+`ks` was a Rust CLI until 2026-08-02. These subcommands went with it and were
+not ported: `agent`, `agent-loop`, `agents`, `docs`, `doctor`, `grafana`,
+`install`, `menu`, `notification`, `notify`, `photos`, `print`, `project`,
+`screenshots`, `sync-agent-assets`, `sync-host-keys`, `task`, `template`.
 
-```bash
-ks screenshots sync
-ks screenshots sync --directory ~/Pictures --album-name "Screenshots - alice"
-ks screenshots sync --url https://photos.example.com --api-key-file /run/secrets/alice-immich-api-key
-```
+Their replacements, where one exists:
 
-### `ks switch`
-
-```bash
-ks switch [--boot] [HOSTS]
-```
-
-Build and deploy the current local state without pull, lock, or push steps.
-
-- `--boot`: Register the new generation for next boot without switching now.
-
-Examples:
-
-```bash
-ks switch
-ks switch workstation,ocean
-ks switch --boot ocean
-```
-
-### `ks sync-agent-assets`
-
-```bash
-ks sync-agent-assets
-```
-
-Refresh generated Keystone agent assets for the current user from the current
-profile manifest.
-
-- Rewrites generated instruction files, curated command files, and managed
-  Codex skills from the live keystone checkout in development mode.
-- This is the supported no-sudo refresh path for development-mode agent assets.
-
-Example:
-
-```bash
-ks sync-agent-assets
-```
-
-### `ks sync-host-keys`
-
-```bash
-ks sync-host-keys
-```
-
-Fetch SSH host public keys from live hosts and write them into `hosts.nix`.
-
-- Hosts without `sshTarget` are skipped.
-- If `sshTarget` is unreachable and `fallbackIP` exists, `ks` retries over `fallbackIP`.
-
-Example:
-
-```bash
-ks sync-host-keys
-```
-
-### `ks grafana dashboards`
-
-```bash
-ks grafana dashboards <apply|export> [uid]
-```
-
-Manage checked-in Keystone Grafana dashboards through the Grafana API.
-
-- `apply`: Push every checked-in dashboard JSON file to Grafana, and delete stale keystone-managed dashboards that are no longer in the repo.
-- `export <uid>`: Pull one dashboard by UID into its checked-in JSON file.
-- `GRAFANA_URL`: Override the Grafana base URL.
-- `GRAFANA_API_KEY`: Override the Grafana API key.
-- In development mode, `ks update --dev`, `ks update`, and `ks switch` automatically sync keystone dashboards after deployment.
-
-Examples:
-
-```bash
-ks grafana dashboards apply
-ks grafana dashboards export keystone-host-overview
-```
-
-### `ks agent`
-
-```bash
-ks agent [--local [MODEL]] [args...]
-```
-
-Launch an AI coding agent with Keystone conventions and host context.
-
-`ks agent` launches `claude` by default. Its static base prompt comes from the
-generated `~/.keystone/AGENTS.md`, then `ks` appends live host and fleet context.
-The generated command surface inside the session is curated to `/ks`, optional
-`/ks-dev` in development mode, and `/deepwork`.
-
-- `--local [MODEL]`: Use the local Ollama-backed model, or the configured default model.
-- Remaining args are passed through to the underlying `claude` invocation.
-
-Examples:
-
-```bash
-ks agent
-ks agent --local
-ks agent --local qwen2.5-coder:14b --continue
-```
-
-### `ks doctor`
-
-```bash
-ks doctor [--local [MODEL]] [args...]
-```
-
-Print the scripted fleet doctor report, then optionally launch the default agent.
-
-- `--local [MODEL]`: If you choose to launch the agent, use the local Ollama-backed model, or the configured default model.
-- Remaining args are passed through to the agent if you choose to launch it.
-
-Examples:
-
-```bash
-ks doctor
-ks doctor --local
-ks doctor --local mistral --continue
-```
+| Removed | Use instead |
+| --- | --- |
+| `ks install` | `ks-fleet install` (nixos-anywhere against the ISO's sshd) |
+| `ks agent-loop` | the agent task-loop shell script (always used now) |
+| `ks menu update` | nothing — the Walker update menu is gated off |
