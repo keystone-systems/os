@@ -603,7 +603,7 @@ machine_install() {
 # the initrd must never ask for a credential the LUKS header does not hold.
 # Checked here because a fresh install is exactly when the two can diverge.
 install_verify_credentials() {
-  local h="$1" targets opts name dump
+  local h="$1" targets opts name dev dump
   targets="$(nix eval --json "$FLAKE#nixosConfigurations.$h.config.keystone.hardwareKeyLuksTargets" 2>/dev/null)" || return 0
   for name in $(jq -r '.[]' <<<"$targets" 2>/dev/null); do
     opts="$(nix eval --json "$FLAKE#nixosConfigurations.$h.config.boot.initrd.luks.devices.\"$name\".crypttabExtraOpts" 2>/dev/null)" || continue
@@ -611,7 +611,13 @@ install_verify_credentials() {
       echo "$h: $name requests no FIDO2 credential -- passphrase path retained"
       continue
     }
-    dump="$("${SSH_CMD[@]}" "sudo -n cryptsetup luksDump /dev/disk/by-partlabel/disk-*-$name 2>/dev/null" 2>/dev/null)" || true
+    # Ask the config for the device instead of guessing a disk-*-<name>
+    # partlabel: the initrd LUKS table is the same source of truth the tpm
+    # module derives from, and a zvol-backed target has no partlabel at all.
+    dev="$(nix eval --raw "$FLAKE#nixosConfigurations.$h.config.boot.initrd.luks.devices.\"$name\".device" 2>/dev/null)" ||
+      dev="/dev/disk/by-partlabel/disk-*-$name"
+    # shellcheck disable=SC2029 # $dev is resolved here, for the target to use
+    dump="$("${SSH_CMD[@]}" "sudo -n cryptsetup luksDump $dev 2>/dev/null" 2>/dev/null)" || true
     if [[ -z $dump ]]; then
       echo "$h: WARNING cannot read the $name LUKS header; FIDO2 request unverified" >&2
       continue

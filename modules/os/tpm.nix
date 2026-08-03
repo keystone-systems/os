@@ -17,12 +17,31 @@ let
   # Convert PCR list to comma-separated string for systemd-cryptenroll
   tpmPCRString = lib.concatStringsSep "," (map toString cfg.pcrs);
 
-  # Credstore device path (always ZFS zvol when using ZFS storage)
+  # The device every enrollment script and status check operates on. Derived
+  # from the initrd's own LUKS table rather than guessed from storage.type:
+  # hosts bring their own disko layouts, so a guess keyed on the storage
+  # backend targets devices that do not exist. Found live on ks-test-delltop
+  # (2026-08-02): the guess produced /dev/disk/by-partlabel/disk-root-root on
+  # a host whose only LUKS device is disk-disk1-crypted, so every enrollment
+  # tool was inoperable there. The initrd table is what actually unlocks at
+  # boot, which makes it the one authoritative answer.
+  # Preference order: the explicit option, then the two names storage.nix
+  # itself produces (`credstore` on zfs, `cryptroot` on managed ext4 -- the
+  # latter matters because hibernate adds a `cryptswap` sibling, so "the only
+  # LUKS device" stops being well-defined there), then a host's single
+  # self-declared device.
+  luksDevices = config.boot.initrd.luks.devices;
   credstoreDevice =
-    if osCfg.storage.type == "zfs" then
-      "/dev/zvol/rpool/credstore"
+    if cfg.credstoreDevice != null then
+      cfg.credstoreDevice
+    else if luksDevices ? credstore then
+      luksDevices.credstore.device
+    else if luksDevices ? cryptroot then
+      luksDevices.cryptroot.device
+    else if length (attrNames luksDevices) == 1 then
+      (head (attrValues luksDevices)).device
     else
-      "/dev/disk/by-partlabel/disk-root-root";
+      null;
 
   # Helper to create executable substituted scripts
   makeExecutableScript =
@@ -109,6 +128,15 @@ in
 {
   config = mkIf (osCfg.enable && cfg.enable) {
     assertions = [
+      {
+        assertion = credstoreDevice != null;
+        message = ''
+          keystone.os.tpm cannot determine which LUKS device to enroll: the
+          host declares ${toString (length (attrNames luksDevices))} initrd
+          LUKS devices (${concatStringsSep ", " (attrNames luksDevices)}) and
+          none is named `credstore`. Set keystone.os.tpm.credstoreDevice.
+        '';
+      }
       {
         assertion = length cfg.pcrs > 0;
         message = "TPM enrollment requires at least one PCR to bind to";

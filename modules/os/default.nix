@@ -415,6 +415,18 @@ in
           Common alternatives: [7] for Secure Boot only (more update-resilient)
         '';
       };
+
+      credstoreDevice = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          LUKS device the enrollment tooling operates on. When null, it is
+          derived from `boot.initrd.luks.devices`: the target named
+          `credstore` if one exists, otherwise the host's single LUKS device.
+          A host with several LUKS devices and none named `credstore` must
+          set this explicitly.
+        '';
+      };
     };
 
     # Remote unlock (initrd SSH)
