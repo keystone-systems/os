@@ -84,9 +84,9 @@ What you should see:
 3. NetworkManager (or `dhcpcd`) acquiring a DHCP lease — this is the point
    the user mentioned as a common stopping point.
 4. `Reached target Multi-User System.` on serial.
-5. Either a `keystone login:` prompt on tty1 (graphical window) **or**, if
-   you've set `keystone.installer.tui.enable = true`, the Keystone installer
-   TUI taking over tty1.
+5. A `keystone login:` prompt on tty1 (graphical window). The ISO is a live
+   environment, not an interactive installer — install it from an operator
+   machine with `ks-fleet install <host>`.
 
 If step 5 never happens in `--headless` mode, that's expected: tty1 is a
 *graphical* console, and `--headless` only attaches the serial port. Re-run

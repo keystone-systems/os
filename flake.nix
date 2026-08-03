@@ -714,7 +714,7 @@
               echo "  ./bin/pre-commit       - Install or run the pre-commit hook"
               echo "  ci                     - Run nix flake check"
               echo ""
-              echo "Rust packages:  packages/keystone-ha/, packages/ks/"
+              echo "Rust packages:  packages/keystone-ha/"
 
               alias ci='nix flake check'
             '';

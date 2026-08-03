@@ -26,6 +26,8 @@ commands:
   kube sudo [--user U] -- ARG [ARG ...]
                              re-run one kubectl command with RBAC impersonation
   secrets edit FILE          open a sops-encrypted file
+  menu update entries|dispatch
+                             Walker update provider (inert: emits no entries)
   hardware-key doctor [--host H] [--strict] [--json]
                              audit committed hardware-key state against a host
   hardware-key register NAME [--serial S] [--owner U] [--repo DIR]
@@ -52,57 +54,50 @@ note() {
 FLAKE=
 SYSTEM_FLAKE_FILE=/run/current-system/keystone-system-flake
 
+# modules/shared/system-flake.nix declares the runtime pointer the single
+# source of truth, with `--flake` as the only accepted override. Resolve once.
 resolve_flake() {
-  if [ -n "$FLAKE" ]; then
-    printf '%s\n' "$FLAKE"
-    return
+  if [ -z "$FLAKE" ]; then
+    [ -r "$SYSTEM_FLAKE_FILE" ] ||
+      die "no consumer flake found. Pass --flake PATH."
+    read -r FLAKE <"$SYSTEM_FLAKE_FILE"
   fi
-  if [ -n "${KS_FLAKE:-}" ]; then
-    printf '%s\n' "$KS_FLAKE"
-    return
-  fi
-  if [ -r "$SYSTEM_FLAKE_FILE" ]; then
-    head -n1 "$SYSTEM_FLAKE_FILE"
-    return
-  fi
-  die "no consumer flake found. Pass --flake PATH or set KS_FLAKE."
+  printf '%s\n' "$FLAKE"
 }
 
-current_host() {
-  hostname
-}
-
-# Expand a comma-separated host list, defaulting to the current host.
-host_list() {
-  if [ -z "${1:-}" ]; then
-    current_host
-    return
-  fi
-  printf '%s\n' "$1" | tr ',' '\n' | sed '/^$/d'
+# Split a comma-separated host list into HOSTS, defaulting to this host.
+# Bash splits natively; no fork, and the caller keeps its own shell so `die`
+# inside the loop aborts ks rather than a subshell.
+read_hosts() {
+  IFS=, read -r -a HOSTS <<<"${1:-$HOSTNAME}"
 }
 
 # ks-fleet owns every host that is not this one. Keep one deploy path.
 deploy_remote() {
   local host="$1" flake="$2"
   command -v ks-fleet >/dev/null 2>&1 ||
-    die "ks-fleet is not on PATH; it deploys hosts other than $(current_host)."
+    die "ks-fleet is not on PATH; it deploys hosts other than $HOSTNAME."
   note "delegating $host to ks-fleet deploy"
   ks-fleet deploy "$host" --flake "$flake" --durable
 }
 
 cmd_build() {
-  local hosts flake host
-  hosts=$(host_list "${1:-}")
+  local flake host
+  local -a HOSTS installables=()
+  read_hosts "${1:-}"
   flake=$(resolve_flake)
-  printf '%s\n' "$hosts" | while IFS= read -r host; do
-    note "building $host"
-    nix build --print-out-paths \
-      "${flake}#nixosConfigurations.${host}.config.system.build.toplevel"
+  for host in "${HOSTS[@]}"; do
+    installables+=("${flake}#nixosConfigurations.${host}.config.system.build.toplevel")
   done
+  note "building ${HOSTS[*]}"
+  # One invocation: nix evaluates the shared flake once and schedules the
+  # builds together, instead of a cold eval per host.
+  nix build --print-out-paths "${installables[@]}"
 }
 
 cmd_switch() {
-  local action=switch hosts flake host self
+  local action=switch flake host
+  local -a HOSTS
   while [ "$#" -gt 0 ]; do
     case "$1" in
     --boot)
@@ -114,14 +109,15 @@ cmd_switch() {
     *) break ;;
     esac
   done
-  hosts=$(host_list "${1:-}")
+  read_hosts "${1:-}"
   flake=$(resolve_flake)
-  self=$(current_host)
-  printf '%s\n' "$hosts" | while IFS= read -r host; do
-    if [ "$host" = "$self" ]; then
+  for host in "${HOSTS[@]}"; do
+    if [ "$host" = "$HOSTNAME" ]; then
       note "nixos-rebuild $action on $host"
       sudo nixos-rebuild "$action" --flake "${flake}#${host}"
     else
+      [ "$action" = switch ] ||
+        die "ks-fleet deploy has no --boot mode; $host cannot take --boot."
       deploy_remote "$host" "$flake"
     fi
   done
@@ -149,9 +145,9 @@ cmd_update() {
     esac
   done
   hosts="${1:-}"
-  flake=$(resolve_flake)
 
   if [ "$mode" = lock ]; then
+    flake=$(resolve_flake)
     note "pulling $flake"
     git -C "$flake" pull --ff-only
     note "relocking flake inputs"
@@ -174,15 +170,23 @@ cmd_update() {
 }
 
 cmd_activate() {
-  local closure="${1:-}"
+  local closure="${1:-}" resolved
   [ -n "$closure" ] || die "activate needs a store path"
-  case "$closure" in
+  # Canonicalize first: a plain prefix test accepts /nix/store/../tmp/evil,
+  # and this runs as root inside the pkexec child, so an attacker who can
+  # write under /tmp could otherwise land a fake switch-to-configuration.
+  resolved=$(realpath -e -- "$closure" 2>/dev/null) ||
+    die "no such path: $closure"
+  case "$resolved" in
   /nix/store/*) ;;
-  *) die "refusing to activate a path outside /nix/store: $closure" ;;
+  *) die "refusing to activate a path outside /nix/store: $resolved" ;;
   esac
-  [ -x "${closure}/bin/switch-to-configuration" ] ||
-    die "not a system closure: $closure"
-  "${closure}/bin/switch-to-configuration" switch
+  [ -x "${resolved}/bin/switch-to-configuration" ] ||
+    die "not a system closure: $resolved"
+  # Register the generation in the system profile before switching, so the
+  # boot menu and `nix-env --list-generations` agree with what is running.
+  nix-env --profile /nix/var/nix/profiles/system --set "$resolved"
+  "${resolved}/bin/switch-to-configuration" switch
 }
 
 cmd_approve() {
@@ -235,7 +239,9 @@ cmd_kube() {
       shift 2
       ;;
     --cluster)
-      # Reserved: kubectl resolves the cluster from the current context.
+      # Reserved: kubectl resolves the cluster from the kubeconfig context.
+      # Say so rather than accepting a flag that changes nothing.
+      note "--cluster is not implemented; using the current kubeconfig context"
       shift 2
       ;;
     --)
@@ -252,6 +258,22 @@ cmd_kube() {
   esac
   note "impersonating ${user} in group keystone:sudoers"
   exec kubectl --as="$user" --as-group=keystone:sudoers "$@"
+}
+
+# The Walker update provider calls `ks menu update entries` on every menu
+# open and `ks menu update dispatch <token>` on activation. Its backend was
+# the Rust update-menu; nothing replaced it. Emit no entries rather than
+# leaving the provider to parse an error, so the rest of the menu still
+# works. Deploy from a terminal with `ks update`.
+cmd_menu() {
+  [ "${1:-}" = update ] || die "usage: ks menu update {entries|dispatch TOKEN}"
+  case "${2:-}" in
+  entries) printf '[]\n' ;;
+  dispatch)
+    note "the update menu is not available; run 'ks update' from a terminal"
+    ;;
+  *) die "usage: ks menu update {entries|dispatch TOKEN}" ;;
+  esac
 }
 
 cmd_secrets() {
@@ -273,6 +295,16 @@ cmd_hardware_key() {
   doctor)
     command -v ks-hardware-key-audit >/dev/null 2>&1 ||
       die "ks-hardware-key-audit is not on PATH"
+    # The audit script defaults --flake to $PWD and requires --host. Feed it
+    # what ks already resolved unless the caller named them.
+    case " $* " in
+    *" --flake "*) ;;
+    *) set -- --flake "$(resolve_flake)" "$@" ;;
+    esac
+    case " $* " in
+    *" --host "*) ;;
+    *) set -- --host "$HOSTNAME" "$@" ;;
+    esac
     exec ks-hardware-key-audit "$@"
     ;;
   register) hardware_key_register "$@" ;;
@@ -285,7 +317,8 @@ cmd_hardware_key() {
 # review it, and commit it — enrollment is a fact about hardware, so a human
 # confirms it lands in git.
 hardware_key_register() {
-  local name='' serial='' owner="${USER:-}" repo='' handle age_recipient pam_fragment pubkey
+  local name='' serial='' owner="${USER:-}" repo='' handle age_recipient pam_fragment
+  local pubkey keytype keydata
   name="${1:-}"
   [ -n "$name" ] || die "usage: ks hardware-key register NAME [--serial S] [--owner U] [--repo DIR]"
   shift
@@ -310,10 +343,13 @@ hardware_key_register() {
   [ -n "$repo" ] || repo=$(resolve_flake)
 
   if [ -z "$serial" ]; then
-    serial=$(ykman list --serials | head -n1)
-    [ -n "$serial" ] || die "no hardware key detected. Insert one, or pass --serial."
-    [ "$(ykman list --serials | wc -l)" -eq 1 ] ||
+    # One enumeration: ykman is a Python process talking to the token.
+    local -a serials
+    mapfile -t serials < <(ykman list --serials)
+    [ "${#serials[@]}" -gt 0 ] || die "no hardware key detected. Insert one, or pass --serial."
+    [ "${#serials[@]}" -eq 1 ] ||
       die "more than one hardware key is connected. Pass --serial to choose one."
+    serial="${serials[0]}"
   fi
   note "using token serial ${serial}"
 
@@ -326,15 +362,16 @@ hardware_key_register() {
     ssh-keygen -t ed25519-sk -O resident -O application="ssh:${name}" \
       -C "${owner}-${name}" -N '' -f "$handle"
   fi
-  pubkey=$(cut -d' ' -f1,2 "${handle}.pub")
+  read -r keytype keydata _ <"${handle}.pub"
+  pubkey="$keytype $keydata"
 
   age_recipient=$(age-plugin-yubikey --list |
-    grep -A1 "Serial: ${serial}" | grep -o 'age1yubikey1[a-z0-9]*' | head -n1 || true)
+    grep -A1 "Serial: ${serial}" | grep -m1 -o 'age1yubikey1[a-z0-9]*' || true)
   [ -n "$age_recipient" ] ||
     note "no age recipient found for ${serial}; run 'age-plugin-yubikey' to generate one"
 
   note "touch the token again to create the PAM/U2F registration"
-  pam_fragment=$(pamu2fcfg -o "pam://$(current_host)" -i "pam://$(current_host)" |
+  pam_fragment=$(pamu2fcfg -o "pam://$HOSTNAME" -i "pam://$HOSTNAME" |
     sed "s/^${owner}://" || true)
 
   cat <<EOF
@@ -385,6 +422,7 @@ main() {
   approve) cmd_approve "$@" ;;
   kube) cmd_kube "$@" ;;
   hardware-key) cmd_hardware_key "$@" ;;
+  menu) cmd_menu "$@" ;;
   secrets) cmd_secrets "$@" ;;
   *) die "unknown command: ${command}. Run 'ks --help'." ;;
   esac

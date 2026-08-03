@@ -38,12 +38,20 @@ let
   # mksquashfs derivation.
   configChecks = {
     systemPackages = builtins.length isoEval.config.environment.systemPackages > 0;
-    installerService = isoEval.config.systemd.services.keystone-installer.serviceConfig.ExecStart != "";
+    # The ISO is a live environment reached over ssh, not an interactive
+    # installer: tty1 gets a plain login shell and `ks-fleet install` drives
+    # the install from an operator machine.
+    loginShell = isoEval.config.systemd.services."getty@tty1".wantedBy or [ ] != [ ];
     sshEnabled = isoEval.config.services.openssh.enable;
     # boot.supportedFilesystems is an attrset in nixos-unstable (e.g. { zfs = true; })
     zfsSupport = isoEval.config.boot.supportedFilesystems.zfs or false;
-    flakesEnabled = builtins.elem "flakes" isoEval.config.nix.settings.experimental-features;
-    networkManager = isoEval.config.networking.networkmanager.enable;
+    # `or [ ]` because this standalone eval does not import the keystone.os
+    # stack that sets experimental-features. Without it the attribute is
+    # missing, evaluation aborts, and every check here is unreachable — which
+    # is why this test silently stopped gating the ISO module.
+    flakesEnabled = builtins.elem "flakes" (isoEval.config.nix.settings.experimental-features or [ ]);
+    # Classic DHCP, not NetworkManager, so sshd comes up reliably headless.
+    dhcp = isoEval.config.networking.useDHCP;
     hostId = isoEval.config.networking.hostId != "";
   };
 

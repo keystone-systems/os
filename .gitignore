@@ -69,7 +69,7 @@ worktree
 .claude/worktrees/
 __pycache__/
 
-# Node.js (for keystone-installer-ui)
+# Node.js
 node_modules/
 dist/
 *.log

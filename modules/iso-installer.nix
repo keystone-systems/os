@@ -49,6 +49,15 @@ in
     # The live installer builds the target system before first boot, so it needs
     # the shared Keystone cache itself; the normal keystone.os cache defaults are
     # not imported into this minimal ISO module stack.
+    # The live environment realizes flake-based closures (nixos-anywhere
+    # builds against the consumer flake), so it needs flakes itself. This
+    # minimal ISO stack does not import keystone.os, which is where the rest
+    # of the fleet gets these.
+    nix.settings.experimental-features = lib.mkDefault [
+      "nix-command"
+      "flakes"
+    ];
+
     nix.settings.substituters = lib.mkBefore [ "https://ks-systems.cachix.org" ];
     nix.settings.trusted-public-keys = lib.mkBefore [
       "ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo="

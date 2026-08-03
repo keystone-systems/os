@@ -108,13 +108,13 @@ per-agent via `keystone.os.agents.<name>.archetype`.
 
 **Development mode** (`development = true` with repos registered): Repo-backed
 shell entrypoints in the user path are linked from the checkout, and generated
-agent assets are refreshed from the live checkout by `ks sync-agent-assets`
+agent assets are refreshed from the live checkout by `keystone-sync-agent-assets`
 (also run during activation).
 
 **Codex exception**: Codex 0.114.0 does not reliably discover skills when
 `SKILL.md` and `agents/openai.yaml` are symlinks. Keystone therefore materializes
 managed files under `~/.codex/skills/` as regular files. Use
-`ks sync-agent-assets` to refresh them without a full rebuild; activation runs
+`keystone-sync-agent-assets` to refresh them without a full rebuild; activation runs
 the same refresh path automatically.
 
 **Locked mode** (default): Files are immutable Nix store copies. Rebuild required.

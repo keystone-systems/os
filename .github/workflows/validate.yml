@@ -97,8 +97,8 @@ jobs:
               - 'flake.nix'
               - 'flake.lock'
               - 'packages/ks/**'
-              - 'tests/module/ks-*.nix'
-              - 'tests/module/keystone-photos.nix'
+              - 'tests/module/keystone-update-approve-flow.nix'
+              - 'tests/module/approve-exec-script.nix'
             check_scripts:
               - '.github/workflows/validate.yml'
               - 'flake.nix'

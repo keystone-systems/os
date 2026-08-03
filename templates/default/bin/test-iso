@@ -318,16 +318,16 @@ ssh_cmd() {
         "${ADMIN_USERNAME}@localhost" "$@"
 }
 
-# Run the headless installer via `ks install --host --disk` and feed the
-# required destructive confirmation token over stdin.
+# The ISO-side installer was deleted with the Rust CLI. Installs now run from
+# the operator machine (`ks-fleet install <host>`, disko + nixos-anywhere over
+# the ISO's sshd) rather than by ssh-ing in and driving a local command, so
+# this step needs re-targeting rather than a one-line substitution: ks-fleet
+# reads `fleetMeta`, which this generated fixture does not declare.
 run_e2e_installer() {
     local host="${E2E_HOST:-laptop}"
-    log_info "E2E: running headless install for host '$host' on '$E2E_DISK_DEVICE'"
-    if ! ssh_cmd "printf 'destroy\n' | ks install --host $host --disk $E2E_DISK_DEVICE" 2>&1; then
-        log_error "E2E: ks install --host $host --disk $E2E_DISK_DEVICE failed"
-        return 1
-    fi
-    log_ok "E2E: install completed for host '$host'"
+    log_error "E2E: the install step is not ported to ks-fleet yet."
+    log_error "     Run it by hand: ks-fleet install $host --dry-run"
+    return 1
 }
 
 E2E_SCREENSHOT_DIR=""

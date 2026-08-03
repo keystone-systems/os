@@ -63,7 +63,7 @@ let
     };
   }) osAgents;
   # Consumer-flake agent-assets root. Skills/subagents are materialized here
-  # by `ks sync-agent-assets`; home-manager activation symlinks each tool's
+  # by `keystone-sync-agent-assets`; home-manager activation symlinks each tool's
   # home-dir subdir into the corresponding path. See
   # conventions/tool.cli-coding-agents.md § "Consumer Flake Agent Assets".
   consumerFlakeAgents =
@@ -167,7 +167,7 @@ in
     # at the consumer flake's `agents/<tool>/<subdir>/` path. Runs for both
     # admin and OS agent users — the L1→L2 inheritance contract in
     # conventions/tool.cli-coding-agents.md rule 18. The actual *content*
-    # under that path is written by `ks sync-agent-assets` (manual), not by
+    # under that path is written by `keystone-sync-agent-assets` (manual), not by
     # this activation. Activation never modifies file content; it only
     # ensures the symlink topology is correct.
     {
@@ -276,15 +276,15 @@ in
           # manual refresh path so they don't see empty skills/agents
           # subdirs without explanation.
           if [ "$is_agent_user" = "0" ] && [ -z "$(ls -A "$target" 2>/dev/null)" ]; then
-            echo "keystone-agent-asset-symlinks: $target is empty — run 'ks sync-agent-assets' to populate keystone-curated content" >&2
+            echo "keystone-agent-asset-symlinks: $target is empty — run 'keystone-sync-agent-assets' to populate keystone-curated content" >&2
           fi
         done
 
         # Per-tool instruction files (CLAUDE.md, GEMINI.md, AGENTS.md) —
         # file-level symlinks. Content lives in
         # `<consumer-flake>/agents/<tool>/<filename>`, written by
-        # `ks sync-agent-assets`. If the target doesn't exist yet, skip
-        # with a clear warning (the user has not run sync-agent-assets).
+        # `keystone-sync-agent-assets`. If the target doesn't exist yet, skip
+        # with a clear warning (the user has not run it).
         # Convention rules 19 and 20.
         instruction_files=( ${instructionFileBashArray} )
         for entry in "''${instruction_files[@]}"; do
@@ -295,7 +295,7 @@ in
           link="$HOME/$link_rel"
 
           if [ ! -f "$target" ]; then
-            echo "keystone-agent-asset-symlinks: instruction file $target does not exist yet; skipping $link (run 'ks sync-agent-assets' to populate)" >&2
+            echo "keystone-agent-asset-symlinks: instruction file $target does not exist yet; skipping $link (run 'keystone-sync-agent-assets' to populate)" >&2
             continue
           fi
 

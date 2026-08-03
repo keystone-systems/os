@@ -104,7 +104,7 @@ if [[ ! -f "$VARS_COPY" ]]; then
     install -m 0644 "$OVMF_VARS_TEMPLATE" "$VARS_COPY"
 fi
 
-# Scratch disk so a curious user can actually run `ks install` from inside the VM.
+# Scratch disk so the VM presents a realistic install target.
 if [[ ! -f "$DISK" ]]; then
     echo "Creating scratch install disk ($DISK, $DISK_SIZE)…" >&2
     nix shell --quiet nixpkgs#qemu --command qemu-img create -f qcow2 "$DISK" "$DISK_SIZE" >/dev/null
@@ -141,8 +141,8 @@ Memory:   ${MEMORY}M   vCPUs: $VCPUS   Accel: $ACCEL
 SSH:      ssh -p 12222 -o StrictHostKeyChecking=no root@localhost
           (only works if you set keystone.installer.sshKeys in flake.nix)
 
-Watch for: 'Reached target Multi-User System' → login prompt on tty1
-           (or the Keystone installer TUI if keystone.installer.tui.enable = true).
+Watch for: 'Reached target Multi-User System' → login prompt on tty1.
+           The ISO is a live environment; install it with `ks-fleet install`.
 Exit:      Ctrl+A then X (serial), or close the QEMU window.
 
 EOF

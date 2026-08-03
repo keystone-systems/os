@@ -531,7 +531,8 @@ let
                     ${pkgs.util-linux}/bin/setterm --clear all --cursor on > /dev/tty1 2>/dev/null || true
                     clear >/dev/null 2>&1 || true
                     echo 'Keystone installer live environment'
-                    echo 'Run `ks install` to choose a host from the embedded repo and install it.'
+                    echo 'This ISO is a live environment, not an installer.'
+                    echo 'From your operator machine, run: ks-fleet install <host>'
                     echo 'SSH is available if keys were embedded in the ISO.'
                     print
                   fi

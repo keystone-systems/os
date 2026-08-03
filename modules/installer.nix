@@ -77,12 +77,6 @@ in
       '';
     };
 
-    tui.enable = mkOption {
-      type = types.bool;
-      default = true;
-      description = "Whether the installer ISO should include and auto-start the ks.";
-    };
-
     isoImage = mkOption {
       type = types.package;
       readOnly = true;
@@ -115,10 +109,7 @@ in
               nixpkgs.overlays = [ keystoneInputs.keystoneOverlay ];
               _module.args.keystoneInputs = keystoneInputs;
 
-              keystone.installer = {
-                sshKeys = installerCfg.sshKeys;
-                tui.enable = installerCfg.tui.enable;
-              };
+              keystone.installer.sshKeys = installerCfg.sshKeys;
 
               keystone.os = {
                 enable = true;

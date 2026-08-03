@@ -59,7 +59,7 @@ test-template: ## Validate flake template evaluates correctly
 	@cd templates/default && nix flake check --no-build --override-input keystone "path:$(CURDIR)"
 	@echo "✅ Template validation passed"
 
-test-template-eval: ## Evaluate template configs (TUI output contract)
+test-template-eval: ## Evaluate template configs (generated-config contract)
 	nix build .#checks.x86_64-linux.template-evaluation --print-build-logs
 
 ## ISO Building
