@@ -15,19 +15,16 @@
   options,
   ...
 }:
-let
-  _ = builtins.trace "SHARED REPOS MODULE LOADING..." null;
-in
 with lib;
 let
   cfg = config.keystone;
   inputs = cfg._repoInputs;
+  # No explicit entry for the keystone input: it is now an ssh:// git input for
+  # ks.systems/os, which mkRepoEntry derives correctly as "ks.systems/os". The
+  # entry that used to live here still named ncrmro/keystone on GitHub -- the
+  # pre-migration home -- and being explicit made it outrank derivation, so
+  # every consumer registered a repo that no longer exists there.
   explicitRepos = {
-    "ncrmro/keystone" = {
-      url = "https://github.com/ncrmro/keystone.git";
-      flakeInput = "keystone";
-      branch = "main";
-    };
     "Unsupervisedcom/deepwork" = {
       url = "https://github.com/Unsupervisedcom/deepwork.git";
       flakeInput = "deepwork";
@@ -56,14 +53,6 @@ let
       config.osConfig
     else if options ? osConfig && options.osConfig ? value then
       options.osConfig.value
-    else
-      null;
-
-  _trace1 = builtins.trace "SHARED REPOS: config has osConfig: ${if config ? osConfig then "YES" else "NO"}" null;
-  _trace2 = builtins.trace "SHARED REPOS: options has osConfig: ${if options ? osConfig then "YES" else "NO"}" null;
-  _trace3 =
-    if osConfig != null then
-      builtins.trace "SHARED REPOS: osConfig.keystone.development is ${builtins.toJSON (osConfig.keystone.development or "MISSING")}" null
     else
       null;
 
@@ -111,11 +100,10 @@ let
         repo = if len >= 1 then removeSuffix ".git" (last parts) else null;
         owner = if len >= 2 then elemAt parts (len - 2) else null;
 
-        # Special case: if it's the keystone input and we're evaluating it
-        # locally, we might not have owner/repo in the path.
-        # Use ncrmro/keystone as a sensible default for the keystone input
-        # if name is "keystone".
-        defaultOwnerRepo = if name == "keystone" then "ncrmro/keystone" else name;
+        # Special case: under a ks-dev path override the keystone input is a
+        # store path with no owner/repo to recover, so fall back to its real
+        # home. This was ncrmro/keystone before the forge migration.
+        defaultOwnerRepo = if name == "keystone" then "ks.systems/os" else name;
 
         derivedName = if owner != null && repo != null then "${owner}/${repo}" else defaultOwnerRepo;
       in
