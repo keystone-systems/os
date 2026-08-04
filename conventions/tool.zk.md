@@ -53,7 +53,7 @@ zk --notebook-dir ~/notes list inbox/ --format json
 
 # Latest report in a chain
 zk --notebook-dir ~/notes list reports/ --tag "report/keystone-system" --tag "repo/ncrmro/nixos-config" \
-  --tag "source/deepwork/ks-doctor" --sort created- --limit 1 --format json
+  --tag "source/agent" --sort created- --limit 1 --format json
 
 # Latest presentation deck of a given kind
 zk --notebook-dir ~/notes list presentations/ --tag "presentation/architecture-briefing" \

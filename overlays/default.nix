@@ -12,7 +12,6 @@
   browser-previews,
   ghostty,
   yazi,
-  deepwork,
   grafana-mcp-src,
   lfs-s3-src,
 }:
@@ -37,8 +36,6 @@ let
   chrome-devtools-mcp-src = ../packages/chrome-devtools-mcp;
   grafana-mcp-pkg-src = ../packages/grafana-mcp;
   lfs-s3-pkg-src = ../packages/lfs-s3;
-  deepwork-library-jobs-src = ../packages/deepwork-library-jobs;
-  keystone-deepwork-jobs-src = ../packages/keystone-deepwork-jobs;
   keystone-conventions-src = ../packages/keystone-conventions;
   slidev-src = ../packages/slidev;
   himalaya-flake = himalaya;
@@ -48,7 +45,6 @@ let
   browser-previews-flake = browser-previews;
   ghostty-flake = ghostty;
   yazi-flake = yazi;
-  deepwork-flake = deepwork;
 in
 final: prev:
 let
@@ -118,13 +114,6 @@ in
     google-chrome = browser-previews-flake.packages.${system}.google-chrome;
     # Desktop tools from flake inputs
     yazi = yazi-flake.packages.${system}.default;
-    deepwork = deepwork-flake.packages.${system}.default;
-    deepwork-library-jobs = final.callPackage deepwork-library-jobs-src {
-      deepwork-src = deepwork-flake;
-    };
-    keystone-deepwork-jobs = final.callPackage keystone-deepwork-jobs-src {
-      keystone-src = self;
-    };
     keystone-conventions = final.callPackage keystone-conventions-src {
       keystone-src = self;
     };

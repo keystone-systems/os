@@ -36,7 +36,7 @@ The agent-space is the agent's primary working directory (`/home/agent-{name}/no
 │   ├── shared/                  # Reusable fragments (RFC 2119 preamble, output rules)
 │   ├── archetypes.yaml          # engineer / product archetype definitions
 │   ├── compose.sh               # Prompt composition: manifest + mode → assembled prompt
-│   └── .deepwork/jobs/          # 9 DeepWork job definitions (shared across agents)
+│   └── skills/                  # Installed task skills
 │
 ├── manifests/
 │   └── modes.yaml               # Agent-specific mode → role + convention mapping
@@ -47,8 +47,6 @@ The agent-space is the agent's primary working directory (`/home/agent-{name}/no
 │   └── claude_tasks             # Manual task trigger wrapper
 │
 ├── .repos/                      # Cloned repositories ({owner}/{repo})
-│
-├── .deepwork/                   # Symlink → .agents/.deepwork
 │
 ├── .cronjobs/
 │   ├── shared/
@@ -124,7 +122,7 @@ The agent-space is the agent's primary working directory (`/home/agent-{name}/no
 
 ## Shared Agents Library (`.agents/` submodule)
 
-Each agent-space includes the shared agents library as a git submodule at `.agents/`. This library provides the composable prompt architecture, DeepWork job definitions, and operational conventions shared across all agents.
+Each agent-space includes the shared agents library as a git submodule at `.agents/`. This library provides the composable prompt architecture, installed skills, and operational conventions shared across all agents.
 
 ### Components
 
@@ -135,7 +133,7 @@ Each agent-space includes the shared agents library as a git submodule at `.agen
 | **Shared fragments** | `shared/`         | Reusable prompt fragments (RFC 2119 preamble, output format rules)                                               |
 | **Archetypes**       | `archetypes.yaml` | Pre-built convention bundles: `engineer` and `product`                                                           |
 | **Composition tool** | `compose.sh`      | Assembles prompts from manifest + mode: shared → roles → conventions                                             |
-| **DeepWork jobs**    | `.deepwork/jobs/` | 9 workflow definitions (task loop, daily status, research, etc.)                                                 |
+| **Skills**           | `skills/`         | Installed task instructions and supporting files                                                                 |
 | **Examples**         | `examples/`       | Reference agent-space layouts and manifest examples                                                              |
 
 ### Prompt Composition

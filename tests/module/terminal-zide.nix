@@ -1,5 +1,6 @@
 {
   pkgs,
+  lib,
   self,
   home-manager,
   ...
@@ -28,9 +29,15 @@ let
     ];
   };
 
+  deepworkOptionPresent = lib.hasAttrByPath [
+    "keystone"
+    "terminal"
+    "deepwork"
+  ] hmConfig.options;
   packages = hmConfig.config.home.packages;
   zidePackage = builtins.head (builtins.filter (pkg: (pkg.pname or "") == "keystone-zide") packages);
 in
+assert !deepworkOptionPresent;
 pkgs.runCommand "terminal-zide-check" { } ''
   set -euo pipefail
 

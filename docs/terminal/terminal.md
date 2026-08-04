@@ -147,18 +147,6 @@ The `archetype` option controls which convention set is inlined vs referenced. T
 
 `maxGlobalBytes` sets the budget for the generated file. A build warning is emitted when the content exceeds this limit.
 
-## DeepWork
-
-The DeepWork module integrates workflow-driven development with quality gates into the terminal environment.
-
-```nix
-keystone.terminal.deepwork = {
-  enable = true;            # Default: true
-};
-```
-
-When enabled, the `DEEPWORK_ADDITIONAL_JOBS_FOLDERS` environment variable is set and injected into the generated DeepWork MCP server configs, allowing spawned MCP sessions to discover shared project job definitions alongside the built-in ones.
-
 ## Notes
 
 Keystone supports a shared `zk` notebook model for both human note-taking and

@@ -92,7 +92,6 @@ in
         PODMAN_AGENT_PROCPS_PATH = "${pkgs.procps}";
 
         # MCP server store paths — lets podman-agent mount these into containers
-        PODMAN_AGENT_DEEPWORK_PATH = "${pkgs.keystone.deepwork}";
         PODMAN_AGENT_CHROME_MCP_PATH = "${pkgs.keystone.chrome-devtools-mcp}";
       }
       // optionalAttrs (cfg.extraSubstituters != [ ]) {

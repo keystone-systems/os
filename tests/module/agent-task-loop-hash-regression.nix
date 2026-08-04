@@ -35,6 +35,12 @@ let
     executeJson = defaultsJson;
     profilesJson = profilesJson;
     projectIndexHelper = projectIndexHelper;
+    ingestPrompt = pkgs.writeText "test-task-loop-ingest.md" (
+      builtins.readFile ../../modules/os/agents/prompts/task-loop-ingest.md
+    );
+    prioritizePrompt = pkgs.writeText "test-task-loop-prioritize.md" (
+      builtins.readFile ../../modules/os/agents/prompts/task-loop-prioritize.md
+    );
   };
 in
 pkgs.runCommand "test-agent-task-loop-hash-regression"
@@ -94,7 +100,7 @@ pkgs.runCommand "test-agent-task-loop-hash-regression"
     args="$*"
     state_dir="''${TASK_LOOP_TEST_STATE_DIR:?}"
 
-    if printf '%s' "$args" | grep -q "task_loop ingest"; then
+    if printf '%s' "$args" | grep -q "Stage: ingest"; then
       count_file="$state_dir/ingest-count"
       count=0
       if [[ -f "$count_file" ]]; then
@@ -102,7 +108,7 @@ pkgs.runCommand "test-agent-task-loop-hash-regression"
       fi
       printf '%s\n' "$((count + 1))" > "$count_file"
       printf '%s\n' 'tasks: []' > TASKS.yaml
-    elif printf '%s' "$args" | grep -q "task_loop prioritize"; then
+    elif printf '%s' "$args" | grep -q "Stage: prioritize"; then
       count_file="$state_dir/prioritize-count"
       count=0
       if [[ -f "$count_file" ]]; then

@@ -27,14 +27,14 @@ tool loads conventions natively (without prompt injection).
 - **Path-scoped rules**: `.claude/rules/*.md` — loaded when Claude reads matching files (supports `paths:` frontmatter glob patterns)
 - **Imports**: `@path/to/file.md` syntax, relative to the file containing the import, max 5 hops
 - **Size guidance**: Target under 200 lines per file; longer files reduce adherence
-- **MCP config**: `~/.claude.json` — MCP server configs (deepwork, chrome-devtools, grafana, process-compose)
+- **MCP config**: `~/.claude.json` — MCP server configs (chrome-devtools, grafana, process-compose)
 - **Auto memory**: `~/.claude/projects/<project>/memory/MEMORY.md` — Claude writes this itself; first 200 lines loaded per session
 
 **Keystone generates**:
 
 - `~/.keystone/AGENTS.md` — canonical Keystone instruction file for the user profile
 - `~/.claude/CLAUDE.md` — system-wide conventions from `keystone-conventions` derivation
-- `~/.claude.json` — MCP server configs (deepwork, chrome-devtools, grafana, process-compose)
+- `~/.claude.json` — MCP server configs (chrome-devtools, grafana, process-compose)
 - `.claude/rules/` — not generated (project-specific, not keystone's concern)
 
 ### Gemini CLI
@@ -160,7 +160,7 @@ the consumer-flake source-of-truth. The canonical layout:
     AGENTS.md                         host-rendered instruction file (regular file)
     skills.yaml                       optional user-authored skill overrides
   skills/                             canonical, spec-compliant skill tree
-    <name>/                           lowercase-hyphen (`ks-engineer`, `deepwork`, …)
+    <name>/                           lowercase-hyphen (`ks-engineer`, `my-custom-skill`, …)
       SKILL.md                        frontmatter `name:` matches dir name
       <convention>.md                 colocated conventions and roles
   claude/
@@ -220,7 +220,7 @@ load failure in Codex and most other spec-compliant tools.
 The yaml key also matches the slash-command id the user types: keys
 starting with `ks-` are gated by the manifest's `publishedCommands` and
 only emit if the host has the matching command enabled. Other keys
-(e.g. `deepwork`, `my-custom-skill`) are always emitted.
+(e.g. `wrap-up`, `my-custom-skill`) are always emitted.
 
 For each key:
 
@@ -308,7 +308,7 @@ can review them.
     uses. This L1→L2 inheritance mechanism lets
     `keystone.os.agents.<name>` principals run the same skills the admin
     authored, without per-agent duplication, and is the foundation for
-    OS-agent auto-loops that don't require DeepWork. For OS agent users,
+    OS-agent auto-loops. For OS agent users,
     the activation MUST NOT attempt to `mkdir -p` the consumer-flake
     target — the admin's prior activation created it, and the agent lacks
     write permission inside the admin's home.
@@ -384,7 +384,7 @@ before re-running activation.
 
 ### `modules/terminal/agents/extensions.nix`
 
-1. MUST generate only the curated Keystone command surface by default: `/ks`, optional `/ks-dev`, and `/deepwork`
+1. MUST generate only the curated Keystone command surface by default: `/ks` and optional `/ks-dev`
 2. MUST gate `/ks-dev` on `keystone.development = true`
 3. MUST derive tool-facing descriptions and labels from the generated command definitions
 4. MUST preserve YAML frontmatter for tools that natively consume Markdown metadata, including Claude Code commands and Codex skills

@@ -1,6 +1,6 @@
 ---
 title: Notes
-description: Shared zk note-taking system for humans, agents, and DeepWork workflows
+description: Shared zk note-taking system for humans and agents
 ---
 
 # Notes
@@ -144,7 +144,7 @@ derive `repo/<owner>/<repo>` tags and local checkout paths from those URLs:
 Reports belong in `reports/`. Use them for:
 
 - `ks.doctor` output,
-- DeepWork research output,
+- agent research output,
 - review writeups,
 - operational checks, and
 - other dated run results.
@@ -169,8 +169,8 @@ Keystone uses a tight tag set. The most important tags are:
 - `status/archived`
 - `source/human`
 - `source/agent`
-- `source/deepwork`
-- `source/deepwork/ks-doctor`
+- `source/agent`
+- `source/agent/ks-doctor`
 
 Prefer links and frontmatter over inventing new tags. Agents should be
 especially conservative about creating new tags outside the established
@@ -290,9 +290,9 @@ When reopening a report note, usually update:
 If the report belongs to a recurring series, keep the series link structure
 consistent so the history remains easy to follow.
 
-## Agent and DeepWork workflow
+## Agent workflow
 
-Agents and DeepWork workflows should write durable output into the notebook
+Agents should write durable output into the notebook
 instead of leaving it only in scratch files or workflow output folders.
 
 The new notes workflows are:
@@ -336,7 +336,7 @@ cat system_diagnostics.log | zk new reports/ \
 
 An agent running `ks.doctor` should create a report note in `reports/`, tag it
 as `report/keystone-system`, `repo/ncrmro/nixos-config`, and
-`source/deepwork/ks-doctor`, link it to the previous report in the same series,
+`source/agent/ks-doctor`, link it to the previous report in the same series,
 and update a relevant system or operations hub if one exists.
 
 ## Where this is configured

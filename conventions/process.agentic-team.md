@@ -2,7 +2,7 @@
 
 # Convention: Agentic Team Operations (process.agentic-team)
 
-This convention defines how a human operator works with a team of keystone agents to execute high-impact projects. It governs the interplay between the archetype/role system (context engineering), DeepWork jobs (structured workflows), and the human's role as decision-maker, reviewer, and strategic planner. The goal is to maximize human leverage by batching decisions, scheduling reviews, and keeping focused planning sessions separate from execution.
+This convention defines how a human operator works with a team of Keystone agents to execute high-impact projects. It governs the interplay between the archetype and role system, agent task loops, and the human's role as decision-maker, reviewer, and strategic planner. The goal is to maximize human leverage by batching decisions, scheduling reviews, and keeping focused planning sessions separate from execution.
 
 ## Principles
 
@@ -21,7 +21,7 @@ This convention defines how a human operator works with a team of keystone agent
 ## Keystone Agents vs. Sub-Agents
 
 9. **Keystone agents** (provisioned via `keystone.os.agents`) are persistent identities with their own credentials, email, git accounts, desktop, and notes repo. They interact with shared platforms (GitHub, Forgejo, email) using their own identity — the same surfaces a human team member would use.
-10. **Sub-agents** (spawned within a task loop iteration or DeepWork step) are ephemeral, generalized workers. They inherit the parent agent's credentials and have no persistent identity. Sub-agents are tools, not team members.
+10. **Sub-agents** (spawned within a task loop iteration) are ephemeral, generalized workers. They inherit the parent agent's credentials and have no persistent identity. Sub-agents are tools, not team members.
 11. Keystone agents MUST be the ones that create issues, open PRs, post comments, and send emails — these actions appear under the agent's identity on shared platforms. Sub-agents MUST NOT interact with shared platforms directly.
 
 ## State and Memory
@@ -34,7 +34,6 @@ This convention defines how a human operator works with a team of keystone agent
     - **Board status**: Project board columns per `process.project-board`.
 14. Agents MUST write durable state to shared platforms, not just to their notes repo. The notes repo is scratch space and local memory; GitHub/Forgejo issues, PRs, and comments are the canonical record.
 15. When an agent produces a research report, analysis, or plan, it MUST be committed to the project's repo (docs/specs/, docs/, or notes directory) and referenced from an issue or PR — not left only in the agent's notes directory.
-16. DeepWork session outputs follow the same rule: final artifacts MUST be committed to a shared location. The DeepWork session directory is ephemeral working state.
 
 ## Context Engineering
 
@@ -48,23 +47,11 @@ This convention defines how a human operator works with a team of keystone agent
 21. High-impact projects MUST begin with a planning session (see "Focused Planning Sessions" below) that produces one of:
     - A press release per `process.press-release` (for product initiatives).
     - A spec per `process.feature-delivery` (for engineering work).
-    - A DeepWork job invocation per `process.deepwork-job` (for structured multi-domain work).
+    - An installed skill route for structured multi-domain work.
     - A direct task assignment (for small, well-defined work).
 22. The planning artifact MUST be committed to the project's repo before agents begin execution (rule 15 applies).
 23. The product-to-engineering handoff MUST follow `process.product-engineering-handoff`. This convention does not restate the pipeline — refer to the source.
 24. Child issues MUST be scoped so that each can be completed by a single agent in a single task loop iteration. See `process.agent-cronjobs` for timeout constraints.
-
-## DeepWork Jobs
-
-25. For structured, multi-step work that spans domains (research, competitive analysis, due diligence, etc.), both humans and agents MUST invoke a DeepWork job rather than issuing ad-hoc instructions. DeepWork jobs MAY be invoked by:
-    - The human directly (interactive session or planning session).
-    - An agent's task loop, when a task references a DeepWork workflow per `process.task-tracking`.
-    - An agent mid-step, as a nested workflow within another DeepWork job per `process.deepwork-job`.
-    - A scheduled task per `process.agent-cronjobs`, triggering a workflow at a set cadence.
-26. Job selection MUST follow `process.deepwork-job` job scope rules. This convention does not restate those rules — refer to the source.
-27. Whoever starts a workflow — human or agent — MUST provide a clear goal string via `start_workflow`. The goal contextualizes all steps for the executing agent.
-28. Quality gates within DeepWork workflows serve as review checkpoints. When the **human** started the workflow, quality gates are asynchronous — the human reviews outputs during the next scheduled review batch. When an **agent** started the workflow autonomously, quality gates are evaluated by the review agent inline per `process.deepwork-job`.
-29. When a DeepWork job spans multiple agents (e.g., product agent runs `scope` step, engineering agent runs `implement` step), handoff MUST be coordinated by ensuring the first agent's outputs are committed to a shared location (rule 15) accessible to the second agent. The human MAY coordinate this explicitly, or the task loop MAY chain the handoff if the second task declares a dependency via `needs` in `TASKS.yaml` per `process.task-tracking`.
 
 ## Decision Batching
 
@@ -73,7 +60,7 @@ This convention defines how a human operator works with a team of keystone agent
 | Cadence      | Scope             | What to review                                                                                       |
 | ------------ | ----------------- | ---------------------------------------------------------------------------------------------------- |
 | 2x daily     | PR reviews        | Code PRs per `process.feature-delivery` review and merge section                                     |
-| 1x daily     | Artifact reviews  | Documents, research outputs, DeepWork quality gates                                                  |
+| 1x daily     | Artifact reviews  | Documents, research outputs, and agent handoffs                                                       |
 | 1x weekly    | Strategic review  | Milestone progress per `process.project-board`, roadmap health, blocker trends per `process.blocker` |
 | 1x monthly   | Portfolio review  | Cross-project priorities, agent utilization, archetype/role effectiveness                            |
 | 1x quarterly | Direction setting | OKR review, initiative planning, team structure changes                                              |
@@ -89,12 +76,12 @@ This convention defines how a human operator works with a team of keystone agent
 ## Focused Planning Sessions
 
 34. Planning MUST happen in dedicated time blocks, separate from review and execution oversight.
-35. A planning session MUST produce at least one actionable output: a press release, spec, milestone, set of issues, DeepWork job invocation, or prioritized backlog.
+35. A planning session MUST produce at least one actionable output: a press release, spec, milestone, set of issues, skill-routed task, or prioritized backlog.
 36. Planning sessions SHOULD follow this structure:
     1. **Review context**: Read project board per `process.project-board`, milestone progress, and any agent-generated research or analysis.
     2. **Identify highest-leverage work**: What single decision or artifact will unblock the most agent work?
     3. **Produce the artifact**: Write the press release per `process.press-release`, spec, or plan. Commit it (rule 22).
-    4. **Delegate**: Create issues, start DeepWork workflows per `process.deepwork-job`, or assign tasks to agents.
+    4. **Delegate**: Create issues or assign skill-routed tasks to agents.
     5. **Set review expectations**: Note when you expect to review the outputs (next review batch per rule 30).
 37. Planning sessions MUST NOT devolve into execution. If the human finds themselves writing code, drafting marketing copy, or performing research during a planning session, that work MUST be delegated to an agent instead.
 38. The human SHOULD time-box planning sessions (recommended: 30-60 minutes) to maintain focus and prevent scope creep.
@@ -104,10 +91,9 @@ This convention defines how a human operator works with a team of keystone agent
 39. All agent-produced artifacts MUST flow through a reviewable channel on the shared platform (rule 13):
     - **Code**: PR per `process.feature-delivery`.
     - **Documents** (specs, research, analysis): Committed to the project's repo, reviewed via PR or direct file review.
-    - **DeepWork outputs**: Final artifacts committed to a shared repo (rule 16), reviewed at quality gates.
     - **Decisions and plans**: Posted as issue comments per `process.issue-journal`.
 40. Artifacts MUST NOT be communicated via ephemeral channels (chat, email body text). If an agent sends an email notification per `tool.himalaya`, it MUST be a pointer to a committed artifact, not the artifact itself.
-41. The human MUST NOT give feedback on artifacts via ephemeral channels. Feedback MUST be posted as PR comments, issue comments, or DeepWork quality gate responses so that agents can process it in their task loop per `process.agent-cronjobs`.
+41. The human MUST NOT give feedback on artifacts via ephemeral channels. Feedback MUST be posted as PR comments or issue comments so that agents can process it in their task loop per `process.agent-cronjobs`.
 
 ## Escalation and Blockers
 
@@ -154,14 +140,14 @@ A human's operating rhythm with a two-agent team (Luce: product archetype, Drago
   1. Read Luce's user stories issue on the milestone
   2. Write press release for next initiative (process.press-release), commit to repo
   3. Create milestone + consolidated user stories issue, assign to Luce
-  4. Start DeepWork workflow: start_workflow("competitive_analysis", "quick", ...)
+  4. Assign a skill-routed competitive-analysis task
   5. Note: expect to review competitive analysis outputs tomorrow morning
 
   -- Agents execute autonomously (process.agent-cronjobs) --
 
 16:00 — Afternoon Review Session (20 min)
   1. Review 3 new PRs from Drago
-  2. Review DeepWork quality gate output from Luce's research workflow
+  2. Review Luce's research output
   3. Post feedback on 1 spec draft → Drago picks up in next task loop
   4. Check project board — all items progressing, no new blockers
 ```
@@ -233,7 +219,7 @@ Monday — Direction Setting (half day)
      - Create milestones and project boards (process.project-board).
      - Assign the product agent to produce user stories
        per process.product-engineering-handoff.
-     - Start any long-running DeepWork research workflows (process.deepwork-job).
+     - Assign any long-running research tasks to an installed skill.
   6. Commit quarterly plan to project repo. This is the authoritative record —
      not a slide deck, not a notes file.
 
@@ -245,7 +231,6 @@ Monday — Direction Setting (half day)
 - [Agent Cronjobs](./process.agent-cronjobs.md) — Timer-driven autonomous execution
 - [Blocker Escalation](./process.blocker.md) — How agents report and recover from blockers
 - [Code Review Ownership](./process.code-review-ownership.md) — Reviewer assignment via CODEOWNERS
-- [DeepWork Job Design](./process.deepwork-job.md) — Job and workflow design rules
 - [Feature Delivery](./process.feature-delivery.md) — End-to-end code delivery lifecycle
 - [Issue Journal](./process.issue-journal.md) — Structured issue comments for visibility
 - [Product-Engineering Handoff](./process.product-engineering-handoff.md) — Press release to milestone pipeline

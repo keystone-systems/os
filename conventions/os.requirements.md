@@ -33,7 +33,6 @@ This convention outlines the system-level prerequisites handled by the underlyin
 ### MCP Servers
 
 10. **Chrome DevTools**: The `chrome-devtools` MCP server is globally available and pre-configured to connect to the local headless Chrome instance.
-11. **DeepWork**: The `deepwork` MCP server is pre-installed and available in the Nix development shell, providing workflow orchestration.
 
 ## Terminal Environment
 

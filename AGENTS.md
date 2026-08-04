@@ -25,7 +25,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 
 - `modules/os/` — Core OS: storage, Secure Boot, TPM, users, SSH, agents, containers, Tailscale
 - `modules/os/agents/` — Autonomous agent service accounts: task loop, scheduler, desktop, mail
-- `modules/terminal/` — Home-manager terminal: shell, editor, AI tools, mail, calendar, DeepWork
+- `modules/terminal/` — Home-manager terminal: shell, editor, AI tools, mail, calendar
 - `modules/desktop/` — keystone glue only (`keystone-glue.nix`); the desktop implementation lives in the ks.systems/desktop flake (the `desktop` input)
 - `modules/server/` — Server services: DNS, mail, monitoring, Forgejo, Grafana, Immich, Vaultwarden
 - `modules/notes/` — Zettelkasten notebook management via zk
@@ -69,8 +69,8 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 
 ### Overlay (`pkgs.keystone.*`)
 
-`claude-code`, `gemini-cli`, `codex`, `opencode`, `deepwork`, `keystone-deepwork-jobs`,
-`keystone-conventions`, `chrome-devtools-mcp`, `grafana-mcp`, `google-chrome`, `ghostty`,
+`claude-code`, `gemini-cli`, `codex`, `opencode`, `keystone-conventions`,
+`chrome-devtools-mcp`, `grafana-mcp`, `google-chrome`, `ghostty`,
 `yazi`, `himalaya`, `calendula`, `cardamum`, `comodoro`, `cfait`, `slidev`
 
 ## Important Notes

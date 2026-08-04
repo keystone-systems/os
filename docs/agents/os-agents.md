@@ -74,7 +74,7 @@ flowchart TB
             roles["roles/<br/>10 composable templates"]
             compose["compose.sh<br/>Prompt composition"]
             archetypes["archetypes.yaml<br/>engineer / product"]
-            deepwork_jobs[".deepwork/jobs/<br/>9 job definitions"]
+            skills["skills/<br/>Installed task skills"]
         end
 
         identity["SOUL.md + TEAM.md + SERVICES.md"]
@@ -87,7 +87,7 @@ flowchart TB
         prefetch["1. Pre-fetch<br/>Sources JSON"]
         hash["2. Hash Check<br/>Skip if unchanged"]
         ingest["3. Ingest<br/>(stage resolver)"]
-        prioritize["4. Prioritize<br/>(stage resolver)<br/>workflow assignment"]
+        prioritize["4. Prioritize<br/>(stage resolver)<br/>model assignment"]
         execute["5. Execute Loop<br/>(profile + raw overrides)"]
     end
 
@@ -110,10 +110,10 @@ flowchart TB
     prefetch --> hash --> ingest
     ingest -->|"updates"| tasks
     ingest --> prioritize
-    prioritize -->|"reorders + assigns workflow"| tasks
+    prioritize -->|"reorders + assigns models"| tasks
     prioritize --> execute
 
-    execute -->|"workflow field?"| deepwork_jobs
+    execute -->|"workflow field?"| skills
     execute -->|"no workflow"| generic["Generic Execution"]
     execute -->|"updates status"| tasks
 
@@ -138,10 +138,10 @@ context → lean canvas → KPIs → market analysis → press release
   → milestone → user stories (issues) → branches → pull requests
 ```
 
-1. **Product agent** produces a press release via `press_release/write` workflow
-2. **Product agent** converts it to a milestone + issues via `product_engineering_handoff/handoff` workflow
+1. **Product agent** produces a press release with the installed `ks-projects` skill
+2. **Product agent** converts it to a milestone and issues with `ks-projects`
 3. **Engineering agent** picks up issues as task sources during ingest
-4. **Engineering agent** creates branches, PRs, and delivers code via dedicated engineering workflows
+4. **Engineering agent** creates branches, PRs, and delivers code with `ks-engineer`
 
 Both agents share the same composable prompt architecture from the `.agents/` submodule (see [Shared Agents Library](#shared-agents-library)).
 
@@ -276,7 +276,7 @@ The agent-space is the agent's primary working directory (`/home/agent-{name}/no
 │   ├── shared/                  # Reusable fragments (RFC 2119 preamble, output rules)
 │   ├── archetypes.yaml          # engineer / product archetype definitions
 │   ├── compose.sh               # Prompt composition: manifest + mode → assembled prompt
-│   └── .deepwork/jobs/          # 9 DeepWork job definitions (shared across agents)
+│   └── skills/                  # Installed task skills
 │
 ├── manifests/
 │   └── modes.yaml               # Agent-specific mode → role + convention mapping
@@ -287,8 +287,6 @@ The agent-space is the agent's primary working directory (`/home/agent-{name}/no
 │   └── claude_tasks             # Manual task trigger wrapper
 │
 ├── .repos/                      # Cloned repositories ({owner}/{repo})
-│
-├── .deepwork/                   # Symlink → .agents/.deepwork
 │
 ├── .cronjobs/
 │   ├── shared/
@@ -364,7 +362,7 @@ The agent-space is the agent's primary working directory (`/home/agent-{name}/no
 
 ## Shared Agents Library (`.agents/` submodule)
 
-Each agent-space includes the shared agents library as a git submodule at `.agents/`. This library provides the composable prompt architecture, DeepWork job definitions, and operational conventions shared across all agents.
+Each agent-space includes the shared agents library as a git submodule at `.agents/`. This library provides the composable prompt architecture, installed skills, and operational conventions shared across all agents.
 
 ### Components
 
@@ -375,7 +373,7 @@ Each agent-space includes the shared agents library as a git submodule at `.agen
 | **Shared fragments** | `shared/`         | Reusable prompt fragments (RFC 2119 preamble, output format rules)                                               |
 | **Archetypes**       | `archetypes.yaml` | Pre-built convention bundles: `engineer` and `product`                                                           |
 | **Composition tool** | `compose.sh`      | Assembles prompts from manifest + mode: shared → roles → conventions                                             |
-| **DeepWork jobs**    | `.deepwork/jobs/` | 9 workflow definitions (task loop, daily status, research, etc.)                                                 |
+| **Skills**           | `skills/`         | Installed task instructions and supporting files                                                                 |
 | **Examples**         | `examples/`       | Reference agent-space layouts and manifest examples                                                              |
 
 ### Prompt Composition
@@ -438,7 +436,7 @@ flowchart LR
         prefetch["1. Pre-fetch<br/>Sources → JSON"]
         ingest["2. Ingest<br/>(stage resolver)"]
         hash["3. Hash Check<br/>Skip prioritize if unchanged"]
-        prioritize["4. Prioritize<br/>(stage resolver)<br/>workflow assignment"]
+        prioritize["4. Prioritize<br/>(stage resolver)<br/>model assignment"]
         execute["5. Execute Loop<br/>(profile + raw overrides)"]
 
         prefetch --> ingest --> hash --> prioritize --> execute
@@ -450,15 +448,15 @@ flowchart LR
     end
 
     subgraph Dispatch["Execution Dispatch"]
-        deepwork["/deepwork job/workflow<br/>Quality gates + steps"]
+        skill["Installed skill route<br/>SKILL.md + supporting files"]
         generic["Generic Execution<br/>Free-form LLM prompt"]
     end
 
     email & github & forgejo --> prefetch
     projects -->|"source commands"| prefetch
     ingest -->|"creates/updates tasks"| tasks
-    prioritize -->|"reorders + assigns<br/>workflow"| tasks
-    execute -->|"workflow field set"| deepwork
+    prioritize -->|"reorders + assigns<br/>models"| tasks
+    execute -->|"workflow field set"| skill
     execute -->|"no workflow"| generic
     execute -->|"updates status"| tasks
 ```
@@ -518,13 +516,13 @@ task-loop.sh Pipeline:
 
 1. PRE-FETCH             ──▶  PROJECTS.yaml sources → shell commands → JSON
                                + built-in: himalaya envelope list (email)
-2. INGEST                ──▶  /deepwork task_loop ingest
+2. INGEST                ──▶  Versioned ingest prompt
                                Parse source JSON → update TASKS.yaml
                                Provider/model/profile resolved from ingest stage config
 3. HASH CHECK            ──▶  SHA256(TASKS.yaml + PROJECTS.yaml) → skip if unchanged
-4. PRIORITIZE            ──▶  /deepwork task_loop prioritize
+4. PRIORITIZE            ──▶  Versioned prioritize prompt
                                Reorder TASKS.yaml by PROJECTS.yaml priority
-                               Assign workflow via decision tree
+                               Assign execution models
                                Provider/model/profile resolved from prioritize stage config
 5. EXECUTE LOOP          ──▶  For each pending task (max N per run):
    │                            ├── Check `needs` dependencies (yq+jq)
@@ -555,15 +553,12 @@ The scheduler (`scheduler.sh`) is a pure-bash script (no LLM) that runs once dai
 
 The execute step checks each task for a `workflow` field:
 
-- **With workflow**: Invokes `/deepwork {job}/{workflow}` as the first line of the Claude prompt, engaging DeepWork quality gates and step-by-step execution
+- **With workflow**: Maps `job/workflow` to `~/.agents/skills/job-workflow/SKILL.md`. The task blocks and records an issue when the skill is not installed.
 - **Without workflow**: Sends a generic "Execute this task" prompt — the LLM interprets the description freely
 
-Available workflows that can be auto-assigned by the prioritize decision tree:
-
-| Workflow              | Trigger                                               | Status                                     |
-| --------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| `cadeng/cadeng`       | CAD keywords, hardware project                        | Planned (will be migrated to DeepWork job) |
-| `press_release/write` | "press release" or "working backwards" in description | Exists                                     |
+The prioritize stage assigns models. It does not add or change workflow
+routes. A task creator MUST set a workflow only when its installed skill
+exists.
 
 ### Model control strategy
 
@@ -592,7 +587,7 @@ those providers until their CLIs support equivalent controls.
 
 **Corruption guard**: After ingest and prioritize, the script validates TASKS.yaml with `yq` and reverts from a pre-stage backup if corrupted.
 
-**YAML validation**: Both ingest and prioritize steps have DeepWork quality gates that verify schema compliance, deduplication, and field correctness.
+**YAML validation**: The task loop validates schema compliance after the ingest and prioritize stages.
 
 ## YAML Schema Reference
 
@@ -611,7 +606,7 @@ tasks: # REQUIRED: only top-level key
     model: "sonnet" # MAY: provider-specific model override
     fallback_model: "opus" # MAY: fallback model override (Claude only today)
     effort: "medium" # MAY: low|medium|high|max (Claude only today)
-    workflow: "job/workflow" # MAY: DeepWork workflow to invoke
+    workflow: "job/workflow" # MAY: installed skill route to invoke
     needs: ["other-task"] # MAY: task names that must complete first
     blocked_reason: "..." # MAY: explanation when status is blocked
 ```
@@ -634,11 +629,10 @@ tasks: # REQUIRED: only top-level key
 
 **Workflow assignment rules:**
 
-- Ingest MUST NOT set workflows — only appends new tasks with required fields
-- Prioritize assigns workflows via a deterministic decision tree (first match wins)
-- Scheduler sets workflows at task creation time from `SCHEDULES.yaml`
-- Calendar events do not set workflows at creation — prioritize assigns them
-- Pre-existing workflow fields are always preserved
+- Ingest and prioritize MUST NOT set or change workflows.
+- Task creators MAY set a workflow when the matching skill is installed.
+- Scheduler-created tasks copy the workflow from `SCHEDULES.yaml`.
+- Calendar events have no workflow unless their creator sets one.
 
 **Execution fallback rules:**
 
@@ -736,7 +730,7 @@ schedules:
   - name: "daily-priorities" # REQUIRED: kebab-case identifier
     description: "..." # REQUIRED: human-readable
     schedule: "daily" # REQUIRED: daily | weekly:<day> | monthly:<day>
-    workflow: "daily_status/send" # REQUIRED: DeepWork workflow to invoke
+    workflow: "ks-projects" # MAY: installed skill route to invoke
 ```
 
 The scheduler creates tasks with `source: "schedule"` and `source_ref: "schedule-{name}-{YYYY-MM-DD}"` for deduplication.
@@ -814,55 +808,24 @@ done
 systemctl --user daemon-reload
 ```
 
-## DeepWork Job Convention
+## Installed Skill Convention
 
-Each agent-space includes DeepWork job definitions via the `.agents/` submodule. Jobs are defined in `.deepwork/jobs/` and invoked through the `/deepwork` slash command during task execution.
+Task workflows resolve to skills below `~/.agents/skills/`. A route such as
+`project/implement` resolves to `~/.agents/skills/project-implement/SKILL.md`.
+The skill can reference supporting files in the same directory.
 
-### Available Jobs
-
-| Job                           | Version | Agent   | Workflows                     | Purpose                                                                    |
-| ----------------------------- | ------- | ------- | ----------------------------- | -------------------------------------------------------------------------- |
-| `task_loop`                   | 3.3.1   | Both    | `ingest`, `prioritize`, `run` | Autonomous work orchestration — ingest sources, prioritize, execute        |
-| `daily_status`                | 1.2.1   | Both    | `send`                        | Compile and send daily status digest email to human                        |
-| `press_release`               | 1.0.0   | Product | `write`                       | Working-backwards press release to scope product features                  |
-| `product_engineering_handoff` | 1.1.0   | Product | `handoff`                     | Convert press release → milestone + consolidated user stories issue        |
-| `project_intake`              | 1.1.0   | Both    | `onboard`                     | Interactive onboarding for new projects (Lean Canvas, repo investigation)  |
-| `research`                    | 1.1.0   | Both    | `research`                    | Structured research with platform selection and cited bibliography         |
-| `agent_onboarding`            | 1.0.1   | Both    | `setup_all`                   | Bootstrap agent into environment: unlock vault, sign into services, verify |
-| `agent_builder`               | 2.3.0   | Both    | `bootstrap`                   | Scaffold new agent-space repo (SOUL.md, manifest, submodule, task loop)    |
-| `agent_convention`            | 1.1.0   | Both    | `create`                      | Create RFC 2119 convention docs and wire into mode manifests               |
-
-### Job Directory Structure
+### Skill Directory Structure
 
 ```
-.deepwork/jobs/{job_name}/
-├── AGENTS.md          # Job-specific learnings and context
-├── job.yml            # Job spec (name, version, workflows, steps)
-├── steps/             # One .md file per step
-│   └── shared/        # Shared reference docs
-├── hooks/             # Custom validation hooks
-├── scripts/           # Reusable helper scripts
-├── templates/         # Example formats
-├── outputs/           # Most recent step outputs
-├── instances/         # Current run working directory
-└── runs/              # Historical run artifacts
+skills/{skill_name}/
+├── SKILL.md           # Required entry point
+└── *.md               # Optional co-located references
 ```
 
-### Task Loop Job Workflows
-
-The `task_loop` job (v3.3.1) has three workflows that map to the pipeline steps:
-
-- **ingest** (`parse_sources` step): Parse pre-fetched JSON, compare with TASKS.yaml, create new tasks. Quality gates verify: no duplicates, required fields, project association, schema preservation, reply email parsing.
-- **prioritize** (`reorder_tasks` step): Reorder pending tasks by project priority and assign `workflow` via decision tree. Quality gates verify: priority order, workflow assignment, and schema preservation.
-- **run** (`execute` + `report` steps): Execute one task, update status, write JSON report. Quality gates verify: work actually performed, status updated, conventions followed.
-
-### Planned Jobs (Not Yet DeepWork Definitions)
-
-These workflows are referenced in the prioritize decision tree but do not yet have full DeepWork job definitions:
-
-| Workflow        | Purpose                                                                 | Status                                                         |
-| --------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `cadeng/cadeng` | CAD/hardware engineering (OpenSCAD, FreeCAD, 3D printing)               | Referenced in decision tree — will be migrated to DeepWork job |
+The task loop passes the absolute `SKILL.md` path and base directory to the
+provider. The provider MUST resolve relative references from that directory.
+Ingest and prioritize use the versioned prompts in
+`modules/os/agents/prompts/`. They do not use workflow skills.
 
 ## Coding Subagent Usage
 
@@ -972,18 +935,13 @@ claude --print -p "prompt here"
 
 All agent tools are managed via the `flake.nix` dev shell. Never install tools globally — use `nix develop --command <cmd>` or direnv integration.
 
-### DeepWork Workflow Invocation
+### Installed Skill Invocation
 
-When invoking DeepWork workflows via Claude, the `/deepwork` slash command MUST be at the start of the `-p` string:
+Set the task `workflow` field to a valid installed skill route:
 
 ```bash
 # CORRECT
-claude --print -p "/deepwork task_loop run
-Task: my-task
-Description: do the thing"
-
-# WRONG — model will freelance without quality gates
-claude --print -p "Do the task. /deepwork task_loop run"
+workflow: "project/implement"
 ```
 
 ## Monitoring & Observability
@@ -1003,7 +961,7 @@ Agent scripts emit structured events using `logfmt`. Key fields available for qu
 | `status`           | Outcome status       | `success`, `error`, `blocked`, `degraded` |
 | `duration_seconds` | Execution time       | `42`                                      |
 | `token_total`      | Total AI tokens used | `1250`                                    |
-| `workflow`         | DeepWork workflow    | `project/implement`                       |
+| `workflow`         | Installed skill route | `project/implement`                      |
 | `parsed_urls`      | URLs found in logs   | `["https://github.com/..."]`              |
 
 ### Prometheus Metrics
@@ -1035,7 +993,7 @@ The `task-loop.sh` and `scheduler.sh` scripts write metrics to the standard node
 | Scheduler             | `scripts/scheduler.sh` (120 lines)  | SCHEDULES.yaml → pending tasks, pure bash                                                          |
 | agentctl CLI          | `scripts/agentctl.sh` (391 lines)   | services, tasks, email, claude/gemini/codex, mail, vnc, provision                                  |
 | Notes sync            | `notes.nix` + repo-sync package     | Timer-triggered git commit/push                                                                    |
-| DeepWork jobs         | `.agents/.deepwork/jobs/` (9 jobs)  | task_loop, daily_status, research, press_release, handoff, intake, onboarding, builder, convention |
+| Installed skills      | `.agents/skills/`                   | Task-specific instructions and supporting files |
 | Shared agents library | `.agents/` submodule                | 27+ conventions, 10 roles, compose.sh, archetypes                                                  |
 | D-Bus socket fix      | `dbus.nix`                          | ConditionUser guard prevents race                                                                  |
 | MCP config            | `agentctl.nix`                      | Generates `.mcp.json` per agent                                                                    |
@@ -1060,4 +1018,3 @@ The `task-loop.sh` and `scheduler.sh` scripts write metrics to the standard node
 | Incident log (FR-014)              | Shared incident database, auto-escalation                        |
 | Cronjob Nix scaffold (FR-016)      | `.cronjobs/` convention documented but not auto-generated        |
 | Agent-space flake (FR-017)         | `flake.nix` convention documented but not auto-generated         |
-| cadeng DeepWork job                | Referenced in decision tree, not yet a job definition            |

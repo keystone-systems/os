@@ -19,6 +19,8 @@
 #   @executeJson@      - Execute-stage overrides JSON
 #   @profilesJson@     - Merged built-in + custom profile catalog JSON
 #   @projectIndexHelper@ - zk-backed project index helper path
+#   @ingestPrompt@     - Ingest prompt file path
+#   @prioritizePrompt@ - Prioritize prompt file path
 set -euo pipefail
 
 # Sanity check: Ensure required system utilities are available
@@ -56,6 +58,8 @@ TASK_LOOP_PROFILES_JSON=$(cat <<'EOF'
 EOF
 )
 PROJECT_INDEX_HELPER="@projectIndexHelper@/bin/keystone-project-index"
+INGEST_PROMPT_FILE="@ingestPrompt@"
+PRIORITIZE_PROMPT_FILE="@prioritizePrompt@"
 
 LOGS_DIR="$HOME/.local/state/agent-task-loop/logs"
 TASK_LOGS_DIR="$LOGS_DIR/tasks"
@@ -510,15 +514,16 @@ if [[ "$(echo "$SOURCES_JSON" | jq '[.[].data | length] | add // 0')" -gt 0 ]]; 
   else
     log "Step 2: Ingesting sources..."
     emit_event "stage_start" "Ingesting sources" "stage_name" "ingest"
-    mkdir -p "$HOME/.deepwork"
-    echo "$SOURCES_JSON" | jq '.' > "$HOME/.deepwork/sources.json"
+    mkdir -p "$HOME/.keystone"
+    echo "$SOURCES_JSON" | jq '.' > "$HOME/.keystone/sources.json"
     # Back up TASKS.yaml before LLM-driven ingest for corruption recovery
     if [[ -f TASKS.yaml ]]; then
       cp TASKS.yaml "$STATE_DIR/TASKS.yaml.pre-ingest"
     fi
     INGEST_RUNTIME=$(resolve_stage_runtime "ingest")
     set +o pipefail
-    run_provider_prompt "ingest" "$INGEST_RUNTIME" "/deepwork task_loop ingest" 2>&1 | tee -a "$LOG_FILE" >&2
+    run_provider_prompt "ingest" "$INGEST_RUNTIME" "$(cat "$INGEST_PROMPT_FILE")" \
+      2>&1 | tee -a "$LOG_FILE" >&2
     INGEST_EXIT=${PIPESTATUS[0]}
     set -o pipefail
     if [[ "$INGEST_EXIT" -ne 0 ]]; then
@@ -602,7 +607,8 @@ else
     fi
     PRIORITIZE_RUNTIME=$(resolve_stage_runtime "prioritize")
     set +o pipefail
-    run_provider_prompt "prioritize" "$PRIORITIZE_RUNTIME" "/deepwork task_loop prioritize" 2>&1 | tee -a "$LOG_FILE" >&2
+    run_provider_prompt "prioritize" "$PRIORITIZE_RUNTIME" "$(cat "$PRIORITIZE_PROMPT_FILE")" \
+      2>&1 | tee -a "$LOG_FILE" >&2
     PRIORITIZE_EXIT=${PIPESTATUS[0]}
     set -o pipefail
     if [[ "$PRIORITIZE_EXIT" -ne 0 ]]; then
@@ -656,6 +662,13 @@ emit_event "stage_start" "Executing pending tasks" "stage_name" "execute" "max_t
 TASK_COUNT=0
 ATTEMPTED_TASKS=":"
 
+INVALID_PENDING_COUNT=$(yq '[.tasks[] | select(.status == "pending" and ((.name // "") == ""))] | length' TASKS.yaml)
+if [[ "$INVALID_PENDING_COUNT" -gt 0 ]]; then
+  log "  Marking $INVALID_PENDING_COUNT unnamed pending task(s) as error"
+  yq -i '(.tasks[] | select(.status == "pending" and ((.name // "") == ""))).status = "error"' TASKS.yaml
+  TASKS_FAILED=$((TASKS_FAILED + INVALID_PENDING_COUNT))
+fi
+
 while [[ $TASK_COUNT -lt "$MAX_TASKS" ]]; do
   TASK_NAME=$(yq '[.tasks[] | select(.status == "pending")] | .[0].name' TASKS.yaml 2>/dev/null || echo "null")
 
@@ -699,6 +712,46 @@ while [[ $TASK_COUNT -lt "$MAX_TASKS" ]]; do
     fi
   fi
 
+  TASK_SKILL_FILE=""
+  if [[ -n "$TASK_WORKFLOW" && "$TASK_WORKFLOW" != "null" ]]; then
+    if [[ ! "$TASK_WORKFLOW" =~ ^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?$ ]]; then
+      TASK_SKILL_ERROR="Invalid skill route: $TASK_WORKFLOW"
+    else
+      TASK_SKILL_NAME="${TASK_WORKFLOW//\//-}"
+      TASK_SKILL_FILE="$HOME/.agents/skills/$TASK_SKILL_NAME/SKILL.md"
+      if [[ ! -f "$TASK_SKILL_FILE" ]]; then
+        TASK_SKILL_ERROR="Skill route not installed: $TASK_WORKFLOW ($TASK_SKILL_FILE)"
+      else
+        TASK_SKILL_ERROR=""
+      fi
+    fi
+
+    if [[ -n "${TASK_SKILL_ERROR:-}" ]]; then
+      log "  Blocking $TASK_NAME: $TASK_SKILL_ERROR"
+      yq -i "(.tasks[] | select(.name == \"$TASK_NAME\")).status = \"blocked\"" TASKS.yaml
+      if [[ ! -f ISSUES.yaml ]]; then
+        printf 'issues: []\n' > ISSUES.yaml
+      fi
+      SKILL_ERROR_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      TASK_SKILL_ERROR_JSON=$(printf '%s' "$TASK_SKILL_ERROR" | jq -Rs .)
+      yq -i ".issues += [{
+        \"name\": \"missing-skill-${TASK_NAME}\",
+        \"description\": $TASK_SKILL_ERROR_JSON,
+        \"discovered_during\": \"task-loop-execute\",
+        \"status\": \"open\",
+        \"created_at\": \"$SKILL_ERROR_TS\"
+      }]" ISSUES.yaml
+      TASKS_BLOCKED=$((TASKS_BLOCKED + 1))
+      emit_event "task_finish" "Task blocked by unavailable skill route" \
+        "status" "blocked" \
+        "workflow" "$TASK_WORKFLOW" \
+        "source" "$TASK_SOURCE" \
+        "source_ref" "$TASK_SOURCE_REF" \
+        "duration_seconds" "0"
+      continue
+    fi
+  fi
+
   TASK_COUNT=$((TASK_COUNT + 1))
   TASK_TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
   TASK_LOG="$TASK_LOGS_DIR/${TASK_TIMESTAMP}_${TASK_NAME}.log"
@@ -715,7 +768,14 @@ while [[ $TASK_COUNT -lt "$MAX_TASKS" ]]; do
   yq -i "(.tasks[] | select(.name == \"$TASK_NAME\")).status = \"in_progress\"" TASKS.yaml
 
   if [[ -n "$TASK_WORKFLOW" && "$TASK_WORKFLOW" != "null" && "$TASK_WORKFLOW" != "" ]]; then
-    PROMPT="/deepwork $TASK_WORKFLOW
+    TASK_SKILL_DIR=$(dirname "$TASK_SKILL_FILE")
+    PROMPT="Follow the installed skill at $TASK_SKILL_FILE.
+Resolve every relative file reference from $TASK_SKILL_DIR.
+Read any referenced file before you act.
+
+Installed skill instructions:
+
+$(cat "$TASK_SKILL_FILE")
 
 Task: $TASK_NAME
 Description: $TASK_DESC"

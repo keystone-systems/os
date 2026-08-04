@@ -80,8 +80,7 @@ MUST include:
 
 **REQ-017.10** When `grafana.mcp.enable` is `true`, the Grafana MCP
 server MUST be added to the agent's MCP server composition in
-`modules/os/agents/home-manager.nix`, alongside deepwork and
-chrome-devtools.
+`modules/os/agents/home-manager.nix` alongside chrome-devtools.
 
 **REQ-017.11** Grafana MCP authentication MUST use a shared read-only
 Grafana service account token managed via agenix. The secret MUST be

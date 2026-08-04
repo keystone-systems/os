@@ -18,7 +18,7 @@ export SSH_AUTH_SOCK="/run/agent-${AGENT_NAME}-ssh-agent/agent.sock"
 # SECURITY: Use the agent's own home-manager profile, not the caller's.
 # Without this, `agentctl <name> exec` inherits the invoking user's PATH
 # (e.g. ncrmro's), breaking all home-manager tools (himalaya, direnv, fj,
-# rbw) and devshell tools (deepwork, gh, node) for the agent.
+# rbw) and development-shell tools (gh, node) for the agent.
 export PATH="$PATH_PREFIX"
 # Source home-manager session variables (EDITOR, VISUAL, etc.) so agentctl
 # exec inherits whatever keystone.terminal sets — no hardcoded values here.

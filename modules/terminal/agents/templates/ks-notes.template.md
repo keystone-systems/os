@@ -1,8 +1,7 @@
 Use `ks.notes` as the durable-memory entrypoint for Keystone notes work.
 
-Route note-related requests to the appropriate notes DeepWork workflow, and use
-this skill proactively when work produces durable context that should not live
-only in scratch files or chat.
+Handle note-related requests directly. Use this skill proactively when work
+produces durable context that should not live only in scratch files or chat.
 
 ## Canonical note conventions
 
@@ -28,7 +27,7 @@ only in scratch files or chat.
 - Use notes to preserve durable context, richer rationale, and linkable memory that complements those shared surfaces.
 - If a decision or blocker belongs on an issue or PR, record it there too; do not leave it only in the notebook.
 
-## Available workflows
+## Common tasks
 
 - **notes/process_inbox** — review and promote fleeting notes from inbox/ to permanent notes
 - **notes/doctor** — audit, repair, and normalize a zk notebook
@@ -42,10 +41,4 @@ only in scratch files or chat.
 - Mentions of new notebook, bootstrap, or initializing → `notes/init`
 - Mentions of setup or configure → `notes/setup`
 - If the user wants a quick durable capture before more work, capture first and organize second.
-- If unclear, ask the user which workflow to run before starting
-
-## How to start a workflow
-
-1. Call `get_workflows` to confirm available notes workflows.
-2. Call `start_workflow` with `job_name: "notes"`, `workflow_name: <chosen>`, and `goal: "$ARGUMENTS"`.
-3. Follow the step instructions returned by the MCP server.
+- If unclear, ask one targeted question before starting.

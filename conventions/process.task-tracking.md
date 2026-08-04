@@ -17,7 +17,7 @@ tasks:
     status: pending | completed
     source: email | schedule # where the task originated
     source_ref: "email-23-..." # reference to the source
-    workflow: "job/workflow" # deepwork workflow used (if any)
+    workflow: "skill/route" # installed skill route used (if any)
     project: "project-name" # which project this relates to
     profile: fast | medium | max # semantic model profile override
     provider: claude | gemini | codex

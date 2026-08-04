@@ -287,7 +287,7 @@ jobs:
       - name: Run shellcheck
         run: |
           nix shell --inputs-from . nixpkgs#findutils nixpkgs#shellcheck -c sh -lc '
-            find bin modules packages tests .deepwork \
+            find bin modules packages tests \
               \( -path "modules/terminal/claude-code/update.sh" -o -path "modules/terminal/scripts/keystone-sync-agent-assets.sh" \) -prune \
               -o \( -name "*.sh" -o -name "*.bash" \) -print0 \
               | xargs -0 --no-run-if-empty shellcheck -S error

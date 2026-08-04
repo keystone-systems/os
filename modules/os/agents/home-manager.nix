@@ -167,36 +167,25 @@ in
                     enable = mkDefault true;
                     # Agents need to see ignored files (e.g. .agents submodule)
                     respectGitIgnore = mkDefault false;
-                    mcpServers = {
-                      deepwork = {
-                        command = "${sysPkgs.keystone.deepwork}/bin/deepwork";
-                        args = [
-                          "serve"
-                          "--path"
-                          "."
-                          "--platform"
-                          "claude"
-                        ];
-                      };
-                    }
-                    // optionalAttrs (agentCfg.chrome.enable && agentCfg.chrome.mcp.enable) {
-                      chrome-devtools = {
-                        command = "${sysPkgs.keystone.chrome-devtools-mcp}/bin/chrome-devtools-mcp";
-                        args = [
-                          "--browserUrl"
-                          "http://127.0.0.1:${toString (globalAgentChromeDebugPort name agentCfg)}"
-                        ];
-                      };
-                    }
-                    // mapAttrs (
-                      _: srv:
-                      {
-                        inherit (srv) command args;
+                    mcpServers =
+                      optionalAttrs (agentCfg.chrome.enable && agentCfg.chrome.mcp.enable) {
+                        chrome-devtools = {
+                          command = "${sysPkgs.keystone.chrome-devtools-mcp}/bin/chrome-devtools-mcp";
+                          args = [
+                            "--browserUrl"
+                            "http://127.0.0.1:${toString (globalAgentChromeDebugPort name agentCfg)}"
+                          ];
+                        };
                       }
-                      // optionalAttrs (srv.env != { }) {
-                        inherit (srv) env;
-                      }
-                    ) agentCfg.mcp.servers;
+                      // mapAttrs (
+                        _: srv:
+                        {
+                          inherit (srv) command args;
+                        }
+                        // optionalAttrs (srv.env != { }) {
+                          inherit (srv) env;
+                        }
+                      ) agentCfg.mcp.servers;
                   };
                 };
 

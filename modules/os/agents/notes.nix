@@ -81,6 +81,12 @@ let
       );
       githubUsername = agentCfg.github.username;
       forgejoUsername = agentCfg.forgejo.username;
+      ingestPrompt = pkgs.writeText "keystone-task-loop-ingest.md" (
+        builtins.readFile ./prompts/task-loop-ingest.md
+      );
+      prioritizePrompt = pkgs.writeText "keystone-task-loop-prioritize.md" (
+        builtins.readFile ./prompts/task-loop-prioritize.md
+      );
     in
     pkgs.replaceVars ./scripts/task-loop.sh {
       inherit
@@ -89,9 +95,11 @@ let
         forgejoUsername
         githubUsername
         ingestJson
+        ingestPrompt
         maxTasks
         notesDir
         prioritizeJson
+        prioritizePrompt
         profilesJson
         projectIndexHelper
         ;

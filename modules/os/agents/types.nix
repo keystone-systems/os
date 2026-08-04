@@ -499,7 +499,7 @@ in
                   workflow = mkOption {
                     type = types.str;
                     default = "";
-                    description = "DeepWork workflow to invoke when this event triggers a task.";
+                    description = "Installed skill route to run when this event triggers a task.";
                   };
                 };
               }
@@ -517,7 +517,7 @@ in
                 summary = "Weekly Retrospective";
                 schedule = "weekly:friday";
                 time = "20:00";
-                workflow = "retrospective/run";
+                workflow = "ks-projects";
               }
             ];
           };

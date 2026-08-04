@@ -65,8 +65,7 @@ Enable one with a toggle; Keystone auto-wires TLS, reverse proxy, and DNS.
 ## Terminal, desktop, and OS agents
 
 - **Terminal** — Zsh + starship, Helix, Zellij, mail (Himalaya), calendar
-  (Khal), DeepWork workflows, AI coding tools (Claude Code, Codex, Gemini,
-  OpenCode)
+  (Khal), and AI coding tools (Claude Code, Codex, Gemini, OpenCode)
 - **Desktop** — Hyprland with themes, app launcher, clipboard history,
   screenshot tools
 - **OS agents** — service-account user identities with their own mail, git

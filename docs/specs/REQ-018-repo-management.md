@@ -23,10 +23,8 @@ MAY, REQUIRED, OPTIONAL).
 ~/repos/
 ├── ncrmro/
 │   ├── ks-config/               # flakeInput: (self — the consumer flake)
-│   ├── keystone/                # flakeInput: "keystone"
+│   ├── ks.systems/os/           # flakeInput: "keystone"
 │   └── agenix-secrets/          # flakeInput: "agenix-secrets"
-└── Unsupervisedcom/
-    └── deepwork/                # flakeInput: "deepwork" (via keystone)
 
 $HOME/code/
 └── owner/
@@ -87,8 +85,8 @@ repositories as an attrset keyed by `owner/repo` (e.g.,
 structure.
 
 **REQ-018.4a** `~/repos/{owner}/{repo}/` is reserved for
-keystone-managed repositories only, such as `ks-config`, `keystone`,
-`agenix-secrets`, `deepwork`, and other repos explicitly declared in
+keystone-managed repositories only, such as `ks-config`, `ks.systems/os`,
+`agenix-secrets`, and other repos explicitly declared in
 `keystone.repos`.
 
 **REQ-018.5** The registry MUST support repos that are NOT flake inputs
@@ -131,8 +129,8 @@ source of truth.
 
 **REQ-018.7c** `ks update --dev` MUST clone missing managed repos and pull
 existing managed repos before building Home Manager profiles so newly
-available local overrides (for example `Unsupervisedcom/deepwork` library
-jobs) are reflected in the activated environment in the same run.
+available local overrides are reflected in the activated environment in the
+same run.
 
 **REQ-018.8** Dev mode MUST NOT modify, commit, or push any managed repo.
 

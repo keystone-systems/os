@@ -673,7 +673,7 @@ let
     # TODO: add a shadow-warning regression test. Reading
     # result.config.warnings from an eval-config result cascades into
     # full home-manager evaluation (systemd.services.home-manager-*
-    # → claudeJsonConfig.data → deepwork-library-jobs), which fails
+    # → claudeJsonConfig.data), which fails
     # under the local keystone-conventions derivation invalidation
     # issue. The shadow-warning code itself is simple and covered by
     # the sink wiring tests; wire the warning test once the cascade

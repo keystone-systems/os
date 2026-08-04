@@ -27,7 +27,7 @@ enabled, modules derive local paths from the `keystone.repos` registry at
 ## Path Resolution
 
 6. When `keystone.development = true`, modules that consume Nix store copies
-   (conventions, deepwork jobs, claude-code commands, repo-backed shell
+   (conventions, AI command assets, repo-backed shell
    entrypoints) MUST resolve to the local checkout path derived from
    `keystone.repos` entries whose `flakeInput` matches the relevant flake
    input.
@@ -40,17 +40,14 @@ enabled, modules derive local paths from the `keystone.repos` registry at
    `keystone.development` option by `users.nix`.
 9. `keystone.terminal.repos` is bridged from `keystone.repos` by `users.nix`.
    Terminal modules look up local checkout paths by `flakeInput` name.
-10. DeepWork library jobs (`DEEPWORK_ADDITIONAL_JOBS_FOLDERS`) swap to local
-    checkouts when `keystone.terminal.development` is true and the
-    corresponding repo is registered.
-11. When `keystone.development = true`, AI instruction files (`AGENTS.md`,
+10. When `keystone.development = true`, AI instruction files (`AGENTS.md`,
     `CLAUDE.md`, `GEMINI.md`), curated AI command files, and managed Codex
     skills MUST be refreshable from the live keystone checkout without a full
     rebuild.
-12. `ks sync-agent-assets` is the supported no-sudo refresh path for these
+11. `ks sync-agent-assets` is the supported no-sudo refresh path for these
     generated development-mode assets. `ks switch` and `ks update --dev` MUST
     also run the same refresh path during activation.
-13. Development-mode refreshes MUST write generated outputs into user-home tool
+12. Development-mode refreshes MUST write generated outputs into user-home tool
     paths, not into repo checkouts under `keystone.repos`.
 
 ## Desktop Module

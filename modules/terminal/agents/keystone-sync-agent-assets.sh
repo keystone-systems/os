@@ -460,8 +460,8 @@ done
 
 # Build the set of skills to render: the union of (manifest-published ks-*
 # commands) and (always-on yaml keys). Always-on keys are anything in the
-# merged skill map that doesn't start with `ks-` — deepwork-family entries
-# and any user-authored additions in _shared/skills.yaml. ks-* keys are
+# merged skill map that doesn't start with `ks-` — always-on entries and any
+# user-authored additions in _shared/skills.yaml. ks-* keys are
 # emitted only when published by the user's manifest.
 skills_to_emit=()
 declare -A seen_skills=()
@@ -654,7 +654,7 @@ spec. Inside:
 - `ks-*` — keystone-curated skills tied to a slash-command id
   published by this host (e.g., `/ks-engineer`, `/ks-notes`). Only
   emitted if the host capability set includes the matching command.
-- Bare names (`deepwork`, `wrap-up`, `review`) — always-on workflow
+- Bare names (`wrap-up`, `review`) — always-on workflow
   skills that don'\''t gate on capability.
 
 Add user-authored skills via `<consumer-flake>/agents/_shared/skills.yaml`.

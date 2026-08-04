@@ -186,30 +186,6 @@
         "type": "github"
       }
     },
-    "deepwork": {
-      "inputs": {
-        "nixpkgs": [
-          "keystone",
-          "nixpkgs"
-        ],
-        "pyproject-build-systems": "pyproject-build-systems",
-        "pyproject-nix": "pyproject-nix",
-        "uv2nix": "uv2nix"
-      },
-      "locked": {
-        "lastModified": 1784226891,
-        "narHash": "sha256-zqgUj/uge36SWPw+JHw+ToQiqOh89LTzhdymax0cfY0=",
-        "owner": "Unsupervisedcom",
-        "repo": "deepwork",
-        "rev": "419b043d1c7f9c59d6e8b27634138d20ab9e9d5c",
-        "type": "github"
-      },
-      "original": {
-        "owner": "Unsupervisedcom",
-        "repo": "deepwork",
-        "type": "github"
-      }
-    },
     "desktop": {
       "inputs": {
         "home-manager": "home-manager",
@@ -224,11 +200,11 @@
         "walker": "walker"
       },
       "locked": {
-        "lastModified": 1785594188,
-        "narHash": "sha256-oKmFTV4LKRgEYIBgbJk22OHjscNNqAOa+DgpB8gVuDk=",
+        "lastModified": 1785728337,
+        "narHash": "sha256-glqhgM8mspg1BdYDEGbzg4WV/UePjIZXNS5jysHVC5w=",
         "ref": "refs/heads/main",
-        "rev": "61fbc0feee92d1155828a6c461bd0d019e46381a",
-        "revCount": 4,
+        "rev": "cefec384d59ceda5375fcf013744392e20bb8982",
+        "revCount": 10,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
       },
@@ -1084,7 +1060,6 @@
         "cardamum": "cardamum",
         "comodoro": "comodoro",
         "crane": "crane",
-        "deepwork": "deepwork",
         "desktop": "desktop",
         "disko": "disko",
         "ghostty": "ghostty",
@@ -1474,60 +1449,6 @@
         "type": "github"
       }
     },
-    "pyproject-build-systems": {
-      "inputs": {
-        "nixpkgs": [
-          "keystone",
-          "deepwork",
-          "nixpkgs"
-        ],
-        "pyproject-nix": [
-          "keystone",
-          "deepwork",
-          "pyproject-nix"
-        ],
-        "uv2nix": [
-          "keystone",
-          "deepwork",
-          "uv2nix"
-        ]
-      },
-      "locked": {
-        "lastModified": 1772555609,
-        "narHash": "sha256-3BA3HnUvJSbHJAlJj6XSy0Jmu7RyP2gyB/0fL7XuEDo=",
-        "owner": "pyproject-nix",
-        "repo": "build-system-pkgs",
-        "rev": "c37f66a953535c394244888598947679af231863",
-        "type": "github"
-      },
-      "original": {
-        "owner": "pyproject-nix",
-        "repo": "build-system-pkgs",
-        "type": "github"
-      }
-    },
-    "pyproject-nix": {
-      "inputs": {
-        "nixpkgs": [
-          "keystone",
-          "deepwork",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1771518446,
-        "narHash": "sha256-nFJSfD89vWTu92KyuJWDoTQJuoDuddkJV3TlOl1cOic=",
-        "owner": "pyproject-nix",
-        "repo": "pyproject.nix",
-        "rev": "eb204c6b3335698dec6c7fc1da0ebc3c6df05937",
-        "type": "github"
-      },
-      "original": {
-        "owner": "pyproject-nix",
-        "repo": "pyproject.nix",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "disko": [
@@ -1818,33 +1739,6 @@
       "original": {
         "owner": "numtide",
         "repo": "treefmt-nix",
-        "type": "github"
-      }
-    },
-    "uv2nix": {
-      "inputs": {
-        "nixpkgs": [
-          "keystone",
-          "deepwork",
-          "nixpkgs"
-        ],
-        "pyproject-nix": [
-          "keystone",
-          "deepwork",
-          "pyproject-nix"
-        ]
-      },
-      "locked": {
-        "lastModified": 1772545244,
-        "narHash": "sha256-Ys+5UMOqp2kRvnSjyBcvGnjOhkIXB88On1ZcAstz1vY=",
-        "owner": "pyproject-nix",
-        "repo": "uv2nix",
-        "rev": "482aba340ded40ef557d331315f227d5eba84ced",
-        "type": "github"
-      },
-      "original": {
-        "owner": "pyproject-nix",
-        "repo": "uv2nix",
         "type": "github"
       }
     },

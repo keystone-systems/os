@@ -19,7 +19,7 @@ There is no single release-tracker issue yet; if you open one, update
 - [x] #454 — chore(keystone): codify keystone.systemFlake pointer path as single source of truth
 - [ ] #515 — audit codebase for complicated vs complex code (v2)
 - [ ] #476 — fix(agents-e2e): smoke harness should pause/resume the agent's task-loop timer itself
-- [ ] #475 — fix(agents): clean up orphan agent ~/.keystone and ~/notes/.deepwork dirs; add ks doctor check that DEEPWORK_ADDITIONAL_JOBS_FOLDERS matches active system
+- [x] #475 — retired with the legacy workflow runtime
 - [ ] #469 — feat(os): reconcile ZFS home datasets on activation
 - [ ] #458 — feat(test): multi-node fleet VM test harness with headscale mesh and ZFS replication over tailnet
 - [ ] #446 — epic(arm): ARM-ecosystem support

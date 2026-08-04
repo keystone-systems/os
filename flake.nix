@@ -84,11 +84,6 @@
       flake = false;
     };
 
-    deepwork = {
-      url = "github:Unsupervisedcom/deepwork";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # MCP servers
     grafana-mcp-src = {
       url = "github:grafana/mcp-grafana";
@@ -126,7 +121,6 @@
       nix-index-database,
       nixos-hardware,
       kinda-nvim-hx,
-      deepwork,
       grafana-mcp-src,
       lfs-s3-src,
       ...
@@ -149,7 +143,6 @@
           kinda-nvim-hx
           ;
         self = self;
-        deepwork = deepwork;
         keystoneOverlay = self.overlays.default;
       };
 
@@ -243,7 +236,6 @@
             browser-previews
             ghostty
             yazi
-            deepwork
             grafana-mcp-src
             lfs-s3-src
             ;
@@ -308,7 +300,7 @@
           # Only pass inputs that represent managed repos — not all upstream dependencies.
           keystone._repoInputs = {
             keystone = self;
-            inherit deepwork desktop;
+            inherit desktop;
           };
           home-manager = {
             useGlobalPkgs = true;
@@ -491,6 +483,7 @@
           terminalZide = import ./tests/module/terminal-zide.nix {
             inherit
               pkgs
+              lib
               self
               home-manager
               ;
@@ -508,11 +501,24 @@
           agentTaskLoopPingPong = import ./tests/module/agent-task-loop-ping-pong.nix {
             inherit pkgs lib;
           };
+          agentTaskLoopInvalidPendingTask = import ./tests/module/agent-task-loop-invalid-pending-task.nix {
+            inherit pkgs lib;
+          };
           agentRuntimeCoherence = import ./tests/module/agent-runtime-coherence.nix {
             inherit pkgs lib;
           };
           agentQueueMigration = import ./tests/module/agent-queue-migration.nix {
             inherit pkgs lib;
+          };
+          deepworkRemoval =
+            assert !(keystoneInputs ? deepwork);
+            assert !(self.packages.x86_64-linux ? deepwork-library-jobs);
+            assert !(self.packages.x86_64-linux ? keystone-deepwork-jobs);
+            pkgs.runCommand "deepwork-removal" { } ''
+              touch "$out"
+            '';
+          retiredAgentAssetsCleanup = import ./tests/module/retired-agent-assets-cleanup.nix {
+            inherit pkgs;
           };
         in
         {
@@ -536,8 +542,11 @@
           terminal-mail = terminalMail;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
           agent-task-loop-ping-pong = agentTaskLoopPingPong;
+          agent-task-loop-invalid-pending-task = agentTaskLoopInvalidPendingTask;
           agent-runtime-coherence = agentRuntimeCoherence;
           agent-queue-migration = agentQueueMigration;
+          deepwork-removal = deepworkRemoval;
+          retired-agent-assets-cleanup = retiredAgentAssetsCleanup;
 
           # --- CI groups — parallel matrix jobs via nix-github-actions ---
 
@@ -577,8 +586,11 @@
             mkdir -p "$out"
             ln -s ${agentTaskLoopHashRegression} "$out/agent-task-loop-hash-regression"
             ln -s ${agentTaskLoopPingPong} "$out/agent-task-loop-ping-pong"
+            ln -s ${agentTaskLoopInvalidPendingTask} "$out/agent-task-loop-invalid-pending-task"
             ln -s ${agentRuntimeCoherence} "$out/agent-runtime-coherence"
             ln -s ${agentQueueMigration} "$out/agent-queue-migration"
+            ln -s ${deepworkRemoval} "$out/deepwork-removal"
+            ln -s ${retiredAgentAssetsCleanup} "$out/retired-agent-assets-cleanup"
             ln -s ${binaryCacheClientMerge} "$out/binary-cache-client-merge"
             ln -s ${terminalZide} "$out/terminal-zide"
             ln -s ${terminalMail} "$out/terminal-mail"
@@ -653,8 +665,6 @@
               chrome-devtools-mcp
               grafana-mcp
               lfs-s3
-              deepwork-library-jobs
-              keystone-deepwork-jobs
               keystone-conventions
               slidev
               ;
@@ -724,7 +734,6 @@
               gettext
               bash
               shellcheck
-              deepwork.packages.${pkgs.stdenv.hostPlatform.system}.default
               gh # GitHub CLI
               python3
             ];

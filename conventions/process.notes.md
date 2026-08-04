@@ -1,6 +1,6 @@
 # Convention: Notes, reports, and presentations (process.notes)
 
-This convention standardizes how humans, agents, and DeepWork workflows store
+This convention standardizes how humans and agents store
 active notes, operational reports, Slidev decks, hubs, decisions, and archived
 material in a shared zk notebook. It extends
 `process.knowledge-management`.
@@ -135,8 +135,6 @@ material in a shared zk notebook. It extends
     - `status/archived`
     - `source/human`
     - `source/agent`
-    - `source/deepwork`
-    - `source/deepwork/ks-doctor`
 42. Project tags MUST be the primary discovery path for initiative-scoped notes.
 43. Repo tags SHOULD be added when a note materially concerns one specific repo and MAY be the primary discovery path for operational reports or decks.
 44. Repo tags MUST be derived from the normalized `owner/repo` identity implied
@@ -169,9 +167,9 @@ material in a shared zk notebook. It extends
 54. After completing a task that produced meaningful findings, agents SHOULD
     create or update either a project decision note, a report note, or a
     presentation note.
-55. DeepWork workflows that produce documentation for later use MUST write their
-    durable output into the notebook rather than leaving it only in scratch files.
-56. DeepWork workflow outputs MUST be routed to the appropriate notebook directory
+55. Agent work that produces documentation for later use MUST write its durable
+    output into the notebook rather than leaving it only in scratch files.
+56. Agent outputs MUST be routed to the appropriate notebook directory
     by output kind:
 
     | Output kind                   | Note type    | Directory      |
@@ -185,10 +183,8 @@ material in a shared zk notebook. It extends
     intermediate analysis) MUST be created as literature notes in `literature/`
     and linked from the report via wikilinks. Agents MUST NOT create `_dataroom/`
     subdirectories or ad hoc folders inside the notebook.
-58. Workflow-produced notes MUST include `source/deepwork` and
-    `source/deepwork/<workflow_name>` in their tags (e.g.,
-    `source/deepwork/competitive_content_analysis`).
-59. Workflow-produced notes MUST include the project slug tag when the workflow
+58. Agent-produced notes MUST include `source/agent`.
+59. Agent-produced notes MUST include the project slug tag when the work
     is scoped to a specific project.
 60. Inbox processing workflows SHOULD attach promoted notes to a hub when the
     note contains a recognized `project/<slug>` tag or another clear hub relationship.

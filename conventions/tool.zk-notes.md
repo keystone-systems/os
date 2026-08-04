@@ -58,7 +58,7 @@ zk --notebook-dir ~/notes new reports/ --title "Keystone fleet health $(date +%Y
 zk --notebook-dir ~/notes list reports/ \
   --tag "report/keystone-system" \
   --tag "repo/ncrmro/nixos-config" \
-  --tag "source/deepwork/ks-doctor" \
+  --tag "source/agent" \
   --sort created- --limit 1 --format json
 ```
 
@@ -76,9 +76,9 @@ issue_ref: gh:ncrmro/keystone#88
 pr_ref: gh:ncrmro/keystone#91
 ```
 
-## DeepWork workflow note creation
+## Agent note creation
 
-13. DeepWork workflows MUST use `zk new` to create output notes. When
+13. Agents MUST use `zk new` to create output notes. When
     `ZK_NOTEBOOK_DIR` is set, agents MUST NOT pass `--notebook-dir`.
 
 14. Workflows MUST create the final report as a report note:

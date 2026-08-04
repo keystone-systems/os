@@ -37,22 +37,13 @@ let
   scriptPackage = pkgs.writeShellScriptBin "keystone-sync-agent-assets" (
     builtins.readFile ./keystone-sync-agent-assets.sh
   );
+  cleanupRetiredAssets = pkgs.writeShellScript "cleanup-retired-agent-assets" (
+    builtins.readFile ./cleanup-retired-agent-assets.sh
+  );
   agentsWithMcp = mapAttrs (name: agentCfg: {
     inherit (agentCfg) host archetype;
     notesPath = agentCfg.notes.path;
-    mcpServers = {
-      deepwork = {
-        command = "${pkgs.keystone.deepwork}/bin/deepwork";
-        args = [
-          "serve"
-          "--path"
-          "."
-          "--platform"
-          "claude"
-        ];
-      };
-    }
-    // optionalAttrs (agentCfg.chrome.enable && agentCfg.chrome.mcp.enable) {
+    mcpServers = optionalAttrs (agentCfg.chrome.enable && agentCfg.chrome.mcp.enable) {
       chrome-devtools = {
         command = "${pkgs.keystone.chrome-devtools-mcp}/bin/chrome-devtools-mcp";
         args = [
@@ -205,6 +196,13 @@ in
         agents_root="$consumer_flake/agents"
 
         is_agent_user=${if isAgent then "1" else "0"}
+
+        # Remove managed discovery surfaces from the retired workflow runtime.
+        # Run this during every normal activation so upgrades do not depend on
+        # a later manual asset sync.
+        if [ "$is_agent_user" = "0" ]; then
+          ${cleanupRetiredAssets} "$agents_root" "$HOME"
+        fi
 
         # Count blocker-refusals so we can fail the activation at the end.
         # A non-empty dir / regular file / other non-symlink entry at a managed

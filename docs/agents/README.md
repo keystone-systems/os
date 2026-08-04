@@ -22,22 +22,18 @@ Concrete missions keystone is designed to host:
 - **Personal knowledge** — notebook curation, daily reports, project status
   rollups, decision archives.
 
-The platform is opinionated about how missions are constructed: as skills and
-subagents in your `keystone-config` repo, orchestrated by autonomous OS-level
-service accounts, optionally extended by DeepWork workflows for
-quality-gated multi-step processes.
+The platform constructs missions from skills and subagents in your
+`keystone-config` repository. Autonomous OS-level service accounts run them.
 
-## The three layers
+## The two layers
 
 | Layer | What | Where to read |
 |---|---|---|
 | **L1 Terminal agents** | You + your CLI coding agents (Claude Code, Gemini CLI, Codex, OpenCode) + per-tool skills and subagents synced from your consumer flake. | [`tool.cli-coding-agents`](../../conventions/tool.cli-coding-agents.md) convention; [`docs/terminal/cli-coding-agents.md`](../terminal/cli-coding-agents.md) reference |
-| **L2 OS agents** | Sandboxed service-account principals (`agent-<name>` users) that inherit L1 skills and subagents into isolated home dirs, run on systemd timers, and can auto-loop on platform-native skills without DeepWork. | [`os-agents.md`](os-agents.md), [`os-agents.agent-space.md`](os-agents.agent-space.md) |
-| **L3 DeepWork** | Workflow orchestration MCP for advanced multi-step processes with quality gates, layered over L1+L2. Used when basic looping needs richer control flow. | [`process.deepwork-job`](../../conventions/process.deepwork-job.md) convention |
+| **L2 OS agents** | Sandboxed service-account principals (`agent-<name>` users) that inherit L1 skills and subagents into isolated home dirs and run on systemd timers. | [`os-agents.md`](os-agents.md), [`os-agents.agent-space.md`](os-agents.agent-space.md) |
 
 L1 is the substrate. L2 builds on L1 by giving agents their own identity, mail,
-and hardware-isolated home. L3 is reached for only when a workflow genuinely
-needs orchestration that platform-native skills cannot express.
+and hardware-isolated home.
 
 ## How a mission starts
 
@@ -50,9 +46,6 @@ needs orchestration that platform-native skills cannot express.
    `keystone.os.agents.<name> = { fullName = "..."; email = "..."; ... };`.
    Each agent inherits L1 — the same skill and subagent set is symlinked into
    their isolated home.
-4. **Reach for DeepWork** only when basic auto-looping needs richer
-   orchestration: multi-step workflows, review gates, parallel agents
-   coordinated through shared state.
 
 ## The consumer flake as audit log
 
@@ -76,8 +69,8 @@ OS agents inherit L1 by getting the same `<consumer-flake>/agents/<tool>/`
 content symlinked into their own isolated home dirs. A skill you add for
 yourself is immediately available to every OS agent on the host — no
 per-agent duplication, no separate publishing step. This is the foundation
-that lets agents auto-loop on platform-native skills without a DeepWork
-dependency: an agent running `claude` with a custom `mission-task-loop` skill
+that lets agents auto-loop on platform-native skills: an agent running
+`claude` with a custom `mission-task-loop` skill
 synced from your consumer flake has everything it needs to execute the loop,
 and the loop's behaviour is reviewable in git like any other skill.
 
@@ -87,11 +80,6 @@ and the loop's behaviour is reviewable in git like any other skill.
   `~/.config/opencode/skills/` still write to the home dir directly; future
   scope is to bring them under the same consumer-flake pattern as the other
   three tools.
-- **No-DeepWork OS-agent task loop.** Basic auto-looping today depends on the
-  DeepWork-driven `task_loop` job. Future work will offer a platform-native
-  alternative for fleets that don't want DeepWork — a small skill plus a
-  systemd timer plus the agent's own scheduling state. The L1 plumbing this
-  PR landed is the precondition.
 - **Pi agent harness.** Experimentation with a more constrained agent harness
   for missions with stricter latency, cost, or determinism requirements.
 - Several agentic surfaces today (Walker menu entries, notes sync,
@@ -116,5 +104,4 @@ and the loop's behaviour is reviewable in git like any other skill.
 
 Convention sources of truth:
 - [`tool.cli-coding-agents`](../../conventions/tool.cli-coding-agents.md) — per-tool paths, consumer-flake source layout, symlink semantics.
-- [`process.deepwork-job`](../../conventions/process.deepwork-job.md) — DeepWork job design, skill registration.
 - [`process.keystone-development`](../../conventions/process.keystone-development.md) — how to develop keystone itself.

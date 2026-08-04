@@ -22,7 +22,6 @@ CURATED_ATTRS=(
     .#packages.x86_64-linux.agent-coding-agent
     .#packages.x86_64-linux.agent-mail
     .#packages.x86_64-linux.chrome-devtools-mcp
-    .#packages.x86_64-linux.deepwork-library-jobs
     .#packages.x86_64-linux.fetch-email-source
     .#packages.x86_64-linux.fetch-forgejo-sources
     .#packages.x86_64-linux.fetch-github-sources
@@ -30,7 +29,6 @@ CURATED_ATTRS=(
     .#packages.x86_64-linux.forgejo-project
     .#packages.x86_64-linux.grafana-mcp
     .#packages.x86_64-linux.keystone-conventions
-    .#packages.x86_64-linux.keystone-deepwork-jobs
     .#packages.x86_64-linux.ks
     .#packages.x86_64-linux.lfs-s3
     .#packages.x86_64-linux.podman-agent

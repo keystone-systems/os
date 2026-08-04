@@ -1,4 +1,4 @@
-Route project management requests to the appropriate DeepWork workflow.
+Handle project management requests directly with the appropriate supporting references.
 
 Use this skill for task decomposition, milestone tracking, board management,
 blocker escalation, and issue triage.
@@ -19,7 +19,7 @@ Before starting project management work, review the relevant convention files
 - **Forgejo**: [tool.forgejo.md](tool.forgejo.md) -- issue and project management on Forgejo
 - **GitHub**: [tool.github.md](tool.github.md) -- issue and PR management on GitHub
 
-## Available workflows
+## Common tasks
 
 - **project/milestone** -- plan milestones and user stories
 - **project/milestone_engineering_handoff** -- prepare engineering handoff with specs and acceptance criteria
@@ -34,10 +34,4 @@ Before starting project management work, review the relevant convention files
 - Project health checks or tracking issues --> `project/doctor`
 - Milestone wrap-up or retrospective --> `project/wrap_up`
 - Blocker escalation --> read `process.blocker.md`, then escalate following the convention
-- If unclear, ask the user which workflow to run before starting
-
-## How to start a workflow
-
-1. Call `get_workflows` to confirm available project workflows.
-2. Call `start_workflow` with `job_name: "project"`, `workflow_name: <chosen>`, and `goal: "$ARGUMENTS"`.
-3. Follow the step instructions returned by the MCP server.
+- If unclear, ask one targeted question before starting.

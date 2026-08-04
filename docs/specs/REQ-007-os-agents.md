@@ -116,7 +116,7 @@ Secrets:
   - `TASKS.yaml` — Current task queue (see FR-010 for schema)
   - `PROJECTS.yaml` — Projects the agent is responsible for
   - `ISSUES.yaml` — Known issues and incident log (see FR-014)
-  - `SCHEDULES.yaml` — Recurring and scheduled work with DeepWork workflow references
+  - `SCHEDULES.yaml` — Recurring work with optional installed skill routes
   - `SOUL.md` — Agent identity: name, display name, email, and accounts table
   - `HUMAN.md` — Human operator: name and email
   - `AGENTS.md` — Operational context, conventions, and bespoke learnings
@@ -124,7 +124,7 @@ Secrets:
   - `ARCHITECTURE.md` — System architecture the agent operates within
   - `REQUIREMENTS.md` — Standing requirements and constraints
   - `SERVICES.md` — Services the agent can access (intranet table)
-- The agent-space MUST contain `.repos/`, `logs/`, `bin/`, `.deepwork/jobs/` directories
+- The agent-space MUST contain `.repos/`, `logs/`, and `bin/` directories
 - The agent-space MUST contain a `flake.nix` providing the agent's dev shell (see FR-017)
 - Identity documents (`SOUL.md`, `HUMAN.md`) MUST be auto-populated from `keystone.os.agents.{name}` configuration
 - The agent MUST be able to commit and push changes to its agent-space repository
@@ -151,7 +151,7 @@ Secrets:
   - A fast model for prioritize (default: haiku)
   - A capable model for execute (default: sonnet), overridable per-task via the `model` field
 - Each task in `TASKS.yaml` MAY specify a `needs` field for dependency ordering
-- Each task in `TASKS.yaml` MAY specify a `workflow` field for DeepWork workflow dispatch
+- Each task in `TASKS.yaml` MAY specify a `workflow` field. The field MUST name an installed skill route.
 - The task loop MUST validate `TASKS.yaml` after each write and restore from a pre-stage backup on validation failure
 
 ### FR-011: Audit Trail — Security Logging
@@ -223,20 +223,20 @@ Secrets:
 
 ### FR-016: Cronjob Self-Management
 
-- The agent-space MUST include `.deepwork/jobs/cronjobs/` with workflows for creating, editing, and reviewing cronjobs
+- The agent-space MAY include installed skills for creating, editing, and reviewing scheduled work
 - The agent-space MUST include a `.cronjobs/` directory with `{job-name}/run.sh`, `{job-name}/service.unit`, `{job-name}/timer.unit`
 - The agent-space MUST include `.cronjobs/shared/` with `lib.sh`, `config.sh`, `setup.sh`
 - `run.sh` scripts MUST use `SCRIPT_DIR` for relative paths, MUST NOT hardcode absolute paths
 - `run.sh` scripts MUST source `shared/lib.sh` for common functions
 - The system MUST provide a `keystone.os.agents.{name}.cronjobs` NixOS option for declaring managed timers
-- The `cronjobs` DeepWork job MUST support three workflows: create, edit, review
+- A scheduled-work skill SHOULD support create, edit, and review operations
 
 ### FR-017: Agent-Space Development Shell
 
-- The agent-space `flake.nix` MUST provide a dev shell with: LLM CLI, DeepWork CLI, `git`, `gh`, `jq`, `yq-go`
+- The agent-space `flake.nix` MUST provide a dev shell with: LLM CLI, `git`, `gh`, `jq`, `yq-go`
 - The agent-space `flake.nix` SHOULD provide additional tools based on agent role: `forgejo-cli`, `nodejs`, `bun`, `glow`
 - Systemd services MUST access the dev shell via `nix develop --command` or direnv integration
-- The `flake.nix` MUST declare DeepWork as an input for workflow access
+- The task loop MUST resolve a workflow route to `~/.agents/skills/<route>/SKILL.md`
 
 ## Non-Functional Requirements
 

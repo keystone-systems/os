@@ -1,4 +1,4 @@
-Route executive-assistant requests to the appropriate DeepWork workflow.
+Handle executive-assistant requests directly with the appropriate supporting references.
 
 Use this skill for calendar management, inbox triage, event planning and
 discovery, portfolio reviews, and daily task coordination.
@@ -14,7 +14,7 @@ required fields, and safety rules:
 - **Email (Himalaya)**: [tool.himalaya.md](tool.himalaya.md) -- RFC 2822 message format, sending via stdin, reading with `-o json`, threading
 - **Contacts (Cardamum)**: [tool.stalwart.md](tool.stalwart.md) sections 9-11 -- CardDAV addressbook operations and vCard format
 
-## Available workflows
+## Common tasks
 
 - **executive_assistant/manage_calendar** -- calendar triage and scheduling
 - **executive_assistant/clean_inbox** -- inbox cleanup and reply drafting
@@ -33,10 +33,4 @@ required fields, and safety rules:
 - Mentions of daily review, priorities, or task coordination --> `executive_assistant/task_loop`
 - Mentions of portfolio review, project health, or status across projects --> `executive_assistant/portfolio_review`
 - Mentions of reviewing a single project's status --> `executive_assistant/portfolio_review_one`
-- If unclear, ask the user which workflow to run before starting
-
-## How to start a workflow
-
-1. Call `get_workflows` to confirm available executive_assistant workflows.
-2. Call `start_workflow` with `job_name: "executive_assistant"`, `workflow_name: <chosen>`, and `goal: "$ARGUMENTS"`.
-3. Follow the step instructions returned by the MCP server.
+- If unclear, ask one targeted question before starting.

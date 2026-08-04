@@ -1,6 +1,6 @@
 # Available skills
 
-Each skill loads domain-specific conventions and DeepWork workflows on demand.
+Each skill loads domain-specific conventions and workflows on demand.
 
 - **/ks.system** — Keystone system — may start keystone_system/issue or keystone_system/doctor
 - **/ks.assistant** — Personal assistant — may start personal_assistant/reservation, personal_assistant/birthday, personal_assistant/calendar_prioritize, or personal_assistant/memory_search

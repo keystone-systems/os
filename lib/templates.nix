@@ -331,7 +331,7 @@ let
         # Home Manager runs the keystone terminal module for the installer
         # admin so the live ISO ships starship/zoxide/helix/git config that
         # matches the installed-system experience. Heavy submodules (mail,
-        # calendar, deepwork, agent-mail, forgejo, grafana, etc.) stay off
+        # calendar, agent-mail, forgejo, grafana, etc.) stay off
         # because each `keystone.terminal.<feature>.enable` flag defaults
         # to false and the installer admin HM config below only sets the
         # root `keystone.terminal.enable = true` — not any opt-in subsystem.
@@ -497,7 +497,7 @@ let
             # Home Manager configuration for the installer admin user.
             # The keystone terminal module is imported with only its root
             # `keystone.terminal.enable = true;` — none of the opt-in
-            # subsystems (mail, calendar, deepwork, agent-mail, forgejo,
+            # subsystems (mail, calendar, agent-mail, forgejo,
             # grafana, secrets tooling, etc.) are enabled, so they no-op under
             # their own `mkIf` guards. This keeps the ISO closure small
             # without the `_module.args.terminalMinimal` argument that

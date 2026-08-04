@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- Removed DeepWork, its MCP server, job libraries, workflow commands, and managed repository.
+- A normal Home Manager activation removes its retired generated skill and Gemini command artifacts.
+
 ## [0.12.0] - 2026-04-03
 
 ### Added

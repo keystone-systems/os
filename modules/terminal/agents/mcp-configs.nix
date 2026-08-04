@@ -17,51 +17,10 @@ with lib;
 let
   cfg = config.keystone.terminal.cliCodingAgents;
   terminalCfg = config.keystone.terminal;
-  deepworkEnabled = terminalCfg.ai.enable && terminalCfg.deepwork.enable;
-  deepworkAdditionalJobsFolders =
-    config.home.sessionVariables.DEEPWORK_ADDITIONAL_JOBS_FOLDERS or null;
-
-  mkDeepworkServer =
-    platform:
-    {
-      command = "${pkgs.keystone.deepwork}/bin/deepwork";
-      args = [
-        "serve"
-        "--path"
-        "."
-        "--platform"
-        platform
-      ];
-    }
-    // optionalAttrs (deepworkAdditionalJobsFolders != null && deepworkAdditionalJobsFolders != "") {
-      env = {
-        DEEPWORK_ADDITIONAL_JOBS_FOLDERS = deepworkAdditionalJobsFolders;
-      };
-    };
-
-  claudeMcpServers =
-    cfg.mcpServers
-    // optionalAttrs deepworkEnabled {
-      deepwork = mkDeepworkServer "claude";
-    };
-
-  geminiMcpServers =
-    cfg.mcpServers
-    // optionalAttrs deepworkEnabled {
-      deepwork = mkDeepworkServer "gemini";
-    };
-
-  codexMcpServers =
-    cfg.mcpServers
-    // optionalAttrs deepworkEnabled {
-      deepwork = mkDeepworkServer "codex";
-    };
-
-  opencodeMcpServers =
-    cfg.mcpServers
-    // optionalAttrs deepworkEnabled {
-      deepwork = mkDeepworkServer "opencode";
-    };
+  claudeMcpServers = cfg.mcpServers;
+  geminiMcpServers = cfg.mcpServers;
+  codexMcpServers = cfg.mcpServers;
+  opencodeMcpServers = cfg.mcpServers;
 
   # Nix-managed MCP servers as a JSON file in the store, used by the
   # activation script to merge into the runtime ~/.claude.json.

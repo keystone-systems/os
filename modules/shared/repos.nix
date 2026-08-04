@@ -25,11 +25,6 @@ let
   # pre-migration home -- and being explicit made it outrank derivation, so
   # every consumer registered a repo that no longer exists there.
   explicitRepos = {
-    "Unsupervisedcom/deepwork" = {
-      url = "https://github.com/Unsupervisedcom/deepwork.git";
-      flakeInput = "deepwork";
-      branch = "main";
-    };
     # Explicit entry required: the desktop input's sourceInfo carries no
     # owner/repo (especially under ks-dev path overrides), so auto-derivation
     # would register a bare "desktop" repo and dev symlinks would dangle at

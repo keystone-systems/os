@@ -54,9 +54,8 @@ llm-agents = {
 keystone.inputs.llm-agents.follows = "llm-agents";
 ```
 
-The user-facing AI surface is curated. Keystone publishes `/ks`, optional
-`/ks-dev` in development mode, and `/deepwork` instead of exposing every
-workflow as a top-level command. Capability-aware routing happens in
+The user-facing AI surface is curated. Keystone publishes `/ks` and optional
+`/ks-dev` in development mode. Capability-aware routing happens in
 `modules/terminal/agents/extensions.nix`.
 
 ## Mail (`mail.nix`)

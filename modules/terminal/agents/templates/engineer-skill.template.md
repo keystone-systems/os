@@ -1,4 +1,4 @@
-Route engineering requests to the appropriate DeepWork workflow.
+Handle engineering requests directly with the appropriate supporting references.
 
 Use this skill for implementation tasks, code review, architecture decisions,
 bug fixes, refactoring, and CI/CD work.
@@ -24,7 +24,7 @@ Before starting implementation, review the relevant convention files
 - **Code comments**: [code.comments.md](code.comments.md) -- commenting standards
 - **Nix devshell**: [tool.nix-devshell.md](tool.nix-devshell.md) -- project-specific Nix environments
 
-## Available workflows
+## Common tasks
 
 ### engineer
 
@@ -62,10 +62,4 @@ Before starting implementation, review the relevant convention files
 - Filing a platform issue --> `platform_engineer/platform_issue`
 - Keystone module or convention changes --> use `/ks-system` instead
 - Filing general issues for discovered problems --> use `/ks-system` instead
-- If unclear, ask the user which workflow to run before starting
-
-## How to start a workflow
-
-1. Call `get_workflows` to confirm available workflows.
-2. Call `start_workflow` with `job_name: "engineer"` or `job_name: "platform_engineer"`, `workflow_name: <chosen>`, and `goal: "$ARGUMENTS"`.
-3. Follow the step instructions returned by the MCP server.
+- If unclear, ask one targeted question before starting.

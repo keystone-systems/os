@@ -61,10 +61,6 @@ in
       pkgs.keystone.opencode
 
     ]
-    ++ optionals cfg.deepwork.enable [
-      # DeepWork - workflow orchestration MCP server
-      pkgs.keystone.deepwork
-    ]
     ++ optionals ollamaCfg.enable [
       # Ollama CLI for model management (ollama pull, list, run)
       pkgs.ollama

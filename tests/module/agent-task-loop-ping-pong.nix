@@ -52,6 +52,12 @@ let
     executeJson = stageJson;
     profilesJson = profilesJson;
     projectIndexHelper = projectIndexHelper;
+    ingestPrompt = pkgs.writeText "test-task-loop-ingest.md" (
+      builtins.readFile ../../modules/os/agents/prompts/task-loop-ingest.md
+    );
+    prioritizePrompt = pkgs.writeText "test-task-loop-prioritize.md" (
+      builtins.readFile ../../modules/os/agents/prompts/task-loop-prioritize.md
+    );
   };
 in
 pkgs.runCommand "test-agent-task-loop-ping-pong"
@@ -91,7 +97,7 @@ pkgs.runCommand "test-agent-task-loop-ping-pong"
 
     # Queue files live in $HOME (agent home), not the notes dir
     printf '%s\n' 'tasks: []' > "$HOME/TASKS.yaml"
-    mkdir -p "$HOME/.deepwork"
+    mkdir -p "$HOME/.keystone"
 
     # Stub: systemctl (no-op)
     printf '%s\n' '#!${pkgs.bash}/bin/bash' 'exit 0' > "$PWD/stubs/systemctl"
@@ -141,11 +147,16 @@ pkgs.runCommand "test-agent-task-loop-ping-pong"
     state_dir="''${TASK_LOOP_TEST_STATE_DIR:?}"
     agent_home="''${HOME:?}"
 
-    if printf '%s' "$args" | grep -q "task_loop ingest"; then
+    if printf '%s' "$args" | grep -q "/deepwork"; then
+      echo "retired DeepWork prompt dispatched" >&2
+      exit 99
+    fi
+
+    if printf '%s' "$args" | grep -q "Stage: ingest"; then
       printf '%s\n' "1" > "$state_dir/ingest-count"
       printf 'tasks:\n  - name: reply-pong-to-test\n    description: "Reply to the [ping] e2e-test email with subject '"'"'Re: [pong] e2e-test'"'"' and body '"'"'pong'"'"' per the task_loop Ping/Pong core rule."\n    status: pending\n    source: email\n    source_ref: "email-1-test@ncrmro.com"\n' > "$agent_home/TASKS.yaml"
 
-    elif printf '%s' "$args" | grep -q "task_loop prioritize"; then
+    elif printf '%s' "$args" | grep -q "Stage: prioritize"; then
       printf '%s\n' "1" > "$state_dir/prioritize-count"
       yq -i '(.tasks[] | select(.name == "reply-pong-to-test")).model = "haiku"' "$agent_home/TASKS.yaml"
 

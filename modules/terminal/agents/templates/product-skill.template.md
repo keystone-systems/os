@@ -1,4 +1,4 @@
-Route product management requests to the appropriate DeepWork workflow.
+Handle product management requests directly with the appropriate supporting references.
 
 Use this skill for press releases, milestone planning, stakeholder
 communication, competitive analysis, and product-engineering handoffs.
@@ -18,7 +18,7 @@ Before starting product work, review the relevant convention files
 - **Mermaid**: [tool.mermaid.md](tool.mermaid.md) -- diagram rendering
 - **Forgejo**: [tool.forgejo.md](tool.forgejo.md) -- issue and project management on Forgejo
 
-## Available workflows
+## Common tasks
 
 - **project/press_release** -- draft a Working Backwards press release for a new initiative
 - **project/milestone** -- plan milestones and user stories from an approved press release
@@ -34,10 +34,4 @@ Before starting product work, review the relevant convention files
 - New project setup or onboarding --> `project/onboard`
 - Success evaluation or retrospective --> `project/success`
 - Market analysis or competitive research --> read `business-analyst.md`, then answer directly
-- If unclear, ask the user which workflow to run before starting
-
-## How to start a workflow
-
-1. Call `get_workflows` to confirm available project workflows.
-2. Call `start_workflow` with `job_name: "project"`, `workflow_name: <chosen>`, and `goal: "$ARGUMENTS"`.
-3. Follow the step instructions returned by the MCP server.
+- If unclear, ask one targeted question before starting.

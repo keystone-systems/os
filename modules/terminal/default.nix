@@ -54,7 +54,6 @@ in
     ./editor.nix
     ./conventions.nix
     ./agents
-    ./deepwork.nix
     ./age-yubikey.nix
     ./devtools.nix
     ./mail.nix
@@ -135,7 +134,6 @@ in
     # via keystoneInputs (standard for keystone's own home-manager modules).
     keystone._repoInputs = mkIf (keystoneInputs ? self) {
       keystone = keystoneInputs.self;
-      deepwork = keystoneInputs.deepwork or { };
     };
 
     # Inherit development mode and repos from NixOS level if available (osConfig).

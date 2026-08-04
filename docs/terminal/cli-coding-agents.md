@@ -26,14 +26,14 @@ Domain knowledge loads on demand when a skill is activated:
 - `/ks-notes` — durable notebook capture and repair
 - `/ks-projects` — project lifecycle workflows
 
-Each skill folder colocates its conventions, role definitions, and DeepWork
-routing so all relevant context arrives together.
+Each skill folder colocates its conventions and role definitions so all
+relevant context arrives together.
 
 ### Module responsibilities
 
 | Module | Responsibility |
 |--------|---------------|
-| `agents/ai.nix` | Installs CLI packages and the DeepWork binary |
+| `agents/ai.nix` | Installs CLI packages |
 | `agents/mcp-configs.nix` | Generates MCP server configs at each tool's expected path |
 | `agents/extensions.nix` | Defines capabilities, published commands, and skill metadata |
 | `keystone-sync-agent-assets.sh` | Generates skills, instruction files, and colocated conventions |
@@ -94,8 +94,6 @@ The convention file must exist at `conventions/my-company.code-style.md`.
 ## MCP server configuration
 
 All CLIs share a single `keystone.terminal.cliCodingAgents.mcpServers` option.
-The DeepWork MCP server is appended automatically when
-`keystone.terminal.deepwork.enable = true`.
 
 | CLI | Config path | Merge strategy |
 |-----|------------|----------------|
@@ -168,30 +166,6 @@ convention content — that lives in skills.
 
 When `keystone.development = true`:
 
-- `DEEPWORK_ADDITIONAL_JOBS_FOLDERS` points at local repo checkouts instead of
-  Nix store derivations, so job edits take effect immediately.
 - Skills and instruction files are written to the live repo checkout (appearing
   as git diffs) rather than via `home.file` symlinks.
 - `ks-dev` capability is automatically enabled.
-
-## DeepWork integration
-
-The DeepWork MCP server binary (`pkgs.keystone.deepwork`) is installed by
-`agents/ai.nix`. The server discovers jobs from up to three roots via
-`DEEPWORK_ADDITIONAL_JOBS_FOLDERS`:
-
-1. **Shared library jobs** — from the `Unsupervisedcom/deepwork` repo's
-   `library/jobs/` directory.
-2. **Keystone-native jobs (published)** — from
-   `ncrmro/keystone/.deepwork/jobs/`. Shipped to adopters via
-   `pkgs.keystone.keystone-deepwork-jobs`.
-3. **Keystone-native jobs (internal)** — from
-   `ncrmro/keystone/.deepwork/jobs-internal/`. Holds keystone-development-only
-   plumbing (contributor authoring tools, in-progress stubs); appended to the
-   discovery path only in dev mode and intentionally absent from the published
-   package, so it never reaches adopter hosts.
-
-In locked mode the first two roots resolve to Nix store copies
-(`pkgs.keystone.deepwork-library-jobs` and `pkgs.keystone.keystone-deepwork-jobs`)
-and the internal root is absent. In dev mode all three resolve to local
-checkouts.

@@ -39,6 +39,12 @@ let
     executeJson = defaultsJson;
     profilesJson = profilesJson;
     projectIndexHelper = projectIndexHelper;
+    ingestPrompt = pkgs.writeText "test-task-loop-ingest.md" (
+      builtins.readFile ../../modules/os/agents/prompts/task-loop-ingest.md
+    );
+    prioritizePrompt = pkgs.writeText "test-task-loop-prioritize.md" (
+      builtins.readFile ../../modules/os/agents/prompts/task-loop-prioritize.md
+    );
   };
 in
 pkgs.runCommand "test-agent-runtime-coherence"
@@ -96,7 +102,7 @@ pkgs.runCommand "test-agent-runtime-coherence"
     set -euo pipefail
     args="$*"
     state_dir="''${TASK_LOOP_TEST_STATE_DIR:?}"
-    if printf '%s' "$args" | grep -q "task_loop ingest"; then
+    if printf '%s' "$args" | grep -q "Stage: ingest"; then
       printf '%s\n' 'tasks: []' > TASKS.yaml
     fi
     printf '%s\n' '{"total_tokens":1}'
@@ -122,15 +128,15 @@ pkgs.runCommand "test-agent-runtime-coherence"
     fi
     echo "PASS: TASKS.yaml not in notes dir"
 
-    # 3. sources.json must be in $HOME/.deepwork/, not notes/.deepwork/
-    if [[ -f "$HOME/.deepwork/sources.json" ]]; then
-      echo "PASS: sources.json found in \$HOME/.deepwork/"
+    # 3. sources.json must be in $HOME/.keystone/, not the notes directory.
+    if [[ -f "$HOME/.keystone/sources.json" ]]; then
+      echo "PASS: sources.json found in \$HOME/.keystone/"
     else
-      echo "FAIL: sources.json not found in \$HOME/.deepwork/" >&2
+      echo "FAIL: sources.json not found in \$HOME/.keystone/" >&2
       exit 1
     fi
 
-    if [[ -f "${notesDir}/.deepwork/sources.json" ]]; then
+    if [[ -f "${notesDir}/.keystone/sources.json" ]]; then
       echo "FAIL: sources.json found in notes dir — task loop still writes to notes" >&2
       exit 1
     fi

@@ -127,7 +127,6 @@ Keep development workflows separate from initial setup:
 - **[Release notes](releasing.md)** - Release process and stable-release reference
 - **[Past releases](releases/)** — release artifacts, summaries, and changelogs per tag
 - **[Project posts](posts.md)** - Working-backwards and narrative project material
-- **[Research notes](research/universal-deepwork-job-library.md)** - Long-form supporting research captured in the docs tree
 - **[Experimental features](experimental.md)** - Stability tiers and the `keystone.experimental` flag
 - **[GitHub Repository](https://github.com/ncrmro/keystone)** - Source code and issue tracking
 - **[Create `keystone-config`](#core-concept-keystone-config)** - Scaffold a new Keystone configuration repo
