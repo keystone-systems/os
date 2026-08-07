@@ -34,11 +34,12 @@ done
 echo "=== Keystone disk unlock enrollment: FIDO2 hardware key ==="
 echo ""
 
-if ! @bootctl@ status 2>/dev/null | grep -q "Secure Boot:.*enabled.*user"; then
-  echo "[ERROR] Secure Boot is not fully enabled in User Mode"
+# user or deployed mode: both mean enforcement with an enrolled platform key.
+if ! @bootctl@ status 2>/dev/null | grep -qE "Secure Boot:.*enabled.*(user|deployed)"; then
+  echo "[ERROR] Secure Boot is not enabled (user or deployed mode required)"
   exit 1
 fi
-echo "[OK] Secure Boot enabled (user mode)"
+echo "[OK] Secure Boot enabled"
 
 if ! @systemd_cryptenroll@ --tpm2-device=list >/dev/null 2>&1; then
   echo "[ERROR] No TPM2 device found"
