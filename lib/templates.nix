@@ -668,6 +668,11 @@ rec {
         storage = lib.recursiveUpdate {
           type = "ext4";
           mode = "single";
+          # Laptops hibernate by default — that is why the kind gets ext4
+          # (ZFS cannot hibernate safely; keystone forces allowHibernation
+          # off). Swap must exceed RAM for resume; set storage.swap.size
+          # accordingly per host. Override via the storage arg to opt out.
+          hibernate.enable = true;
         } storage;
       }
     );
@@ -678,9 +683,6 @@ rec {
       desktop ? true,
       ...
     }@args:
-    let
-      effectiveSystem = args.system or "x86_64-linux";
-    in
     mkLinuxHost (
       args
       // {
@@ -689,9 +691,8 @@ rec {
         storage = lib.recursiveUpdate {
           type = "zfs";
           mode = "single";
-          # The template ZFS archetypes should evaluate cleanly out of the box.
-          # Pin a known-good kernel until Keystone's broader ZFS default changes.
-          zfs.kernel = nixpkgs.legacyPackages.${effectiveSystem}.linuxPackages_6_12;
+          # zfs.kernel defaults to "latest", which the storage module now
+          # resolves to the newest ZFS-compatible kernel automatically.
         } storage;
       }
     );
@@ -704,9 +705,6 @@ rec {
       modules ? [ ],
       ...
     }@args:
-    let
-      effectiveSystem = args.system or "x86_64-linux";
-    in
     mkLinuxHost (
       (builtins.removeAttrs args [
         "dataPool"
@@ -717,9 +715,8 @@ rec {
         storage = lib.recursiveUpdate {
           type = "zfs";
           mode = "single";
-          # The template ZFS archetypes should evaluate cleanly out of the box.
-          # Pin a known-good kernel until Keystone's broader ZFS default changes.
-          zfs.kernel = nixpkgs.legacyPackages.${effectiveSystem}.linuxPackages_6_12;
+          # zfs.kernel defaults to "latest", which the storage module now
+          # resolves to the newest ZFS-compatible kernel automatically.
         } storage;
         modules =
           modules
