@@ -311,7 +311,11 @@ in
               options.encryption = "aes-256-gcm";
               options.keyformat = "raw";
               options.keylocation = "file:///etc/credstore/zfs-sysroot.mount";
-              preCreateHook = "mount -o X-mount.mkdir /dev/mapper/credstore /etc/credstore && head -c 32 /dev/urandom > /etc/credstore/zfs-sysroot.mount";
+              # Generate the key only once: idempotent re-formats (disko's
+              # test gauntlet, an aborted install re-run) re-execute this
+              # hook without recreating the crypt dataset, and a
+              # regenerated key no longer unlocks it.
+              preCreateHook = "mount -o X-mount.mkdir /dev/mapper/credstore /etc/credstore && { [ -e /etc/credstore/zfs-sysroot.mount ] || head -c 32 /dev/urandom > /etc/credstore/zfs-sysroot.mount; }";
               postCreateHook = ''
                 umount /etc/credstore && cryptsetup luksClose /dev/mapper/credstore
               '';
