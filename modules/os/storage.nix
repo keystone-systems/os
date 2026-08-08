@@ -451,9 +451,11 @@ in
         ];
       };
 
+      # resumeDevice is all systemd stage-1 needs: systemd-hibernate-resume
+      # is built in, and "resume" is a kernel mechanism, not a module —
+      # listing it in availableKernelModules makes modules-closure fail the
+      # initrd build (first hit by the ncrmro-laptop relayout twin).
       boot.resumeDevice = mkIf cfg.hibernate.enable "/dev/mapper/cryptswap";
-
-      boot.initrd.availableKernelModules = mkIf cfg.hibernate.enable (lib.mkAfter [ "resume" ]);
     })
   ];
 }
