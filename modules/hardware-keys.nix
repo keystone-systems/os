@@ -356,6 +356,13 @@ in
       keystone.hardwareKeyFindings = findings;
       keystone.hardwareKeyProjection = projection;
 
+      # FIDO2/U2F device access: libfido2 ships the 70-u2f uaccess rule that
+      # grants the active seat access to CTAP hidraw nodes. Without it only
+      # root can open the device and every ssh-sk / systemd-cryptenroll
+      # operation fails with "agent refused operation" — the smartcard
+      # (scdaemon) path works while the FIDO path silently does not.
+      services.udev.packages = [ pkgs.libfido2 ];
+
       assertions = [
         {
           assertion = builtins.length (unique (lib.attrValues enabled)) == builtins.length enabledNames;
