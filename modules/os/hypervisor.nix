@@ -127,11 +127,15 @@ in
 
       # Desktop-conditional: virt-manager GUI + NM unmanaged rules
       programs.virt-manager.enable = mkIf hasDesktop true;
+      # Only virtual interfaces are platform-owned. A bridge MEMBER NIC
+      # (e.g. br0 enslaving an onboard ethernet) must be added by the host's
+      # own config — a wildcard like enp* here strands every ethernet
+      # adapter on the host, including hotplugged USB ones a laptop needs
+      # for wired restore/install paths.
       networking.networkmanager.unmanaged = mkIf hasDesktop [
         "interface-name:virbr*"
         "interface-name:vnet*"
         "interface-name:br0"
-        "interface-name:enp*"
       ];
 
       # Server-only: extra packages for headless management
