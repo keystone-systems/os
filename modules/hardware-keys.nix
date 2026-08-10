@@ -22,6 +22,9 @@ let
     mkMerge
     mkOption
     optional
+    removeSuffix
+    splitString
+    take
     types
     unique
     ;
@@ -29,6 +32,7 @@ let
   enabled = config.keystone.hardwareKeys;
   registrations = config.keystone.hardwareKeyRegistrations;
   installedState = config.keystone.hardwareKeyState;
+  keys = config.keystone.keys;
   strict = config.keystone.hardwareKeyPolicy.strict;
 
   enabledNames = attrNames enabled;
@@ -64,6 +68,103 @@ let
     ${pamMappings}
   '';
   auditPackage = pkgs.callPackage ../packages/hardware-key-audit.nix { };
+
+  sshPublicIdentity =
+    value:
+    concatStringsSep " " (
+      take 2 (filter (part: part != "") (splitString " " (removeSuffix "\n" value)))
+    );
+  declaredSshHandles = concatLists (
+    mapAttrsToList (
+      username: userKeys:
+      mapAttrsToList (
+        name: key:
+        let
+          localUser = if config.users.users ? ${username} then config.users.users.${username} else null;
+          registration = registrations.${name} or null;
+        in
+        {
+          inherit
+            key
+            localUser
+            name
+            registration
+            username
+            ;
+          serial = enabled.${name} or null;
+          destination = if localUser == null then null else "${localUser.home}/.ssh/id_ed25519_sk_${name}";
+        }
+      ) userKeys.hardwareKeys
+    ) keys
+  );
+  enabledSshHandles = filter (entry: entry.serial != null) declaredSshHandles;
+  localSshHandles = filter (
+    entry:
+    entry.localUser != null
+    && entry.registration != null
+    && entry.registration.owner == entry.username
+    && entry.key.handleSource != null
+  ) enabledSshHandles;
+  localSshOwners = unique (map (entry: entry.owner) localEntries);
+  localSshHandlesFor = username: filter (entry: entry.username == username) localSshHandles;
+  sshHandleAssertions = concatMap (
+    entry:
+    optional (entry.key.handleSource != null && entry.serial != null) {
+      assertion = entry.registration != null && entry.registration.owner == entry.username;
+      message = "enabled hardware key '${entry.name}' must register '${entry.username}' as its owner before Keystone installs its SSH handle";
+    }
+    ++
+      optional
+        (
+          entry.key.handleSource != null
+          && entry.serial != null
+          && entry.registration != null
+          && entry.registration.owner == entry.username
+        )
+        {
+          assertion = any (
+            publicKey: sshPublicIdentity publicKey == sshPublicIdentity entry.key.publicKey
+          ) entry.registration.sshPublicKeys;
+          message = "hardware key '${entry.name}' SSH public key does not match its public registration";
+        }
+  ) declaredSshHandles;
+  sshHandleRules = concatMap (
+    entry:
+    let
+      group = if entry.localUser.group == null then "users" else entry.localUser.group;
+    in
+    [
+      "L+ ${entry.destination} - ${entry.username} ${group} - ${entry.key.handleSource}"
+      "L+ ${entry.destination}.pub - ${entry.username} ${group} - ${pkgs.writeText "keystone-${entry.username}-${entry.name}.pub" "${entry.key.publicKey}\n"}"
+    ]
+  ) localSshHandles;
+  sshDirectoryRules = map (
+    username:
+    let
+      user = config.users.users.${username};
+      group = if user.group == null then "users" else user.group;
+    in
+    "d ${user.home}/.ssh 0700 ${username} ${group} -"
+  ) localSshOwners;
+  rootSshClientConfig = concatStringsSep "\n" (
+    map (
+      username:
+      concatStringsSep "\n" (
+        [
+          ''
+            Match localuser ${username} user root
+              IdentitiesOnly yes
+              IdentityAgent none
+              IdentityFile none
+          ''
+        ]
+        ++ map (entry: ''
+          Match localuser ${username} user root exec "${pkgs.bash}/bin/bash -o pipefail -c '${pkgs.yubikey-manager}/bin/ykman list --serials 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Fxq -- ${entry.serial}'"
+            IdentityFile ${entry.destination}
+        '') (localSshHandlesFor username)
+      )
+    ) localSshOwners
+  );
 
   managedLuksNames = config.keystone.hardwareKeyLuksTargets;
   luksNames = unique managedLuksNames;
@@ -151,6 +252,21 @@ let
     ) enabled
   );
 
+  sshHandleFindings = concatMap (
+    entry:
+    optional
+      (
+        entry.sshPublicKeys != [ ]
+        && !(any (handle: handle.name == entry.name && handle.username == entry.owner) localSshHandles)
+      )
+      (
+        finding "KSC-001.4/missing-ssh-handle" ''
+          hardware key '${entry.name}' can authenticate root, but local user '${entry.owner}' has no matching OpenSSH security-key handle.
+          Set keystone.keys.${entry.owner}.hardwareKeys.${entry.name}.handleSource.
+        ''
+      )
+  ) localEntries;
+
   missingLuksFindings = concatMap (
     luksName:
     let
@@ -188,7 +304,7 @@ let
     ) installedState.luks
   );
 
-  findings = registrationFindings ++ missingLuksFindings ++ staleLuksFindings;
+  findings = registrationFindings ++ sshHandleFindings ++ missingLuksFindings ++ staleLuksFindings;
 
   collectStrings =
     value:
@@ -377,6 +493,7 @@ in
           message = "KSC-001.4: public hardware-key registrations contain a private identity or private-key format";
         }
       ]
+      ++ sshHandleAssertions
       ++ optional strict {
         assertion = findings == [ ];
         message = "KSC-001.4: strict hardware-key validation failed: ${
@@ -399,6 +516,10 @@ in
         yubico-piv-tool
         yubikey-manager
       ];
+
+      systemd.tmpfiles.rules = sshDirectoryRules ++ sshHandleRules;
+
+      programs.ssh.extraConfig = mkAfter rootSshClientConfig;
 
       users.users.root.openssh.authorizedKeys.keys = rootSshKeys;
 

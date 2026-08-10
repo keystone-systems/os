@@ -428,12 +428,12 @@ cmd_hardware_key() {
   esac
 }
 
-# Enroll a physically connected token and print the two blocks a consumer
+# Enroll a physically connected token and print the blocks a consumer
 # flake needs. Reads the token; never writes to the flake. Paste the output,
 # review it, and commit it — enrollment is a fact about hardware, so a human
 # confirms it lands in git.
 hardware_key_register() {
-  local name='' serial='' owner="${USER:-}" repo='' handle age_recipient pam_fragment
+  local name='' serial='' owner="${USER:-}" repo='' handle handle_source age_recipient pam_fragment
   local pubkey keytype keydata
   name="${1:-}"
   [ -n "$name" ] || die "usage: ks hardware-key register NAME [--serial S] [--owner U] [--repo DIR]"
@@ -470,6 +470,10 @@ hardware_key_register() {
   note "using token serial ${serial}"
 
   handle="${repo}/hardware-keys/${name}"
+  handle_source="./hardware-keys/${name}"
+  if [ -f "${repo}/modules/keys.nix" ]; then
+    handle_source="../hardware-keys/${name}"
+  fi
   mkdir -p "${repo}/hardware-keys"
   if [ -e "$handle" ]; then
     note "reusing the existing key handle at ${handle}"
@@ -501,6 +505,12 @@ keystone.hardwareKeyRegistrations.${name} = {
   sshPublicKeys = [ "${pubkey}" ];
   pamU2f = [ "${pam_fragment}" ];
   ageRecipients = [ "${age_recipient}" ];
+};
+
+# Add to the keystone.keys module. handleSource is relative to that file.
+keystone.keys.${owner}.hardwareKeys.${name} = {
+  publicKey = "${pubkey}";
+  handleSource = ${handle_source};
 };
 
 # Key handle written to ${handle}{,.pub}. Commit both.

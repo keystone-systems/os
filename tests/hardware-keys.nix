@@ -4,6 +4,21 @@
 }:
 let
   lib = nixpkgs.lib;
+  blackPublicKey = "sk-ssh-ed25519@openssh.com AAAATESTBLACK alice-black";
+  greenPublicKey = "sk-ssh-ed25519@openssh.com AAAATESTGREEN alice-green";
+  blackHandle = builtins.toFile "yubi-black-handle" "test black handle";
+  greenHandle = builtins.toFile "yubi-green-handle" "test green handle";
+  fakeYkman = pkgs.writeShellScriptBin "ykman" ''
+    if [[ "$#" == 2 && "$1" == list && "$2" == --serials ]]; then
+      printf '%s\n' "''${KEYSTONE_TEST_YUBIKEY_SERIALS:-}"
+      if [[ "''${KEYSTONE_TEST_YUBIKEY_ERROR:-0}" == 1 ]]; then
+        exit 1
+      fi
+      exit 0
+    fi
+
+    exit 2
+  '';
 
   baseModule = {
     networking.hostName = "hardware-key-test";
@@ -19,6 +34,11 @@ let
       isNormalUser = true;
       group = "users";
     };
+
+    # The Nix build user cannot read an included ssh_config file from a
+    # Nix store path because OpenSSH requires root ownership. The deployed
+    # system links that file into /etc with root ownership.
+    programs.ssh.systemd-ssh-proxy.enable = false;
 
     boot.initrd.luks.devices.cryptroot.device = "/dev/disk/by-partlabel/root";
     keystone.hardwareKeyLuksTargets = [ "cryptroot" ];
@@ -59,6 +79,10 @@ let
         token = 1;
         credential = "fido-credential-1";
       };
+    };
+    keystone.keys.alice.hardwareKeys.yubi-green = {
+      publicKey = "sk-ssh-ed25519@openssh.com AAAATEST1 alice-green";
+      handleSource = greenHandle;
     };
   };
 
@@ -106,6 +130,57 @@ let
       keystone.hardwareKeyRegistrations.yubi-green.owner = "alice";
       keystone.hardwareKeyPolicy.strict = true;
     }).config;
+  sshSelection =
+    (mkSystem {
+      nixpkgs.overlays = [
+        (_final: _previous: {
+          yubikey-manager = fakeYkman;
+        })
+      ];
+
+      keystone.hardwareKeys = {
+        yubi-black = "12345";
+        yubi-green = "12356";
+      };
+      keystone.hardwareKeyRegistrations = {
+        yubi-black = {
+          owner = "alice";
+          sshPublicKeys = [ blackPublicKey ];
+        };
+        yubi-green = {
+          owner = "alice";
+          sshPublicKeys = [ greenPublicKey ];
+        };
+      };
+      keystone.keys.alice.hardwareKeys = {
+        yubi-black = {
+          publicKey = blackPublicKey;
+          handleSource = blackHandle;
+        };
+        yubi-green = {
+          publicKey = greenPublicKey;
+          handleSource = greenHandle;
+        };
+      };
+    }).config;
+  sshMissingHandle =
+    (mkSystem {
+      nixpkgs.overlays = [
+        (_final: _previous: {
+          yubikey-manager = fakeYkman;
+        })
+      ];
+
+      keystone.hardwareKeys.yubi-black = "12345";
+      keystone.hardwareKeyRegistrations.yubi-black = {
+        owner = "alice";
+        sshPublicKeys = [ blackPublicKey ];
+      };
+    }).config;
+  sshClientConfig = sshSelection.environment.etc."ssh/ssh_config".text;
+  sshMissingHandleConfig = sshMissingHandle.environment.etc."ssh/ssh_config".text;
+  sshClientConfigFile = pkgs.writeText "hardware-key-ssh-config" sshClientConfig;
+  sshMissingHandleConfigFile = pkgs.writeText "hardware-key-missing-handle-ssh-config" sshMissingHandleConfig;
 
   codes = config: map (item: item.code) config.keystone.hardwareKeyFindings;
   assertionWith =
@@ -238,6 +313,47 @@ let
       expr = (assertionWith "strict hardware-key validation failed" strictGaps).assertion;
       expected = false;
     };
+
+    # THIS TEST VALIDATES A HARD REQUIREMENT (KSC-001.4)
+    # YOU MUST NOT MODIFY THIS TEST UNLESS THE REQUIREMENT CHANGES
+    testRootSshSelectsOnlyConnectedHardwareKeys = {
+      expr = {
+        failClosed = lib.hasInfix "IdentityFile none" sshClientConfig;
+        identitiesOnly = lib.hasInfix "IdentitiesOnly yes" sshClientConfig;
+        ignoresAgent = lib.hasInfix "IdentityAgent none" sshClientConfig;
+        blackSerial = lib.hasInfix "grep -Fxq -- 12345" sshClientConfig;
+        greenSerial = lib.hasInfix "grep -Fxq -- 12356" sshClientConfig;
+        detectorUsesPipefail = lib.hasInfix "bash -o pipefail -c" sshClientConfig;
+        blackHandle = lib.hasInfix "IdentityFile /home/alice/.ssh/id_ed25519_sk_yubi-black" sshClientConfig;
+        greenHandle = lib.hasInfix "IdentityFile /home/alice/.ssh/id_ed25519_sk_yubi-green" sshClientConfig;
+        suppressesYkmanErrors = lib.hasInfix "ykman list --serials 2>/dev/null" sshClientConfig;
+        noBlackAgentLoader = !(sshSelection.systemd.user.services ? ssh-add-alice-yubi-black);
+        noGreenAgentLoader = !(sshSelection.systemd.user.services ? ssh-add-alice-yubi-green);
+        installsBlackHandle = lib.any (lib.hasInfix "/home/alice/.ssh/id_ed25519_sk_yubi-black") sshSelection.systemd.tmpfiles.rules;
+        installsGreenHandle = lib.any (lib.hasInfix "/home/alice/.ssh/id_ed25519_sk_yubi-green") sshSelection.systemd.tmpfiles.rules;
+        reportsMissingHandle = lib.elem "KSC-001.4/missing-ssh-handle" (codes sshMissingHandle);
+        protectsRootWithoutHandle = lib.hasInfix "IdentityFile none" sshMissingHandleConfig;
+        noMissingDynamicHandle = !(lib.hasInfix "id_ed25519_sk_yubi-black" sshMissingHandleConfig);
+      };
+      expected = {
+        failClosed = true;
+        identitiesOnly = true;
+        ignoresAgent = true;
+        blackSerial = true;
+        greenSerial = true;
+        detectorUsesPipefail = true;
+        blackHandle = true;
+        greenHandle = true;
+        suppressesYkmanErrors = true;
+        noBlackAgentLoader = true;
+        noGreenAgentLoader = true;
+        installsBlackHandle = true;
+        installsGreenHandle = true;
+        reportsMissingHandle = true;
+        protectsRootWithoutHandle = true;
+        noMissingDynamicHandle = true;
+      };
+    };
   };
 
   failures = lib.runTests tests;
@@ -245,10 +361,87 @@ let
 in
 pkgs.runCommand "hardware-key-module-tests"
   {
-    nativeBuildInputs = [ pkgs.jq ];
+    nativeBuildInputs = [
+      pkgs.jq
+      pkgs.openssh
+    ];
   }
   ''
     jq . ${resultFile}
     jq -e 'length == 0' ${resultFile} >/dev/null
+
+    local_user="$(${pkgs.coreutils}/bin/id -un)"
+    ${pkgs.gnused}/bin/sed "s/localuser alice/localuser $local_user/g" \
+      ${sshClientConfigFile} > "$TMPDIR/ssh-config"
+    ${pkgs.gnused}/bin/sed "s/localuser alice/localuser $local_user/g" \
+      ${sshMissingHandleConfigFile} > "$TMPDIR/ssh-config-missing-handle"
+
+    check_case() {
+      local serials="$1"
+      local expect_black="$2"
+      local expect_green="$3"
+      local ykman_error="$4"
+      local output
+
+      output="$(
+        KEYSTONE_TEST_YUBIKEY_SERIALS="$serials" \
+        KEYSTONE_TEST_YUBIKEY_ERROR="$ykman_error" \
+          ssh -F "$TMPDIR/ssh-config" -G root@192.0.2.1 2>/dev/null
+      )"
+
+      printf '%s\n' "$output" | grep -Fx 'identityfile none' >/dev/null
+      printf '%s\n' "$output" | grep -Fx 'identityagent none' >/dev/null
+      printf '%s\n' "$output" | grep -Fx 'identitiesonly yes' >/dev/null
+
+      if [[ "$expect_black" == yes ]]; then
+        printf '%s\n' "$output" | grep -Fx \
+          'identityfile /home/alice/.ssh/id_ed25519_sk_yubi-black' >/dev/null
+      elif printf '%s\n' "$output" | grep -Fq \
+        '/home/alice/.ssh/id_ed25519_sk_yubi-black'; then
+        echo "black handle was selected when its serial was absent" >&2
+        exit 1
+      fi
+
+      if [[ "$expect_green" == yes ]]; then
+        printf '%s\n' "$output" | grep -Fx \
+          'identityfile /home/alice/.ssh/id_ed25519_sk_yubi-green' >/dev/null
+      elif printf '%s\n' "$output" | grep -Fq \
+        '/home/alice/.ssh/id_ed25519_sk_yubi-green'; then
+        echo "green handle was selected when its serial was absent" >&2
+        exit 1
+      fi
+    }
+
+    check_case '12345' yes no 0
+    check_case '12356' no yes 0
+    check_case $'12345\n12356' yes yes 0
+    check_case "" no no 0
+    check_case '12345' no no 1
+
+    missing_handle_output="$(
+      KEYSTONE_TEST_YUBIKEY_SERIALS='12345' \
+        ssh -F "$TMPDIR/ssh-config-missing-handle" -G root@192.0.2.1 2>/dev/null
+    )"
+    printf '%s\n' "$missing_handle_output" | grep -Fx 'identityfile none' >/dev/null
+    printf '%s\n' "$missing_handle_output" | grep -Fx 'identityagent none' >/dev/null
+    if printf '%s\n' "$missing_handle_output" | grep -Fq 'id_ed25519_sk_yubi-black'; then
+      echo "root SSH selected a handle that Keystone did not install" >&2
+      exit 1
+    fi
+
+    non_root_output="$(
+      KEYSTONE_TEST_YUBIKEY_SERIALS=$'12345\n12356' \
+        ssh -F "$TMPDIR/ssh-config" -G alice@192.0.2.1 2>/dev/null
+    )"
+    if printf '%s\n' "$non_root_output" | grep -Fq 'identityfile none'; then
+      echo "the root SSH policy changed non-root SSH" >&2
+      exit 1
+    fi
+    if printf '%s\n' "$non_root_output" | grep -Fq 'id_ed25519_sk_yubi-'; then
+      echo "the root SSH policy selected a YubiKey for non-root SSH" >&2
+      exit 1
+    fi
+    printf '%s\n' "$non_root_output" | grep -Fx 'identityfile ~/.ssh/id_rsa' >/dev/null
+
     touch "$out"
   ''

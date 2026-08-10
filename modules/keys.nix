@@ -87,6 +87,16 @@ in
                       default = null;
                       description = "age-plugin-yubikey identity string for sops secrets.";
                     };
+                    handleSource = mkOption {
+                      type = types.nullOr types.path;
+                      default = null;
+                      description = ''
+                        Nix path to the OpenSSH security-key handle. The handle
+                        identifies a credential whose signing key stays on the
+                        hardware key.
+                      '';
+                      example = literalExpression "./hardware-keys/yubi-black";
+                    };
                   };
                 }
               );

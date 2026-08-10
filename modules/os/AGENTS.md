@@ -32,7 +32,6 @@ keystone.os.users.alice = {
   email = "alice@example.com";
   extraGroups = [ "wheel" "networkmanager" ];
   authorizedKeys = [ "ssh-ed25519 AAAAC3..." ];
-  hardwareKeys = [ "yubi-black" ];    # References keystone.hardwareKey.keys
   hashedPassword = "$6$...";          # mkpasswd -m sha-512
   terminal.enable = true;             # Full keystone.terminal environment
   desktop.enable = false;
@@ -55,25 +54,33 @@ keystone.os.hypervisor = {
 Provides: OVMF (Secure Boot), swtpm (TPM 2.0 emulation), SPICE display, polkit rules
 for `libvirtd` group. All `keystone.os.users` auto-added to `libvirtd` group.
 
-## Hardware Keys (`hardware-key.nix`)
+## Hardware Keys (`../hardware-keys.nix`)
 
 ```nix
-keystone.hardwareKey = {
-  enable = true;
-  keys.yubi-black = {
-    description = "Primary YubiKey 5C NFC";
-    sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAC3...";
-    ageIdentity = "AGE-PLUGIN-YUBIKEY-...";  # Optional, for sops
-  };
-  rootKeys = [ "yubi-black" ];
-  gpgAgent = { enable = true; enableSSHSupport = true; };
+keystone.hardwareKeys.yubi-black = "12345";
+
+keystone.hardwareKeyRegistrations.yubi-black = {
+  owner = "alice";
+  sshPublicKeys = [ "sk-ssh-ed25519@openssh.com AAAAC3..." ];
+};
+
+keystone.keys.alice.hardwareKeys.yubi-black = {
+  publicKey = "sk-ssh-ed25519@openssh.com AAAAC3...";
+  handleSource = ../hardware-keys/yubi-black;
 };
 ```
 
-**Services enabled**: pcscd (smart card daemon), GPG agent with SSH support.
+The serial-driven module owns current hardware-key behavior. It authorizes the
+registered public key for root SSH. It installs the local handle. It selects
+the handle only when `ykman` reports the matching serial.
+
+`modules/os/hardware-key.nix` and `nixosModules.hardwareKey` are compatibility
+interfaces. Do not add new behavior to them.
+
+**Services enabled**: pcscd and FIDO2 device access.
 **Tools**: `ykman`, `age-plugin-yubikey`, `pam_u2f`, `yubico-piv-tool`.
 
-See `docs/hardware-keys.md` for enrollment workflow.
+See `docs/os/hardware-keys.md` for the enrollment workflow.
 
 ## Other OS Services
 

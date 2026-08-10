@@ -133,7 +133,7 @@ hardware-key state with a live host and is read-only.
 `register` enrolls a physically connected token. It reads the serial with
 `ykman`, creates a resident `ed25519-sk` credential (two touches: one for the
 credential, one for the PAM/U2F registration), reads the age recipient from
-`age-plugin-yubikey`, and prints the two blocks a consumer flake needs:
+`age-plugin-yubikey`, and prints the three blocks a consumer flake needs:
 
 ```nix
 keystone.hardwareKeys.<name> = "<serial>";
@@ -143,11 +143,17 @@ keystone.hardwareKeyRegistrations.<name> = {
   pamU2f = [ ... ];
   ageRecipients = [ ... ];
 };
+# In modules/keys.nix:
+keystone.keys.<owner>.hardwareKeys.<name> = {
+  publicKey = "...";
+  handleSource = ../hardware-keys/<name>;
+};
 ```
 
 The key handle is written to `<repo>/hardware-keys/<name>{,.pub}`. `register`
-never edits the flake: enrollment is a fact about hardware, so a human
-reviews the block and commits it.
+uses `../hardware-keys/<name>` when the repository has `modules/keys.nix`. It
+uses `./hardware-keys/<name>` for a root-level Nix file. `register` never edits
+the flake. A human reviews the blocks and commits them.
 
 ## Removed commands
 

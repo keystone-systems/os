@@ -9,17 +9,20 @@ This guide covers using hardware security keys (YubiKey, SoloKey, etc.) with Key
 
 ## Prerequisites
 
-Enable the hardware-key module in your NixOS configuration:
+Enable each hardware key by its stable name and numeric serial:
 
 ```nix
-keystone.hardwareKey.enable = true;
+keystone.hardwareKeys = {
+  yubi-black = "36854515";
+  yubi-green = "36862273";
+};
 ```
 
 This enables:
 
-- `pcscd` service for smart card communication
-- GPG agent with SSH support
-- YubiKey management tools (`ykman`, `age-plugin-yubikey`, `pam_u2f`, etc.)
+- `pcscd` for smart-card communication.
+- FIDO2 device access.
+- YubiKey management tools such as `ykman` and `age-plugin-yubikey`.
 
 ## Multi-Key Strategy (Carry + Deskside)
 
@@ -52,7 +55,7 @@ Both keys should be enrolled for SSH, age encryption, and authorized on all host
 
 Use `yubi-<color>` as the key name everywhere:
 
-- NixOS module: `keystone.hardwareKey.keys.yubi-black`, `keystone.hardwareKey.keys.yubi-green`
+- NixOS module: `keystone.hardwareKeys.yubi-black`, `keystone.hardwareKeys.yubi-green`
 - SSH application: `-O application=ssh:ncrmro-yubi-black`, `-O application=ssh:ncrmro-yubi-green`
 - SSH comment: `-C "ncrmro-yubi-black"`, `-C "ncrmro-yubi-green"`
 - Age identity labels in config comments: `# Serial: XXXXX, yubi-black`
@@ -108,24 +111,28 @@ The `--protect` flag stores the management key on the YubiKey and gates it behin
 
 ### Step 5: Generate Resident SSH Key
 
+Run these commands from the consumer configuration repository:
+
 ```bash
+mkdir -p hardware-keys
 ssh-keygen -t ed25519-sk -O resident \
   -O application=ssh:ncrmro-yubi-green \
   -C "ncrmro-yubi-green" \
-  -f ~/.ssh/id_ed25519_sk_yubi_green
+  -f hardware-keys/yubi-green
 ```
 
-- `-O resident` — stores the key on the YubiKey (portable, no key files needed)
-- `-O application=ssh:<name>` — namespaces the credential on the YubiKey
-- `-C "<name>"` — sets the public key comment (instead of defaulting to `user@hostname`)
-- `-f <path>` — where to save the local key handle
+- `-O resident` stores the credential on the YubiKey.
+- `-O application=ssh:<name>` gives the credential a unique name.
+- `-C "<name>"` sets the public-key description.
+- `-f <path>` writes the local security-key handle and public key.
 
-Touch the YubiKey and enter the FIDO2 PIN when prompted. You can skip the file passphrase (the YubiKey itself is the second factor).
+Touch the YubiKey and enter the FIDO2 PIN when prompted. You can omit the file
+passphrase. The handle cannot sign without the physical YubiKey.
 
 Export the public key:
 
 ```bash
-cat ~/.ssh/id_ed25519_sk_yubi_green.pub
+cat hardware-keys/yubi-green.pub
 ```
 
 Save this — it goes in your NixOS configuration.
@@ -158,7 +165,7 @@ Update your hardware key inventory with:
 ykman info
 
 # SSH fingerprint
-ssh-keygen -lf ~/.ssh/id_ed25519_sk_yubi_green.pub
+ssh-keygen -lf hardware-keys/yubi-green.pub
 
 # Age public key
 age-plugin-yubikey --list
@@ -176,7 +183,7 @@ ykman fido credentials list
 ykman piv info
 
 # SSH public key
-cat ~/.ssh/id_ed25519_sk_yubi_green.pub
+cat hardware-keys/yubi-green.pub
 ```
 
 For Keystone-side validation of the registered inventory and runtime wiring, run:
@@ -192,20 +199,30 @@ After completing the YubiKey setup above, add the public keys to your NixOS conf
 
 ### 1. NixOS Module (hardware key declaration)
 
+The serial enables the key. The public registration authorizes root access.
+The key registry supplies the local OpenSSH handle.
+
 ```nix
-keystone.hardwareKey = {
-  enable = true;
-  keys.yubi-black = {
-    description = "Primary YubiKey 5C NFC (USB-C keychain), serial 36854515";
-    sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAGnNr... ncrmro-yubi-black";
-  };
-  keys.yubi-green = {
-    description = "Deskside YubiKey 5C NFC (USB-C keychain, green sticker), serial 36862273";
-    sshPublicKey = "sk-ssh-ed25519@openssh.com AAAAGnNr... ncrmro-yubi-green";
-  };
-  rootKeys = [ "yubi-black" "yubi-green" ];
+keystone.hardwareKeys.yubi-green = "36862273";
+
+keystone.hardwareKeyRegistrations.yubi-green = {
+  owner = "ncrmro";
+  sshPublicKeys = [
+    "sk-ssh-ed25519@openssh.com AAAAGnNr... ncrmro-yubi-green"
+  ];
+};
+
+# In modules/keys.nix:
+keystone.keys.ncrmro.hardwareKeys.yubi-green = {
+  description = "Deskside YubiKey 5C NFC, serial 36862273";
+  publicKey = "sk-ssh-ed25519@openssh.com AAAAGnNr... ncrmro-yubi-green";
+  handleSource = ../hardware-keys/yubi-green;
 };
 ```
+
+You MAY keep `hardware-keys/yubi-green.pub` as inventory evidence. Keystone
+generates the installed `.pub` file from `publicKey`. You MUST NOT configure a
+second public-key source for the handle.
 
 ### 2. Admin recipients (age encryption)
 
@@ -252,11 +269,13 @@ The YubiKey identity file is provided by `keystone.terminal.ageYubikey` — see 
 
 ```bash
 # In the consumer repo
-git add modules/ home-manager/
+git add modules/keys.nix modules/hardware-keys.nix \
+  hardware-keys/yubi-green hardware-keys/yubi-green.pub
 git commit -m "enroll new YubiKey: <serial>"
 
-# Rebuild
-sudo nixos-rebuild switch --flake .#<hostname>
+# Deploy from the primary consumer clone
+cd ~/repos/ncrmro/ks-config
+ks-dev HOST
 ```
 
 ## SSH Key Details
@@ -275,49 +294,45 @@ Check your firmware: `ykman info`
 
 ### Resident Keys (Firmware 5.2.3+)
 
-Stored directly on the YubiKey — no key files to manage. Plug in your YubiKey on any machine and the key is available.
+The signing key stays on the YubiKey. `ssh-keygen` also writes a small handle
+file. The handle identifies the resident credential. The handle does not
+contain the signing key.
 
-```bash
-# Primary key (black)
-ssh-keygen -t ed25519-sk -O resident -O application=ssh:ncrmro-yubi-black -C "ncrmro-yubi-black"
+Generate one handle at a time with the command in
+[Step 5](#step-5-generate-resident-ssh-key). Remove the first YubiKey before
+you generate a credential on the second YubiKey.
 
-# Deskside key (green) — swap YubiKeys and run again
-ssh-keygen -t ed25519-sk -O resident -O application=ssh:ncrmro-yubi-green -C "ncrmro-yubi-green" -f ~/.ssh/id_ed25519_sk_yubi_green
-```
+#### Select the Connected Key for Root SSH
 
-The `-C` flag sets a descriptive comment (instead of defaulting to `user@hostname`), and `-O application=ssh:<name>` namespaces the credential on the YubiKey.
-
-#### Load Resident Keys into SSH Agent
-
-On any machine with your YubiKey plugged in:
-
-```bash
-ssh-add -K
-```
-
-This loads all resident SSH keys from the YubiKey into your agent. No key files needed.
-
-#### Automate Key Loading on Shell Startup
-
-Add to your shell configuration (e.g., `~/.zshrc` or via home-manager):
-
-```bash
-# Auto-load YubiKey SSH keys if available
-if command -v ssh-add &> /dev/null && [ -n "$SSH_AUTH_SOCK" ]; then
-  ssh-add -K 2>/dev/null
-fi
-```
-
-Or with home-manager:
+Store each handle in the consumer configuration:
 
 ```nix
-programs.zsh.initExtra = ''
-  # Auto-load YubiKey SSH keys if available
-  if command -v ssh-add &> /dev/null && [ -n "$SSH_AUTH_SOCK" ]; then
-    ssh-add -K 2>/dev/null
-  fi
-'';
+keystone.hardwareKeys.yubi-black = "12345";
+
+keystone.hardwareKeyRegistrations.yubi-black = {
+  owner = "alice";
+  sshPublicKeys = [ "sk-ssh-ed25519@openssh.com AAAA..." ];
+};
+
+# In modules/keys.nix:
+keystone.keys.alice.hardwareKeys.yubi-black = {
+  publicKey = "sk-ssh-ed25519@openssh.com AAAA...";
+  handleSource = ../hardware-keys/yubi-black;
+};
 ```
+
+Keystone installs the handle at
+`~/.ssh/id_ed25519_sk_yubi-black`. Keystone also generates an OpenSSH
+`Match exec` rule. The rule uses `ykman list --serials` to add the handle only
+when that YubiKey is connected.
+
+This selection applies to every destination when the remote user is `root`.
+It includes raw IP addresses. It does not change non-root SSH. Root SSH ignores
+the SSH agent and software identity files. The connection fails when no
+registered YubiKey is present.
+
+Do not add these handles to `ssh-agent` at session start. The generated
+OpenSSH rules replace that loading step.
 
 ### Non-Resident Keys (Firmware 5.0+)
 
@@ -325,38 +340,14 @@ For older YubiKeys (firmware < 5.2.3) or backup keys. The "private key" file is 
 
 ```bash
 # Firmware 5.2.3+ (preferred)
-ssh-keygen -t ed25519-sk -O application=ssh:ncrmro-yubi-black -C "ncrmro-yubi-black" -f ~/.ssh/id_ed25519_sk_yubi_black
+ssh-keygen -t ed25519-sk -O application=ssh:ncrmro-yubi-black -C "ncrmro-yubi-black" -f hardware-keys/yubi-black
 
 # Firmware 5.0+ (use if ed25519-sk fails)
-ssh-keygen -t ecdsa-sk -O application=ssh:ncrmro-yubi-black -C "ncrmro-yubi-black" -f ~/.ssh/id_ecdsa_sk_yubi_black
+ssh-keygen -t ecdsa-sk -O application=ssh:ncrmro-yubi-black -C "ncrmro-yubi-black" -f hardware-keys/yubi-black
 ```
 
-You'll need to copy the key files to other machines, or manage via home-manager (see below).
-
-#### Managing Non-Resident Keys with Home Manager
-
-For non-resident keys, you can distribute the key handle via home-manager. The "private key" is just a reference — useless without the physical YubiKey.
-
-```nix
-# In your home-manager config
-home.file.".ssh/id_ed25519_sk_yubikey" = {
-  source = ./keys/id_ed25519_sk_yubikey;
-  mode = "0600";
-};
-
-home.file.".ssh/id_ed25519_sk_yubikey.pub" = {
-  source = ./keys/id_ed25519_sk_yubikey.pub;
-  mode = "0644";
-};
-
-# Add to SSH config
-programs.ssh = {
-  enable = true;
-  matchBlocks."*".identityFile = "~/.ssh/id_ed25519_sk_yubikey";
-};
-```
-
-Store the key files in your config repo (e.g., `home-manager/keys/`). They're safe to commit — the private key handle is useless without your YubiKey.
+Use the same `handleSource` option for a non-resident key. The signing secret
+stays on the YubiKey.
 
 ### List Keys on YubiKey
 
@@ -364,13 +355,13 @@ Store the key files in your config repo (e.g., `home-manager/keys/`). They're sa
 # List resident credentials
 ykman fido credentials list
 
-# List keys in SSH agent
-ssh-add -L
+# List the serials that OpenSSH selection uses
+ykman list --serials
 ```
 
 ## GPG with YubiKey
 
-The hardware-key module enables GPG agent with SSH support. To use GPG keys stored on YubiKey:
+To use GPG keys stored on a YubiKey:
 
 ```bash
 # Check YubiKey GPG status
@@ -412,18 +403,22 @@ lsusb | grep -i yubi
 sudo systemctl restart pcscd
 ```
 
-### SSH agent not loading keys
+### Root SSH selects the wrong key
 
 ```bash
-# Check if SSH agent is running
-echo $SSH_AUTH_SOCK
+# List the connected YubiKey serials
+ykman list --serials
 
-# Check agent keys
-ssh-add -l
+# Show the effective root SSH identities
+ssh -G root@192.0.2.1 | grep -E '^(identityfile|identityagent|identitiesonly) '
 
-# Try loading manually with verbose output
-ssh-add -K -v
+# Show key-selection details without changing the remote host
+ssh -vvv root@192.0.2.1
 ```
+
+The effective configuration MUST contain `identityfile none` and
+`identityagent none`. It MUST list only the handles for connected registered
+YubiKeys. Do not load these handles with `ssh-add`.
 
 ### GPG card not found
 
