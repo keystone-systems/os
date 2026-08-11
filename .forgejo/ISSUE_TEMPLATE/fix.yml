@@ -1,0 +1,25 @@
+name: Bug report
+about: >-
+  Something is broken, wrong, or out of date. The triage agent will label it
+  and comment with an assessment and plan.
+title: "fix: "
+body:
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: How can it be reproduced?
+      description: Steps, URLs, hardware, or logs — whatever pins it down.
+    validations:
+      required: false

@@ -1,0 +1,28 @@
+name: Feature request
+about: >-
+  Request new behavior or a change to existing behavior. The triage agent
+  will label it and comment with an assessment and plan.
+title: "feat: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The situation today and why it needs to change.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should happen instead?
+      description: The behavior you want, as concretely as you can state it.
+    validations:
+      required: true
+  - type: input
+    id: area
+    attributes:
+      label: Affected area
+      description: The app, package, or surface this touches, if you know it.
+      placeholder: e.g. marketing site, astrogator, firmware
+    validations:
+      required: false

@@ -1,0 +1,39 @@
+# Automated issue triage, the resident-agent way. On GitHub this org runs the
+# triage agent inside the workflow (see scifireality/artera); on this Forgejo
+# the org already has a triage agent with a residence — Luce, deployed by
+# agent-operator from ks.systems/.agents — and the `forgejo` channel wakes her
+# on assignment. So CI's whole job is the assignment: the wake carries only
+# the reason, never the issue text, which keeps a stranger's words out of
+# workflow code and out of the wake prompt alike. Luce fetches the issue with
+# her own credential, labels it, scopes it, writes acceptance criteria, and
+# assigns the implementer.
+name: Issue triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  assign-triage-agent:
+    # Never triage issues the automation itself opened.
+    if: github.event.issue.user.login != 'luce' && github.event.issue.user.login != 'drago' && github.event.issue.user.login != 'vega'
+    # `native` because the docker-backed labels reach the instance through
+    # 127.0.0.1, which is only Forgejo on the ocean host itself.
+    runs-on: native
+    timeout-minutes: 5
+    steps:
+      - name: Assign luce
+        env:
+          TOKEN: ${{ github.token }}
+          API: ${{ github.api_url }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --request PATCH \
+            --header "Authorization: token ${TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data '{"assignees":["luce"]}' \
+            "${API}/repos/${REPO}/issues/${ISSUE}" > /dev/null
+          echo "assigned luce to ${REPO}#${ISSUE}"
