@@ -424,6 +424,10 @@
             inherit pkgs lib;
             self = self;
           };
+          cachedUserShareEvaluation = import ./tests/module/cached-user-share-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
           agentEvaluation = import ./tests/module/agent-evaluation.nix {
             inherit
               pkgs
@@ -527,6 +531,7 @@
         {
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
           os-evaluation = osEvaluation;
+          cached-user-share-evaluation = cachedUserShareEvaluation;
           agent-evaluation = agentEvaluation;
           template-evaluation = templateEvaluation;
           notes-evaluation = notesEvaluation;
@@ -558,6 +563,7 @@
           check-eval = pkgs.runCommand "check-eval" { } ''
             mkdir -p "$out"
             ln -s ${osEvaluation} "$out/os-evaluation"
+            ln -s ${cachedUserShareEvaluation} "$out/cached-user-share-evaluation"
             ln -s ${agentEvaluation} "$out/agent-evaluation"
             ln -s ${templateEvaluation} "$out/template-evaluation"
             ln -s ${notesEvaluation} "$out/notes-evaluation"

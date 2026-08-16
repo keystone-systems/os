@@ -148,6 +148,11 @@
           self = keystone;
         };
 
+        test-cached-user-share = import ./integration/cached-user-share.nix {
+          inherit pkgs lib;
+          self = keystone;
+        };
+
         # Module Isolation Tests
         test-desktop-isolation = import ./module/desktop-isolation.nix {
           inherit pkgs lib;
@@ -167,6 +172,11 @@
 
         # Evaluation Tests
         test-os-evaluation = import ./module/os-evaluation.nix {
+          inherit pkgs lib;
+          self = keystone;
+        };
+
+        test-cached-user-share-evaluation = import ./module/cached-user-share-evaluation.nix {
           inherit pkgs lib;
           self = keystone;
         };

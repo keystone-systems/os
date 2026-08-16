@@ -2,6 +2,10 @@ name: Nix Flake Check
 description: Build a flake check with Nix store cache and Cachix
 
 inputs:
+  flake:
+    description: Flake path that provides the check
+    required: false
+    default: "."
   check:
     description: Flake check attribute (e.g. checks.x86_64-linux.check-eval)
     required: true
@@ -49,4 +53,4 @@ runs:
         authToken: ${{ inputs.cachix-ci-auth-token }}
     - name: Build
       shell: bash
-      run: nix build -L '.#${{ inputs.check }}'
+      run: nix build -L '${{ inputs.flake }}#${{ inputs.check }}'

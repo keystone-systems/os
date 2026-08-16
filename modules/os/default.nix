@@ -249,6 +249,7 @@ in
     ./alloy.nix
     ./observability.nix
     ./zfs-backup.nix
+    ./cached-user-share.nix
   ];
 
   options.keystone.os = {

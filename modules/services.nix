@@ -130,6 +130,89 @@ in
       description = "FQDN of the Vaultwarden instance (e.g., vaultwarden.ncrmro.com). Used by the terminal secrets bridge to set rbw base_url.";
     };
 
+    cachedUserShare = {
+      enable = mkEnableOption "a cached NFS user share between two fleet hosts";
+
+      serverHost = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "workstation";
+        description = "The networking.hostName of the host that exports the share.";
+      };
+
+      clientHost = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "laptop";
+        description = "The networking.hostName of the Linux host that mounts and caches the share.";
+      };
+
+      exportPath = mkOption {
+        type = types.str;
+        default = "";
+        example = "/srv/user-share";
+        description = "Absolute server directory that becomes the NFS version 4 export root.";
+      };
+
+      owner = {
+        uid = mkOption {
+          type = types.int;
+          default = 0;
+          description = "User ID that owns all requests to the export.";
+        };
+
+        gid = mkOption {
+          type = types.int;
+          default = 0;
+          description = "Group ID that owns all requests to the export.";
+        };
+      };
+
+      client = {
+        mountPoint = mkOption {
+          type = types.str;
+          default = "";
+          example = "/mnt/user-share";
+          description = "Absolute client directory for the mounted share.";
+        };
+
+        cache = {
+          directory = mkOption {
+            type = types.str;
+            default = "/var/cache/fscache";
+            description = "Directory in which cachefilesd stores cached file data.";
+          };
+
+          stopPercent = mkOption {
+            type = types.ints.between 1 99;
+            default = 20;
+            description = ''
+              Free-space percentage at which cachefilesd stops new allocations.
+              This value is a watermark. It is not a storage quota.
+            '';
+          };
+
+          cullPercent = mkOption {
+            type = types.ints.between 1 99;
+            default = 25;
+            description = ''
+              Free-space percentage below which cachefilesd removes old data.
+              This value is a watermark. It is not a storage quota.
+            '';
+          };
+
+          runPercent = mkOption {
+            type = types.ints.between 1 99;
+            default = 30;
+            description = ''
+              Free-space percentage above which cachefilesd stops data removal.
+              This value is a watermark. It is not a storage quota.
+            '';
+          };
+        };
+      };
+    };
+
     generatedTagOwners = mkOption {
       type = types.attrsOf (types.listOf types.str);
       default = { };
@@ -186,6 +269,28 @@ in
     ++ (validateHost "immich" cfg.immich.host)
     ++ (concatMap (h: validateHost "immich.workers" h) cfg.immich.workers)
     ++ (validateHost "vaultwarden" cfg.vaultwarden.host)
+    ++ (optionals cfg.cachedUserShare.enable (
+      (validateHost "cachedUserShare.server" cfg.cachedUserShare.serverHost)
+      ++ (validateHost "cachedUserShare.client" cfg.cachedUserShare.clientHost)
+      ++ [
+        {
+          assertion = cfg.cachedUserShare.serverHost != null;
+          message = "keystone.services.cachedUserShare.serverHost must be set when the share is enabled.";
+        }
+        {
+          assertion = cfg.cachedUserShare.clientHost != null;
+          message = "keystone.services.cachedUserShare.clientHost must be set when the share is enabled.";
+        }
+        {
+          assertion = cfg.cachedUserShare.serverHost != cfg.cachedUserShare.clientHost;
+          message = "keystone.services.cachedUserShare serverHost and clientHost must name different hosts.";
+        }
+        {
+          assertion = hosts != { };
+          message = "keystone.services.cachedUserShare requires entries in keystone.hosts.";
+        }
+      ]
+    ))
     ++ (optional (cfg.vaultwarden.host != null && cfg.vaultwarden.domain == null) {
       assertion = false;
       message = ''

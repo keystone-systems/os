@@ -72,6 +72,7 @@ jobs:
       check_scripts: ${{ steps.pr-policy.outputs.check_scripts || steps.merge-policy.outputs.check_scripts || steps.call-policy.outputs.check_scripts || 'true' }}
       check_desktop: ${{ steps.pr-policy.outputs.check_desktop || steps.merge-policy.outputs.check_desktop || steps.call-policy.outputs.check_desktop || 'true' }}
       check_agents: ${{ steps.pr-policy.outputs.check_agents || steps.merge-policy.outputs.check_agents || steps.call-policy.outputs.check_agents || 'true' }}
+      cached_user_share: ${{ steps.pr-policy.outputs.cached_user_share || steps.merge-policy.outputs.cached_user_share || steps.call-policy.outputs.cached_user_share || 'false' }}
       iso_build: ${{ steps.pr-policy.outputs.iso_build || steps.merge-policy.outputs.iso_build || steps.call-policy.outputs.iso_build || 'false' }}
       nixfmt: ${{ steps.pr-policy.outputs.nixfmt || steps.merge-policy.outputs.nixfmt || steps.call-policy.outputs.nixfmt || 'false' }}
       shellcheck: ${{ steps.pr-policy.outputs.shellcheck || steps.merge-policy.outputs.shellcheck || steps.call-policy.outputs.shellcheck || 'false' }}
@@ -128,6 +129,20 @@ jobs:
               - 'tests/module/agent-queue-migration.nix'
               - 'tests/module/binary-cache-*.nix'
               - 'tests/module/zellij-*.nix'
+            cached_user_share:
+              - '.github/actions/nix-check/action.yml'
+              - '.github/workflows/validate.yml'
+              - 'flake.lock'
+              - 'flake.nix'
+              - 'modules/hosts.nix'
+              - 'modules/os/cached-user-share.nix'
+              - 'modules/os/default.nix'
+              - 'modules/os/observability.nix'
+              - 'modules/services.nix'
+              - 'tests/flake.lock'
+              - 'tests/flake.nix'
+              - 'tests/integration/cached-user-share.nix'
+              - 'tests/module/cached-user-share-evaluation.nix'
             nixfmt:
               - '.github/workflows/validate.yml'
               - 'flake.nix'
@@ -149,6 +164,7 @@ jobs:
             echo "check_scripts=${{ steps.filter.outputs.check_scripts }}"
             echo "check_desktop=${{ steps.filter.outputs.check_desktop }}"
             echo "check_agents=${{ steps.filter.outputs.check_agents }}"
+            echo "cached_user_share=${{ steps.filter.outputs.cached_user_share }}"
             echo "iso_build=false"
             echo "nixfmt=${{ steps.filter.outputs.nixfmt }}"
             echo "shellcheck=${{ steps.filter.outputs.shellcheck }}"
@@ -165,6 +181,7 @@ jobs:
             echo "check_scripts=true"
             echo "check_desktop=true"
             echo "check_agents=true"
+            echo "cached_user_share=true"
             echo "iso_build=true"
             echo "nixfmt=true"
             echo "shellcheck=true"
@@ -185,6 +202,7 @@ jobs:
             echo "check_scripts=true"
             echo "check_desktop=true"
             echo "check_agents=true"
+            echo "cached_user_share=true"
             echo "iso_build=${{ inputs.force_iso_build }}"
             echo "nixfmt=true"
             echo "shellcheck=true"
@@ -253,6 +271,21 @@ jobs:
         with:
           check: checks.x86_64-linux.check-agents
           cache-name: agents
+          cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
+          cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
+
+  cached-user-share:
+    needs: changes
+    if: needs.changes.outputs.cached_user_share == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/nix-check
+        with:
+          flake: ./tests
+          check: checks.x86_64-linux.test-cached-user-share
+          cache-name: cached-user-share
+          gc-max-store-size: 5G
           cache-branch-name: ${{ github.event_name == 'workflow_call' && inputs.cache_branch_name || '' }}
           cachix-ci-auth-token: ${{ secrets.CACHIX_CI_AUTH_TOKEN }}
 
