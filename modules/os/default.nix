@@ -867,6 +867,9 @@ in
       pkgs.sops
       pkgs.ssh-to-age
     ]
-    ++ lib.optionals isBaremetal [ pkgs.lm_sensors ];
+    ++ lib.optionals isBaremetal [
+      pkgs.lm_sensors
+      pkgs.usbutils
+    ];
   };
 }
