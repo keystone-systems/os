@@ -484,6 +484,9 @@
               home-manager
               ;
           };
+          alloyGracefulShutdown = import ./tests/module/alloy-graceful-shutdown.nix {
+            inherit pkgs lib self;
+          };
           terminalZide = import ./tests/module/terminal-zide.nix {
             inherit
               pkgs
@@ -544,6 +547,7 @@
           agentctl-regression = agentctlRegression;
           binary-cache-merge = binaryCacheMerge;
           terminal-sandbox-binary-caches = terminalSandboxBinaryCaches;
+          alloy-graceful-shutdown = alloyGracefulShutdown;
           terminal-zide = terminalZide;
           terminal-mail = terminalMail;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
@@ -569,6 +573,7 @@
             ln -s ${templateUpdateChannel} "$out/template-update-channel"
             ln -s ${templateSpecialArgs} "$out/template-special-args"
             ln -s ${serverEvaluation} "$out/server-evaluation"
+            ln -s ${alloyGracefulShutdown} "$out/alloy-graceful-shutdown"
           '';
 
           # ks CLI and the privileged-approval path it drives. The CLI itself

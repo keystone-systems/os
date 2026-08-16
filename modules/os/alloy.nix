@@ -13,6 +13,7 @@
 }:
 let
   cfg = config.keystone.os.alloy;
+  alloyTailscaleDependencies = lib.optional config.services.tailscale.enable "tailscaled.service";
 in
 {
   options.keystone.os.alloy = {
@@ -63,8 +64,12 @@ in
       enable = true;
     };
 
-    # Reduce shutdown timeout from default 1m30s to 10s
-    systemd.services.alloy.serviceConfig.TimeoutStopSec = 10;
+    # systemd reverses After= during shutdown. Keep Alloy ahead of Tailscale
+    # when either the Keystone option or a consumer enables Tailscale directly.
+    systemd.services.alloy = {
+      after = alloyTailscaleDependencies;
+      wants = alloyTailscaleDependencies;
+    };
 
     # Enable ZFS exporter when requested
     services.prometheus.exporters.zfs = lib.mkIf cfg.enableZfsExporter {
