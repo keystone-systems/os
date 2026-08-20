@@ -418,6 +418,9 @@
           ksHardwareKeyRegister = import ./tests/module/ks-hardware-key-register.nix {
             pkgs = ksPkgs;
           };
+          ksAgeIdentity = import ./tests/module/ks-age-identity.nix {
+            pkgs = ksPkgs;
+          };
           # --- Individual checks (available for local builds) ---
 
           osEvaluation = import ./tests/module/os-evaluation.nix {
@@ -556,6 +559,7 @@
           deepwork-removal = deepworkRemoval;
           retired-agent-assets-cleanup = retiredAgentAssetsCleanup;
           ks-hardware-key-register = ksHardwareKeyRegister;
+          ks-age-identity = ksAgeIdentity;
 
           # --- CI groups — parallel matrix jobs via nix-github-actions ---
 
@@ -578,6 +582,7 @@
             mkdir -p "$out"
             ln -s ${ks} "$out/ks"
             ln -s ${ksHardwareKeyRegister} "$out/ks-hardware-key-register"
+            ln -s ${ksAgeIdentity} "$out/ks-age-identity"
             ln -s ${approveExecScript} "$out/approve-exec-script"
             ln -s ${polkitKeystoneApproveCache} "$out/polkit-keystone-approve-cache"
             ln -s ${polkitUpdateSessionInhibit} "$out/polkit-update-session-inhibit"
