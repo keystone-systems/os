@@ -19,7 +19,7 @@ in
   options.keystone.os.zram = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = config.keystone.experimental;
+      default = false;
       description = ''
         Enable zstd-compressed RAM swap via the kernel zram device
         (EXPERIMENTAL).

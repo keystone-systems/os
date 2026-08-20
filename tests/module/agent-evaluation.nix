@@ -267,7 +267,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -289,7 +289,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -315,7 +315,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -340,7 +340,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -381,7 +381,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           agents.drago = {
@@ -404,13 +404,13 @@ let
       }
     ];
 
-    # Single agent on ext4
+    # Single agent on LVM-backed ext4
     single-agent-ext4 = eval "single-agent-ext4" [
       {
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -472,7 +472,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -499,7 +499,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -529,7 +529,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -560,7 +560,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -586,7 +586,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -616,7 +616,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -642,7 +642,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -669,7 +669,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           agents.tester = {
@@ -692,7 +692,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           agents.drago = {
@@ -714,7 +714,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           agents.tester = {
@@ -771,7 +771,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -803,7 +803,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -834,7 +834,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           # Both set: github explicit, forgejo defaults to "luce"
@@ -868,7 +868,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           agents.planner = {
@@ -902,7 +902,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           agents.vision = {

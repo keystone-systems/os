@@ -65,10 +65,10 @@ The system MUST support two storage backends:
 | Type   | Use Case             | Features                                              |
 | ------ | -------------------- | ----------------------------------------------------- |
 | `zfs`  | Default, recommended | Snapshots, compression, checksums, encryption, quotas |
-| `ext4` | Laptops, hibernation | LUKS encryption, minimal overhead, wide compatibility |
+| `lvm`  | Laptops, hibernation | One LUKS container, ext4 root LV, persistent swap LV |
 
-- When `ext4` is selected, the system MUST use LUKS encryption directly on the partition
-- When `ext4` is selected, the system MUST support hibernation via persistent swap
+- When `lvm` is selected, the system MUST put the root LV and each configured swap LV inside one LUKS container
+- When `lvm` is selected, the system MUST support hibernation via persistent swap
 - The system MUST support single and multi-disk configurations
 - Multi-disk ZFS configurations MUST support modes: single, mirror, stripe, raidz1, raidz2, raidz3
 - Partition sizes (ESP, swap, credstore) MUST be configurable

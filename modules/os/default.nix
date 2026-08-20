@@ -3,7 +3,7 @@
 # Implements REQ-001 (Keystone OS)
 #
 # This module consolidates all OS-level configuration for Keystone:
-# - Storage (ZFS/ext4 with encryption)
+# - Storage (ZFS or LUKS with LVM-backed ext4)
 # - Secure Boot (Lanzaboote)
 # - TPM enrollment
 # - Remote unlock (initrd SSH)
@@ -266,13 +266,13 @@ in
       type = mkOption {
         type = types.enum [
           "zfs"
-          "ext4"
+          "lvm"
         ];
         default = "zfs";
         description = ''
           Filesystem type for the root pool.
           - zfs: Full features (snapshots, compression, checksums, native encryption)
-          - ext4: Simple/legacy (LUKS encryption only, no advanced features)
+          - lvm: One LUKS container with an ext4 root LV and an optional swap LV
         '';
       };
 
@@ -324,7 +324,7 @@ in
       };
 
       hibernate = {
-        enable = mkEnableOption "hibernation support (ext4 only)";
+        enable = mkEnableOption "hibernation support (LVM only)";
       };
 
       credstore = {
@@ -669,7 +669,7 @@ in
       {
         assertion =
           !cfg.storage.enable
-          || cfg.storage.type == "ext4"
+          || cfg.storage.type == "lvm"
           || cfg.storage.mode == "single"
           || length cfg.storage.devices >= 2;
         message = "Multi-disk modes (mirror, stripe, raidz*) require at least 2 devices";
@@ -687,8 +687,8 @@ in
         message = "raidz3 requires at least 5 devices";
       }
       {
-        assertion = !cfg.storage.enable || cfg.storage.type == "ext4" -> cfg.storage.mode == "single";
-        message = "ext4 only supports single-disk mode";
+        assertion = !cfg.storage.enable || cfg.storage.type == "lvm" -> cfg.storage.mode == "single";
+        message = "LVM only supports single-disk mode";
       }
       # Non-storage assertions
       {
@@ -705,8 +705,8 @@ in
       }
       # Hibernation assertions
       {
-        assertion = !cfg.storage.hibernate.enable || cfg.storage.type == "ext4";
-        message = "Hibernation requires ext4 storage backend. ZFS cannot support hibernation because dirty writes after freeze corrupt pools.";
+        assertion = !cfg.storage.hibernate.enable || cfg.storage.type == "lvm";
+        message = "Hibernation requires the LVM storage backend. ZFS cannot support hibernation because dirty writes after freeze corrupt pools.";
       }
       {
         assertion =

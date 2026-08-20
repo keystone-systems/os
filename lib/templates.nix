@@ -563,7 +563,7 @@ rec {
   #   };
   #
   # The resulting derivation contains one qcow2 file per disko disk (e.g.
-  # disk0.qcow2 for ZFS configs, root.qcow2 for ext4 configs).  Boot it with:
+  # disk0.qcow2 for ZFS configs, root.qcow2 for LVM configs). Boot it with:
   #
   #   bin/virtual-machine --disk-path result/disk0.qcow2 --start test-vm
   #
@@ -666,9 +666,10 @@ rec {
         inherit desktop;
         admin = if desktop then withDesktopUser args.admin else args.admin;
         storage = lib.recursiveUpdate {
-          type = "ext4";
+          type = "lvm";
           mode = "single";
-          # Laptops hibernate by default — that is why the kind gets ext4
+          # Laptops hibernate by default. LVM puts root and swap inside one
+          # LUKS container, so one unlock makes both volumes available.
           # (ZFS cannot hibernate safely; keystone forces allowHibernation
           # off). Swap must exceed RAM for resume; set storage.swap.size
           # accordingly per host. Override via the storage arg to opt out.
@@ -924,7 +925,7 @@ rec {
             if hostCfg ? storage && hostCfg.storage ? type then
               hostCfg.storage.type
             else if hostCfg.kind == "laptop" then
-              "ext4"
+              "lvm"
             else
               "zfs";
         in

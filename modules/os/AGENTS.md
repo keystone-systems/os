@@ -9,7 +9,7 @@ ZFS with LUKS credstore is the primary pattern. Pool is **always** named `rpool`
 
 ```nix
 keystone.os.storage = {
-  type = "zfs";  # or "ext4"
+  type = "zfs";  # or "lvm"
   devices = [ "/dev/disk/by-id/nvme-..." ];
   mode = "single";  # single, mirror, stripe, raidz1, raidz2, raidz3
   esp.size = "1G";
@@ -22,7 +22,7 @@ keystone.os.storage = {
 
 **Boot sequence** (ZFS): Import pool → Unlock credstore (TPM or password) → Load ZFS key → Mount encrypted datasets.
 
-**ext4 alternative**: LUKS-encrypted ext4 with optional hibernate. No snapshots/compression.
+**LVM alternative**: One LUKS container holds an ext4 root LV and an optional swap LV. It supports hibernation without a second unlock.
 
 ## Users (`users.nix`)
 

@@ -108,7 +108,7 @@ let
         ENDJSON
       '';
 
-    laptop-ext4 = evalNixos "laptop-ext4" (
+    laptop-lvm = evalNixos "laptop-lvm" (
       self.lib.mkLaptop {
         hostname = "laptop";
         admin = {

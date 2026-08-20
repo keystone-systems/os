@@ -101,6 +101,48 @@ let
       touch $out
     '';
 
+  assertLvmHibernateLayout =
+    let
+      result = (import "${pkgs.path}/nixos/lib/eval-config.nix") {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.os = {
+              enable = true;
+              storage = {
+                type = "lvm";
+                devices = [ "/dev/vda" ];
+                swap.size = "16G";
+                hibernate.enable = true;
+              };
+              users.testuser = {
+                fullName = "Test User";
+                initialPassword = "testpass";
+                admin = true;
+              };
+            };
+          }
+        ];
+      };
+      luksNames = builtins.attrNames result.config.boot.initrd.luks.devices;
+      resumeDevice = result.config.boot.resumeDevice;
+    in
+    pkgs.runCommand "lvm-hibernate-layout" { } ''
+      ${lib.optionalString (luksNames != [ "cryptroot" ]) ''
+        echo 'FAIL: expected one LUKS device named cryptroot, got ${builtins.toJSON luksNames}' >&2
+        exit 1
+      ''}
+      ${lib.optionalString (resumeDevice != "/dev/pool/swap") ''
+        echo 'FAIL: expected resume device /dev/pool/swap, got ${resumeDevice}' >&2
+        exit 1
+      ''}
+      echo "OK: one LUKS device contains the root and resume LVs"
+      touch $out
+    '';
+
   # Minimal storage + fs so the OS module evaluates far enough to populate
   # users and assertions. Shared by every admin-flag test below.
   adminBase = {
@@ -234,12 +276,12 @@ let
       }
     ];
 
-    ext4-simple = eval "ext4-simple" [
+    lvm-simple = eval "lvm-simple" [
       {
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {
@@ -249,18 +291,18 @@ let
           };
         };
         fileSystems."/" = {
-          device = lib.mkForce "/dev/vda2";
+          device = lib.mkForce "/dev/pool/root";
           fsType = lib.mkForce "ext4";
         };
       }
     ];
 
-    ext4-hibernate = eval "ext4-hibernate" [
+    lvm-hibernate = eval "lvm-hibernate" [
       {
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
             swap.size = "16G";
             hibernate.enable = true;
@@ -272,7 +314,7 @@ let
           };
         };
         fileSystems."/" = {
-          device = lib.mkForce "/dev/vda2";
+          device = lib.mkForce "/dev/pool/root";
           fsType = lib.mkForce "ext4";
         };
       }
@@ -281,38 +323,47 @@ let
     # Experimental zram module: defaults pin zstd/50%/swappiness=150.
     zram-experimental =
       let
-        result = (import "${pkgs.path}/nixos/lib/eval-config.nix") {
-          system = "x86_64-linux";
-          modules = [
-            self.nixosModules.operating-system
-            {
-              system.stateVersion = "25.05";
-              boot.loader.systemd-boot.enable = true;
-              keystone.os = {
-                enable = true;
-                storage = {
-                  type = "ext4";
-                  devices = [ "/dev/vda" ];
+        evalZram =
+          extraModule:
+          (import "${pkgs.path}/nixos/lib/eval-config.nix") {
+            system = "x86_64-linux";
+            modules = [
+              self.nixosModules.operating-system
+              {
+                system.stateVersion = "25.05";
+                boot.loader.systemd-boot.enable = true;
+                keystone.os = {
+                  enable = true;
+                  storage = {
+                    type = "lvm";
+                    devices = [ "/dev/vda" ];
+                  };
+                  users.testuser = {
+                    fullName = "Test User";
+                    initialPassword = "testpass";
+                    admin = true;
+                  };
                 };
-                zram.enable = true;
-                users.testuser = {
-                  fullName = "Test User";
-                  initialPassword = "testpass";
-                  admin = true;
+                fileSystems."/" = {
+                  device = lib.mkForce "/dev/pool/root";
+                  fsType = lib.mkForce "ext4";
                 };
-              };
-              fileSystems."/" = {
-                device = lib.mkForce "/dev/vda2";
-                fsType = lib.mkForce "ext4";
-              };
-            }
-          ];
-        };
+              }
+            ]
+            ++ [ extraModule ];
+          };
+        result = evalZram { keystone.os.zram.enable = true; };
+        defaultResult = evalZram { keystone.experimental = true; };
         z = result.config.zramSwap;
+        defaultZram = defaultResult.config.zramSwap;
         swappiness = result.config.boot.kernel.sysctl."vm.swappiness";
       in
       pkgs.runCommand "zram-experimental" { } ''
         fail=0
+        ${lib.optionalString defaultZram.enable ''
+          echo "FAIL: zramSwap.enable expected false by default" >&2
+          fail=1
+        ''}
         ${lib.optionalString (!z.enable) ''
           echo "FAIL: zramSwap.enable expected true" >&2
           fail=1
@@ -706,7 +757,7 @@ let
 in
 pkgs.runCommand "test-os-evaluation"
   {
-    nativeBuildInputs = lib.attrValues tests;
+    nativeBuildInputs = (lib.attrValues tests) ++ [ assertLvmHibernateLayout ];
   }
   ''
     echo "OS module evaluation tests"
@@ -718,8 +769,8 @@ pkgs.runCommand "test-os-evaluation"
     echo "Configurations tested:"
     echo "  - minimal-zfs: Minimal ZFS setup"
     echo "  - full-zfs: Full ZFS with all options"
-    echo "  - ext4-simple: Simple ext4 setup"
-    echo "  - ext4-hibernate: ext4 with hibernation enabled"
+    echo "  - lvm-simple: LVM-backed ext4 setup"
+    echo "  - lvm-hibernate: LVM-backed ext4 with hibernation enabled"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"
     echo "  - journal-remote-client: Journal upload client (HTTPS via nginx)"

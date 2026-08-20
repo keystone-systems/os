@@ -19,7 +19,7 @@ let
         keystone.os = {
           enable = true;
           storage = {
-            type = "ext4";
+            type = "lvm";
             devices = [ "/dev/vda" ];
           };
           users.testuser = {

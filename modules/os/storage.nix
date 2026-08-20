@@ -2,7 +2,7 @@
 #
 # Handles disk partitioning and encryption via disko:
 # - ZFS pools (single disk, mirror, stripe, raidz1/2/3)
-# - ext4 with LUKS encryption
+# - ext4 root and swap logical volumes inside one LUKS container
 # - Credstore pattern for key management
 # - SystemD initrd services for secure boot unlock
 #
@@ -376,15 +376,15 @@ in
       boot.extraModulePackages = [ config.boot.kernelPackages.${pkgs.zfs.kernelModuleAttribute} ];
     })
 
-    # ext4 configuration (simpler alternative to ZFS)
-    (mkIf (osCfg.enable && cfg.enable && cfg.type == "ext4") {
+    # LVM configuration: one LUKS container holds the ext4 root and swap LVs.
+    (mkIf (osCfg.enable && cfg.enable && cfg.type == "lvm") {
       # Boot loader configuration
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
 
       boot.initrd.systemd.enable = true;
 
-      # Disko configuration for ext4 with LUKS
+      # Disko configuration for LUKS with an LVM volume group.
       disko.devices = {
         disk.root = {
           type = "disk";
@@ -403,38 +403,48 @@ in
                 };
               };
               root = {
-                end = if enableSwap then "-${cfg.swap.size}" else "-0";
+                size = "100%";
                 content = {
                   type = "luks";
                   name = "cryptroot";
                   passwordFile = "${./scripts/credstore-password}";
                   content = {
-                    type = "filesystem";
-                    format = "ext4";
-                    mountpoint = "/";
+                    type = "lvm_pv";
+                    vg = "pool";
                   };
                 };
               };
-              swap = mkIf enableSwap {
-                size = "100%";
-                content =
-                  if cfg.hibernate.enable then
-                    {
-                      type = "luks";
-                      name = "cryptswap";
-                      passwordFile = "${./scripts/credstore-password}";
-                      content = {
-                        type = "swap";
-                      };
-                    }
-                  else
-                    {
-                      type = "swap";
-                      randomEncryption = true;
-                    };
-              };
             };
           };
+        };
+        lvm_vg.pool = {
+          type = "lvm_vg";
+          lvs =
+            optionalAttrs enableSwap {
+              swap = {
+                size = cfg.swap.size;
+                content = {
+                  type = "swap";
+                  resumeDevice = cfg.hibernate.enable;
+                  discardPolicy = "once";
+                };
+              };
+            }
+            // {
+              # Disko creates fixed-size LVs before percentage-size LVs.
+              root = {
+                size = "100%";
+                content = {
+                  type = "filesystem";
+                  format = "ext4";
+                  mountpoint = "/";
+                  mountOptions = [
+                    "defaults"
+                    "noatime"
+                  ];
+                };
+              };
+            };
         };
       };
 
@@ -446,20 +456,6 @@ in
         ];
       };
 
-      # Hibernation support: persistent LUKS swap + resumeDevice
-      boot.initrd.luks.devices.cryptswap = mkIf (enableSwap && cfg.hibernate.enable) {
-        device = "/dev/disk/by-partlabel/disk-root-swap";
-        crypttabExtraOpts = lib.optionals osCfg.tpm.enable [
-          "tpm2-measure-pcr=yes"
-          "tpm2-device=auto"
-        ];
-      };
-
-      # resumeDevice is all systemd stage-1 needs: systemd-hibernate-resume
-      # is built in, and "resume" is a kernel mechanism, not a module —
-      # listing it in availableKernelModules makes modules-closure fail the
-      # initrd build (first hit by the ncrmro-laptop relayout twin).
-      boot.resumeDevice = mkIf cfg.hibernate.enable "/dev/mapper/cryptswap";
     })
   ];
 }

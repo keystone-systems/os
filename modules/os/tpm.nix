@@ -26,10 +26,8 @@ let
   # tool was inoperable there. The initrd table is what actually unlocks at
   # boot, which makes it the one authoritative answer.
   # Preference order: the explicit option, then the two names storage.nix
-  # itself produces (`credstore` on zfs, `cryptroot` on managed ext4 -- the
-  # latter matters because hibernate adds a `cryptswap` sibling, so "the only
-  # LUKS device" stops being well-defined there), then a host's single
-  # self-declared device.
+  # itself produces (`credstore` on ZFS and `cryptroot` on managed LVM), then
+  # a host's single self-declared device.
   luksDevices = config.boot.initrd.luks.devices;
   credstoreDevice =
     if cfg.credstoreDevice != null then

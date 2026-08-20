@@ -46,8 +46,8 @@ pkgs.testers.nixosTest {
         secureBoot.enable = false;
         tpm.enable = false;
 
-        # ext4 code path (creates agent-homes + create-user-homes services)
-        storage.type = "ext4";
+        # LVM-backed ext4 code path (creates agent-homes + create-user-homes services)
+        storage.type = "lvm";
 
         # Human user
         users.testuser = {
