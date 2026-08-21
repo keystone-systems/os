@@ -187,11 +187,11 @@
         "walker": "walker"
       },
       "locked": {
-        "lastModified": 1787320229,
-        "narHash": "sha256-W3CKr30rL0+/Hnz1WW/aoQkj6zjcSdTlrfdndHLdxzg=",
+        "lastModified": 1787335244,
+        "narHash": "sha256-wSZLaz02btV7N3BVxcZ28Z4BlHWQrfBGxCWvl/kMaRo=",
         "ref": "refs/heads/main",
-        "rev": "1c2f2c814a252a4f0d49ab87b799bd177360bcbf",
-        "revCount": 33,
+        "rev": "57b7b04db9b5dbe046cc1c40422b97e2aff74b39",
+        "revCount": 36,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
       },
