@@ -326,6 +326,82 @@ let
       touch $out
     '';
 
+  assertHypervisorMode =
+    name:
+    {
+      server,
+      client ? null,
+      expectedClient,
+      expectedLocalAutoconnect ? false,
+    }:
+    let
+      result = (import "${pkgs.path}/nixos/lib/eval-config.nix") {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          self.nixosModules.desktop
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.desktop.enable = true;
+            keystone.os = {
+              enable = true;
+              storage = {
+                type = "lvm";
+                devices = [ "/dev/vda" ];
+              };
+              hypervisor = {
+                enable = server;
+                defaultUri = "qemu+ssh://admin@ocean/system";
+                connections = [
+                  "qemu:///system"
+                  "qemu+ssh://admin@workstation/system"
+                ];
+              }
+              // lib.optionalAttrs (client != null) { client.enable = client; };
+              users.testuser = {
+                fullName = "Test User";
+                initialPassword = "testpass";
+                admin = true;
+                desktop.enable = true;
+              };
+            };
+            fileSystems."/" = {
+              device = lib.mkForce "/dev/pool/root";
+              fsType = lib.mkForce "ext4";
+            };
+          }
+        ];
+      };
+      serviceNames = builtins.attrNames result.config.systemd.services;
+      socketNames = builtins.attrNames result.config.systemd.sockets;
+      hasLibvirtUnits = builtins.any (unit: lib.hasPrefix "libvirt" unit) (serviceNames ++ socketNames);
+      actualServer = result.config.virtualisation.libvirtd.enable;
+      actualClient = result.config.programs.virt-manager.enable;
+      connections =
+        result.config.home-manager.users.testuser.dconf.settings."org/virt-manager/virt-manager/connections";
+      actualAutoconnect = if expectedClient then toString connections.autoconnect else "";
+      ok =
+        actualServer == server
+        && hasLibvirtUnits == server
+        && actualClient == expectedClient
+        && (!expectedClient || lib.hasInfix "qemu+ssh://admin@ocean/system" actualAutoconnect)
+        && (!expectedClient || lib.hasInfix "qemu+ssh://admin@workstation/system" actualAutoconnect)
+        && lib.hasInfix "qemu:///system" actualAutoconnect == expectedLocalAutoconnect;
+    in
+    pkgs.runCommand "hypervisor-${name}" { } ''
+      ${lib.optionalString (!ok) ''
+        echo "FAIL: hypervisor ${name} mode did not match its expected state" >&2
+        echo 'server=${builtins.toJSON actualServer}' >&2
+        echo 'client=${builtins.toJSON actualClient}' >&2
+        echo 'libvirtUnits=${builtins.toJSON hasLibvirtUnits}' >&2
+        echo 'autoconnect=${builtins.toJSON actualAutoconnect}' >&2
+        exit 1
+      ''}
+      echo "OK: hypervisor ${name} mode"
+      touch $out
+    '';
+
   tests = {
     laptop-power-policy = assertPowerPolicy "laptop" "laptop" true;
     workstation-power-policy = assertPowerPolicy "workstation" "workstation" false;
@@ -346,6 +422,23 @@ let
             };
           }
         ];
+    hypervisor-server = assertHypervisorMode "server" {
+      server = true;
+      expectedClient = true;
+      expectedLocalAutoconnect = true;
+    };
+
+    hypervisor-client-only = assertHypervisorMode "client-only" {
+      server = false;
+      client = true;
+      expectedClient = true;
+    };
+
+    hypervisor-disabled = assertHypervisorMode "disabled" {
+      server = false;
+      client = false;
+      expectedClient = false;
+    };
 
     minimal-zfs = eval "minimal-zfs" [
       {
