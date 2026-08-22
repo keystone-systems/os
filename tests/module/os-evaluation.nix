@@ -143,6 +143,77 @@ let
       touch $out
     '';
 
+  # The recovery specialisation clears the unlock hints on every initrd LUKS
+  # target, so assert it for both storage backends: each names its container
+  # differently (lvm -> cryptroot, zfs -> credstore) and the module derives
+  # the names from the initrd table rather than from the backend.
+  assertPassphraseRecovery =
+    let
+      mkCase =
+        {
+          type,
+          luksName,
+        }:
+        let
+          config' =
+            (nixosSystem {
+              system = "x86_64-linux";
+              modules = [
+                self.nixosModules.operating-system
+                {
+                  system.stateVersion = "25.05";
+                  keystone = {
+                    os = {
+                      enable = true;
+                      storage = {
+                        inherit type;
+                        devices = [ "/dev/vda" ];
+                      };
+                      tpm.enable = true;
+                    };
+                    # Recorded enrollment state is what makes hardware-keys
+                    # contribute fido2-device=auto, the cross-module hint the
+                    # specialisation has to clear.
+                    hardwareKeys.yubi-test = "12345";
+                    hardwareKeyLuksTargets = [ luksName ];
+                    hardwareKeyState.luks.${luksName} = {
+                      uuid = "00000000-0000-0000-0000-000000000001";
+                      enrollments.yubi-test.token = 1;
+                    };
+                  };
+                }
+              ];
+            }).config;
+          luksOptions = cfg: cfg.boot.initrd.luks.devices.${luksName}.crypttabExtraOpts;
+          normalOptions = luksOptions config';
+          recoveryOptions = luksOptions config'.specialisation.passphrase-recovery.configuration;
+        in
+        # Checking fido2-device=auto specifically: it comes from
+        # modules/hardware-keys.nix via mkAfter, so it proves the recovery
+        # entry clears hints contributed by other modules. The exact tpm2
+        # options and their merge order are implementation detail.
+        lib.optionalString (!lib.elem "fido2-device=auto" normalOptions) ''
+          echo 'FAIL: ${type} normal boot lost its automatic unlock options: ${builtins.toJSON normalOptions}' >&2
+          exit 1
+        ''
+        + lib.optionalString (recoveryOptions != [ ]) ''
+          echo 'FAIL: ${type} recovery boot has automatic unlock options: ${builtins.toJSON recoveryOptions}' >&2
+          exit 1
+        '';
+    in
+    pkgs.runCommand "passphrase-recovery-specialisation" { } ''
+      ${mkCase {
+        type = "lvm";
+        luksName = "cryptroot";
+      }}
+      ${mkCase {
+        type = "zfs";
+        luksName = "credstore";
+      }}
+      echo "OK: normal boot uses hardware unlock and recovery boot uses the passphrase"
+      touch $out
+    '';
+
   # Minimal storage + fs so the OS module evaluates far enough to populate
   # users and assertions. Shared by every admin-flag test below.
   adminBase = {
@@ -757,7 +828,10 @@ let
 in
 pkgs.runCommand "test-os-evaluation"
   {
-    nativeBuildInputs = (lib.attrValues tests) ++ [ assertLvmHibernateLayout ];
+    nativeBuildInputs = (lib.attrValues tests) ++ [
+      assertLvmHibernateLayout
+      assertPassphraseRecovery
+    ];
   }
   ''
     echo "OS module evaluation tests"
@@ -771,6 +845,7 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - full-zfs: Full ZFS with all options"
     echo "  - lvm-simple: LVM-backed ext4 setup"
     echo "  - lvm-hibernate: LVM-backed ext4 with hibernation enabled"
+    echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"
     echo "  - journal-remote-client: Journal upload client (HTTPS via nginx)"
