@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Fleet binary caches now use `keystone.os.binaryCaches.extra.<name>` with an
+  enabled credential-free HTTPS URL and signing public key. Enabled fleet
+  caches are prepended to Nix substituters and trusted keys.
+
 ### Removed
 
+- Removed the Attic and Harmonia server binary-cache modules and the legacy
+  binary-cache client options. Cache publication is now owned by the fleet's
+  external publisher; clients migrate to `keystone.os.binaryCaches.extra`.
 - Removed DeepWork, its MCP server, job libraries, workflow commands, and managed repository.
 - A normal Home Manager activation removes its retired generated skill and Gemini command artifacts.
 

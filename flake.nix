@@ -323,7 +323,7 @@
           ];
         };
 
-        # Server module - VPN, monitoring, mail, binary cache (optional services)
+        # Server module - VPN, monitoring, mail, and optional services
         server = {
           imports = [
             ./modules/domain.nix
@@ -334,19 +334,6 @@
             sops-nix.nixosModules.sops
             ./modules/secrets.nix
             ./modules/server
-          ];
-        };
-
-        # Binary cache client - configures nix substituters for Attic cache
-        binaryCacheClient = {
-          imports = [
-            ./modules/domain.nix
-            # Secrets interface — push token resolves through
-            # keystone.secrets.provided (its backend defines sops.*, so the
-            # sops-nix module must come along).
-            sops-nix.nixosModules.sops
-            ./modules/secrets.nix
-            ./modules/binary-cache-client.nix
           ];
         };
 
@@ -487,8 +474,15 @@
           agentctlRegression = import ./tests/module/agentctl-regression.nix {
             inherit pkgs;
           };
-          binaryCacheClientMerge = import ./tests/module/binary-cache-client-merge.nix {
+          binaryCacheMerge = import ./tests/module/binary-cache-merge.nix {
             inherit pkgs lib self;
+          };
+          terminalSandboxBinaryCaches = import ./tests/module/terminal-sandbox-binary-caches.nix {
+            inherit
+              pkgs
+              self
+              home-manager
+              ;
           };
           terminalZide = import ./tests/module/terminal-zide.nix {
             inherit
@@ -548,7 +542,8 @@
           polkit-keystone-approve-cache = polkitKeystoneApproveCache;
           polkit-update-session-inhibit = polkitUpdateSessionInhibit;
           agentctl-regression = agentctlRegression;
-          binary-cache-client-merge = binaryCacheClientMerge;
+          binary-cache-merge = binaryCacheMerge;
+          terminal-sandbox-binary-caches = terminalSandboxBinaryCaches;
           terminal-zide = terminalZide;
           terminal-mail = terminalMail;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
@@ -607,7 +602,8 @@
             ln -s ${agentQueueMigration} "$out/agent-queue-migration"
             ln -s ${deepworkRemoval} "$out/deepwork-removal"
             ln -s ${retiredAgentAssetsCleanup} "$out/retired-agent-assets-cleanup"
-            ln -s ${binaryCacheClientMerge} "$out/binary-cache-client-merge"
+            ln -s ${binaryCacheMerge} "$out/binary-cache-merge"
+            ln -s ${terminalSandboxBinaryCaches} "$out/terminal-sandbox-binary-caches"
             ln -s ${terminalZide} "$out/terminal-zide"
             ln -s ${terminalMail} "$out/terminal-mail"
           '';

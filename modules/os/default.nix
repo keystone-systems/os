@@ -37,6 +37,10 @@ let
   );
   isBaremetal = currentHost != null && currentHost.baremetal;
 
+  binaryCache = import ../../lib/binary-caches.nix { inherit lib; };
+
+  enabledExtraBinaryCaches = attrValues (filterAttrs (_: binaryCache.usable) cfg.binaryCaches.extra);
+
   # Users explicitly flagged as the fleet administrator.
   #
   # CRITICAL: adminUsername and downstream path derivations (systemFlake.path,
@@ -568,6 +572,35 @@ in
           description = "Public key used to verify binaries from the shared Keystone systems cache.";
         };
       };
+
+      extra = mkOption {
+        type = types.attrsOf (
+          types.submodule (
+            { name, ... }:
+            {
+              options = {
+                enable = mkEnableOption "the ${name} signed binary cache";
+
+                url = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  example = "https://cache.example.com/nix-cache";
+                  description = "HTTPS substituter URL for this binary cache.";
+                };
+
+                publicKey = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  example = "example-cache-1:AAAA...=";
+                  description = "Public key used to verify store paths from this binary cache.";
+                };
+              };
+            }
+          )
+        );
+        default = { };
+        description = "Additional signed binary caches used across the fleet.";
+      };
     };
 
     # Nix configuration
@@ -681,12 +714,14 @@ in
       mkDefault (head adminFlaggedUserNames)
     );
 
-    nix.settings.substituters = mkIf cfg.binaryCaches.ksSystems.enable (mkBefore [
-      cfg.binaryCaches.ksSystems.url
-    ]);
-    nix.settings.trusted-public-keys = mkIf cfg.binaryCaches.ksSystems.enable (mkBefore [
-      cfg.binaryCaches.ksSystems.publicKey
-    ]);
+    nix.settings.substituters = mkBefore (
+      optional (binaryCache.usable cfg.binaryCaches.ksSystems) cfg.binaryCaches.ksSystems.url
+      ++ map (cache: cache.url) enabledExtraBinaryCaches
+    );
+    nix.settings.trusted-public-keys = mkBefore (
+      optional (binaryCache.usable cfg.binaryCaches.ksSystems) cfg.binaryCaches.ksSystems.publicKey
+      ++ map (cache: cache.publicKey) enabledExtraBinaryCaches
+    );
 
     # Assertions for configuration validation
     assertions = [
@@ -695,6 +730,39 @@ in
         assertion = !cfg.storage.enable || cfg.storage.devices != [ ];
         message = "keystone.os.storage.devices must contain at least one disk device";
       }
+      {
+        assertion = !cfg.binaryCaches.ksSystems.enable || binaryCache.hasUrl cfg.binaryCaches.ksSystems;
+        message = "keystone.os.binaryCaches.ksSystems.url must be set when the cache is enabled";
+      }
+      {
+        assertion =
+          !cfg.binaryCaches.ksSystems.enable || binaryCache.hasPublicKey cfg.binaryCaches.ksSystems;
+        message = "keystone.os.binaryCaches.ksSystems.publicKey must be set when the cache is enabled";
+      }
+      {
+        assertion =
+          !cfg.binaryCaches.ksSystems.enable
+          || binaryCache.credentialFreeHttpsUrl cfg.binaryCaches.ksSystems.url;
+        message = "keystone.os.binaryCaches.ksSystems.url must use credential-free HTTPS without URI user-info or credential query parameters";
+      }
+    ]
+    ++ concatLists (
+      mapAttrsToList (name: cache: [
+        {
+          assertion = !cache.enable || binaryCache.hasUrl cache;
+          message = "keystone.os.binaryCaches.extra.${name}.url must be set when the cache is enabled";
+        }
+        {
+          assertion = !cache.enable || binaryCache.hasPublicKey cache;
+          message = "keystone.os.binaryCaches.extra.${name}.publicKey must be set when the cache is enabled";
+        }
+        {
+          assertion = !cache.enable || cache.url == null || binaryCache.credentialFreeHttpsUrl cache.url;
+          message = "keystone.os.binaryCaches.extra.${name}.url must use credential-free HTTPS without URI user-info or credential query parameters";
+        }
+      ]) cfg.binaryCaches.extra
+    )
+    ++ [
       {
         assertion =
           !cfg.storage.enable

@@ -17,11 +17,17 @@
 with lib;
 let
   cfg = config.keystone.terminal.sandbox;
-  ksSystemsCache =
-    if osConfig != null then
-      attrByPath [ "keystone" "os" "binaryCaches" "ksSystems" ] null osConfig
+  binaryCache = import ../../lib/binary-caches.nix { inherit lib; };
+  systemBinaryCaches =
+    if osConfig != null && attrByPath [ "keystone" "os" "enable" ] false osConfig then
+      let
+        ksSystems = attrByPath [ "keystone" "os" "binaryCaches" "ksSystems" ] null osConfig;
+        extra = attrByPath [ "keystone" "os" "binaryCaches" "extra" ] { } osConfig;
+      in
+      optional (ksSystems != null && binaryCache.usable ksSystems) ksSystems
+      ++ attrValues (filterAttrs (_: binaryCache.usable) extra)
     else
-      null;
+      [ ];
 in
 {
   options.keystone.terminal.sandbox = {
@@ -66,10 +72,12 @@ in
   };
 
   config = mkIf (config.keystone.terminal.enable && cfg.enable) (mkMerge [
-    (mkIf (ksSystemsCache != null && ksSystemsCache.enable) {
-      # Keep sandboxed agent builds aligned with the system-level shared cache.
-      keystone.terminal.sandbox.extraSubstituters = mkBefore [ ksSystemsCache.url ];
-      keystone.terminal.sandbox.extraTrustedPublicKeys = mkBefore [ ksSystemsCache.publicKey ];
+    (mkIf (systemBinaryCaches != [ ]) {
+      # Keep sandboxed agent builds aligned with the system-level caches.
+      keystone.terminal.sandbox.extraSubstituters = mkBefore (map (cache: cache.url) systemBinaryCaches);
+      keystone.terminal.sandbox.extraTrustedPublicKeys = mkBefore (
+        map (cache: cache.publicKey) systemBinaryCaches
+      );
     })
     {
       home.packages = [

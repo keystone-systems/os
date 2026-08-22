@@ -561,9 +561,8 @@ machine_install() {
   # 2848 destination fetches against 232 pushed paths on ks-test-delltop. The
   # fleet is on one LAN and the operator's machine already holds the closure it
   # just built, so pushing beats downloading. This also implies
-  # --no-use-machine-substituters, which stops the installer inheriting
-  # cache.ncrmro.com: that name only resolves on the tailnet, so in the
-  # installer it is pure retry latency.
+  # --no-use-machine-substituters, which stops the installer inheriting any
+  # fleet-only cache that it cannot reach before joining the tailnet.
   # Compression is off for the same reason -- at LAN speed it costs CPU on both
   # ends and buys nothing.
   local args=(

@@ -59,7 +59,6 @@ Enable one with a toggle; Keystone auto-wires TLS, reverse proxy, and DNS.
 | Headscale                   | Tailscale control |
 | Grafana + Prometheus + Loki | Datadog           |
 | Miniflux                    | Feedly            |
-| Attic                       | Cachix            |
 | SeaweedFS                   | S3                |
 
 ## Terminal, desktop, and OS agents

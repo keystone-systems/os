@@ -73,7 +73,6 @@ modules/server/
 | loki        | loki         | 3100 | tailscale         |                    |
 | headscale   | mercury      | 8080 | **public**        | VPN control server |
 | miniflux    | miniflux     | 8070 | tailscale         |                    |
-| harmonia    | harmonia     | 5000 | tailscale         | Nix binary cache   |
 | mail        | mail         | 8082 | tailscale         | Stalwart admin     |
 | adguard     | adguard.home | 3000 | tailscaleAndLocal | DNS admin          |
 
@@ -208,7 +207,6 @@ keystone.headscale = {
       prometheus.enable = true;
       loki.enable = true;
       miniflux.enable = true;
-      harmonia.enable = true;
       mail.enable = true;
       adguard.enable = true;
     };
@@ -319,13 +317,13 @@ port 8080 used by: service1, service2
 
 ## Legacy Modules
 
-These modules are still available but only configure the service itself (no nginx/DNS):
+The remaining legacy modules configure only their service, without nginx or
+DNS integration:
 
-- `keystone.server.binaryCache` - Harmonia with signing keys
 - `keystone.server.monitoring` - Prometheus/Grafana stack
 - `keystone.server.vpn` - Headscale (Kubernetes-based)
 
-The consumer is responsible for nginx/TLS/access control when using legacy modules.
+The consumer is responsible for nginx/TLS/access control when using them.
 
 ## Troubleshooting
 

@@ -8,8 +8,8 @@ description: How Keystone populates the public installer cache for starter ISO i
 This document covers the **public installer cache warming path** for Keystone's
 starter ISO and generated-template installs.
 
-It is intentionally separate from the host-level binary cache services that a
-user can enable on their own machines.
+It is intentionally separate from signed binary caches that a fleet can add to
+its hosts.
 
 ## What this cache is
 
@@ -35,12 +35,8 @@ This keeps three things aligned:
 This is **not** the same thing as Keystone's host-level binary cache service
 story.
 
-It does not describe:
-
-- the `binary-cache-client` module
-- a self-hosted Attic service
-- Harmonia
-- machine-to-machine remote builders
+It does not describe fleet-specific signed caches or machine-to-machine remote
+builders.
 
 Those are user- or fleet-level deployment choices. See
 [Remote building and caching](remote-building-and-caching.md) for that surface.

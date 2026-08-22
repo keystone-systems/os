@@ -56,7 +56,6 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 | `operating-system` | Core OS — storage, Secure Boot, TPM, users, agents (includes disko + lanzaboote) |
 | `server` | Server services (includes domain) |
 | `desktop` | Desktop environments — re-export of ks.systems/desktop plus keystone glue |
-| `binaryCacheClient` | Attic binary cache client |
 | `hardwareKey` | YubiKey/FIDO2 support |
 | `isoInstaller` | Bootable installer |
 | `experimental` | Experimental feature flag (`keystone.experimental`) |
