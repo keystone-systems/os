@@ -93,6 +93,7 @@ jobs:
               - 'lib/**'
               - 'templates/**'
               - 'tests/module/*-evaluation.nix'
+              - 'tests/module/alloy-graceful-shutdown.nix'
             check_ks:
               - '.github/workflows/validate.yml'
               - 'flake.nix'
