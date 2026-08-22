@@ -52,6 +52,18 @@ let
   incompleteResult = mkResult {
     extra.incomplete.enable = true;
   };
+  urlOnlyResult = mkResult {
+    extra.urlOnly = {
+      enable = true;
+      url = "https://cache.example.com/nix-cache";
+    };
+  };
+  keyOnlyResult = mkResult {
+    extra.keyOnly = {
+      enable = true;
+      publicKey = "key-only-1:TEST_PUBLIC_KEY";
+    };
+  };
   extraOnlyResult = mkResult {
     ksSystems.enable = false;
     extra.ocean = {
@@ -77,6 +89,16 @@ let
         url = "https://cache.example.com/nix-cache?token=secret";
         publicKey = "token-1:TEST_PUBLIC_KEY";
       };
+      presigned = {
+        enable = true;
+        url = "https://cache.example.com/nix-cache?X-Amz-Signature=secret";
+        publicKey = "presigned-1:TEST_PUBLIC_KEY";
+      };
+      whitespace = {
+        enable = true;
+        url = "https://cache.example.com/nix cache";
+        publicKey = "whitespace-1:TEST_PUBLIC_KEY";
+      };
     };
   };
 
@@ -89,11 +111,19 @@ let
   incompleteMessagesJson = builtins.toJSON (
     map (assertion: assertion.message) (failedAssertions incompleteResult)
   );
+  urlOnlyMessagesJson = builtins.toJSON (
+    map (assertion: assertion.message) (failedAssertions urlOnlyResult)
+  );
+  keyOnlyMessagesJson = builtins.toJSON (
+    map (assertion: assertion.message) (failedAssertions keyOnlyResult)
+  );
   extraOnlySubstitutersJson = builtins.toJSON extraOnlyResult.config.nix.settings.substituters;
   extraOnlyKeysJson = builtins.toJSON extraOnlyResult.config.nix.settings.trusted-public-keys;
   invalidUrlMessagesJson = builtins.toJSON (
     map (assertion: assertion.message) (failedAssertions invalidUrlResult)
   );
+  invalidUrlSubstitutersJson = builtins.toJSON invalidUrlResult.config.nix.settings.substituters;
+  invalidUrlKeysJson = builtins.toJSON invalidUrlResult.config.nix.settings.trusted-public-keys;
 in
 pkgs.runCommand "binary-cache-merge-check" { } ''
   set -euo pipefail
@@ -116,6 +146,17 @@ pkgs.runCommand "binary-cache-merge-check" { } ''
     exit 1
   fi
 
+  grep -Fq 'binaryCaches.extra.urlOnly.publicKey' <<<'${urlOnlyMessagesJson}'
+  if grep -Fq 'binaryCaches.extra.urlOnly.url' <<<'${urlOnlyMessagesJson}'; then
+    echo 'FAIL: a present URL was reported missing' >&2
+    exit 1
+  fi
+  grep -Fq 'binaryCaches.extra.keyOnly.url' <<<'${keyOnlyMessagesJson}'
+  if grep -Fq 'binaryCaches.extra.keyOnly.publicKey' <<<'${keyOnlyMessagesJson}'; then
+    echo 'FAIL: a present public key was reported missing' >&2
+    exit 1
+  fi
+
   grep -Fq 'https://cache.nixos.org' <<<'${extraOnlySubstitutersJson}'
   grep -Fq 'https://s3.example.com/nix-cache' <<<'${extraOnlySubstitutersJson}'
   grep -Fq 'ocean-1:TEST_PUBLIC_KEY' <<<'${extraOnlyKeysJson}'
@@ -124,10 +165,15 @@ pkgs.runCommand "binary-cache-merge-check" { } ''
     exit 1
   fi
 
-  for name in http userinfo token; do
+  for name in http userinfo token presigned whitespace; do
     grep -Fq "binaryCaches.extra.$name.url must use credential-free HTTPS" \
       <<<'${invalidUrlMessagesJson}'
   done
+  if grep -Eq 'cache\.example\.com|http-1:|userinfo-1:|token-1:|presigned-1:|whitespace-1:' \
+      <<<'${invalidUrlSubstitutersJson}${invalidUrlKeysJson}'; then
+    echo 'FAIL: invalid cache values reached Nix settings' >&2
+    exit 1
+  fi
 
   touch "$out"
 ''

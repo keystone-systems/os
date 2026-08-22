@@ -705,11 +705,11 @@ in
     ++ concatLists (
       mapAttrsToList (name: cache: [
         {
-          assertion = !cache.enable || binaryCache.complete cache;
+          assertion = !cache.enable || binaryCache.hasUrl cache;
           message = "keystone.os.binaryCaches.extra.${name}.url must be set when the cache is enabled";
         }
         {
-          assertion = !cache.enable || binaryCache.complete cache;
+          assertion = !cache.enable || binaryCache.hasPublicKey cache;
           message = "keystone.os.binaryCaches.extra.${name}.publicKey must be set when the cache is enabled";
         }
         {

@@ -73,7 +73,6 @@ modules/server/
 | loki        | loki         | 3100 | tailscale         |                    |
 | headscale   | mercury      | 8080 | **public**        | VPN control server |
 | miniflux    | miniflux     | 8070 | tailscale         |                    |
-| harmonia    | harmonia     | 5000 | tailscale         | Nix binary cache   |
 | mail        | mail         | 8082 | tailscale         | Stalwart admin     |
 | adguard     | adguard.home | 3000 | tailscaleAndLocal | DNS admin          |
 
@@ -208,7 +207,6 @@ keystone.headscale = {
       prometheus.enable = true;
       loki.enable = true;
       miniflux.enable = true;
-      harmonia.enable = true;
       mail.enable = true;
       adguard.enable = true;
     };
