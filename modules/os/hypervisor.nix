@@ -4,7 +4,7 @@
 # Grants `libvirtd` group membership to the admin user only (via the
 # _autoUserGroups.adminOnly sink); non-admin users with a polkit path
 # retain prompt-based access. See conventions/process.user-groups.md.
-# When keystone.desktop is also enabled, adds virt-manager GUI.
+# When keystone.desktop is also enabled, the client adds the virt-manager GUI.
 #
 # Home-manager integration (when imported):
 # - Sets uri_default in ~/.config/libvirt/libvirt.conf
@@ -21,6 +21,7 @@ with lib;
 let
   osCfg = config.keystone.os;
   cfg = osCfg.hypervisor;
+  clientCfg = cfg.client;
   hasDesktop = options ? keystone && config.keystone.desktop.enable or false;
 
   ovmfPkg = pkgs.OVMF.override {
@@ -30,8 +31,12 @@ let
   };
   qemuPkg = pkgs.qemu_kvm;
 
-  # All connection URIs: default + additional bookmarks
+  # All connection URIs: default + additional bookmarks. A client-only host
+  # may retain a local URI as a manual bookmark, but it must not try to connect
+  # to a server that this module did not enable.
   allUris = [ cfg.defaultUri ] ++ cfg.connections;
+  isLocalUri = uri: hasPrefix "qemu:///" uri;
+  autoconnectUris = if cfg.enable then allUris else filter (uri: !isLocalUri uri) allUris;
 
   # Desktop users who should get virt-manager home-manager config
   desktopUsers = filterAttrs (_: u: u.desktop.enable) osCfg.users;
@@ -39,6 +44,13 @@ in
 {
   options.keystone.os.hypervisor = {
     enable = mkEnableOption "Libvirt/KVM hypervisor with OVMF, TPM, and SPICE support";
+
+    client.enable = mkOption {
+      type = types.bool;
+      default = cfg.enable;
+      defaultText = literalExpression "config.keystone.os.hypervisor.enable";
+      description = "Enable the Virt Manager client and its connection settings";
+    };
 
     defaultUri = mkOption {
       type = types.str;
@@ -125,9 +137,7 @@ in
         "L+ /run/libvirt/nix-ovmf/edk2-x86_64-secure-code.fd - - - - ${qemuPkg}/share/qemu/edk2-x86_64-secure-code.fd"
       ];
 
-      # Desktop-conditional: virt-manager GUI + NM unmanaged rules
-      programs.virt-manager.enable = mkIf hasDesktop true;
-      # Only virtual interfaces are platform-owned. A bridge MEMBER NIC
+      # Only virtual interfaces are server-owned. A bridge MEMBER NIC
       # (e.g. br0 enslaving an onboard ethernet) must be added by the host's
       # own config — a wildcard like enp* here strands every ethernet
       # adapter on the host, including hotplugged USB ones a laptop needs
@@ -148,11 +158,16 @@ in
       );
     })
 
+    # Desktop client. This does not enable libvirtd or install server packages.
+    (mkIf (osCfg.enable && clientCfg.enable && hasDesktop) {
+      programs.virt-manager.enable = true;
+    })
+
     # Home-manager: virt-manager defaults for desktop users
     # Separate mkMerge entry — see users.nix for why optionalAttrs must not
     # be merged with // into a mkIf block.
     (optionalAttrs (options ? home-manager) {
-      home-manager.users = mkIf (osCfg.enable && cfg.enable && hasDesktop && desktopUsers != { }) (
+      home-manager.users = mkIf (osCfg.enable && clientCfg.enable && hasDesktop && desktopUsers != { }) (
         mapAttrs (
           username: _:
           { ... }:
@@ -165,7 +180,7 @@ in
             # virt-manager connection bookmarks via dconf
             dconf.settings."org/virt-manager/virt-manager/connections" = {
               uris = allUris;
-              autoconnect = allUris;
+              autoconnect = autoconnectUris;
             };
           }
         ) desktopUsers
