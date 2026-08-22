@@ -18,6 +18,7 @@ let
       hostname,
       stateVersion ? "25.05",
       timeZone ? "UTC",
+      hostKind ? "workstation",
       storage,
       admin,
       adminUsername ? "keystone",
@@ -51,6 +52,7 @@ let
 
       keystone.os = {
         enable = true;
+        inherit hostKind;
         # Tailscale requires hosts registry — template configs don't have one
         tailscale.enable = lib.mkDefault false;
         inherit
@@ -83,6 +85,7 @@ let
       hostname,
       stateVersion ? "25.05",
       timeZone ? "UTC",
+      hostKind ? "workstation",
       storage,
       admin,
       adminUsername ? "keystone",
@@ -127,6 +130,7 @@ let
             hostname
             stateVersion
             timeZone
+            hostKind
             storage
             admin
             adminUsername
@@ -664,6 +668,7 @@ rec {
       args
       // {
         inherit desktop;
+        hostKind = "laptop";
         admin = if desktop then withDesktopUser args.admin else args.admin;
         storage = lib.recursiveUpdate {
           type = "lvm";
@@ -688,6 +693,7 @@ rec {
       args
       // {
         inherit desktop;
+        hostKind = "workstation";
         admin = if desktop then withDesktopUser args.admin else args.admin;
         storage = lib.recursiveUpdate {
           type = "zfs";
@@ -713,6 +719,7 @@ rec {
       ])
       // {
         inherit desktop;
+        hostKind = "server";
         storage = lib.recursiveUpdate {
           type = "zfs";
           mode = "single";

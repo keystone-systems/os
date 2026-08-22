@@ -29,6 +29,7 @@
 with lib;
 let
   cfg = config.keystone.os;
+  suspendThenHibernateActive = cfg.power.suspendThenHibernate.enable && cfg.hostKind == "laptop";
 
   # Look up the current host in the registry to access per-host metadata (e.g. baremetal).
   currentHost = findFirst (h: h.hostname == config.networking.hostName) null (
@@ -254,6 +255,25 @@ in
 
   options.keystone.os = {
     enable = mkEnableOption "Keystone OS - secure storage, boot, and user management";
+
+    hostKind = mkOption {
+      type = types.enum [
+        "laptop"
+        "workstation"
+        "server"
+      ];
+      default = "workstation";
+      description = "Host hardware class for OS power and hardware policies.";
+    };
+
+    power.suspendThenHibernate = {
+      enable = mkEnableOption "suspend-then-hibernate on hibernation-capable laptops";
+      hibernateDelay = mkOption {
+        type = types.str;
+        default = "2h";
+        description = "Time between suspend and hibernate.";
+      };
+    };
 
     # Storage configuration
     storage = {
@@ -632,6 +652,15 @@ in
   config = mkIf cfg.enable {
     keystone.security.privilegedApproval.enable = mkDefault true;
 
+    systemd.sleep.settings.Sleep = mkIf suspendThenHibernateActive {
+      HibernateDelaySec = cfg.power.suspendThenHibernate.hibernateDelay;
+      HibernateOnACPower = false;
+    };
+
+    environment.etc."keystone/suspend-then-hibernate" = mkIf suspendThenHibernateActive {
+      text = "enabled\n";
+    };
+
     # Default home-manager to back up clobbered files instead of
     # aborting activation. Keystone manages a lot of dotfiles
     # (hyprland.conf, waybar.css, ghostty config, mako, etc.) so the
@@ -704,6 +733,14 @@ in
         message = "TPM PCR values must be in the range 0-23";
       }
       # Hibernation assertions
+      {
+        assertion = !suspendThenHibernateActive || cfg.storage.type == "lvm";
+        message = "Suspend-then-hibernate requires non-ZFS LVM storage.";
+      }
+      {
+        assertion = !suspendThenHibernateActive || cfg.storage.hibernate.enable;
+        message = "Suspend-then-hibernate requires keystone.os.storage.hibernate.enable.";
+      }
       {
         assertion = !cfg.storage.hibernate.enable || cfg.storage.type == "lvm";
         message = "Hibernation requires the LVM storage backend. ZFS cannot support hibernation because dirty writes after freeze corrupt pools.";

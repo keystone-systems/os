@@ -101,6 +101,57 @@ let
       touch $out
     '';
 
+  assertPowerPolicy =
+    name: hostKind: expectPolicy:
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.os = {
+              enable = true;
+              inherit hostKind;
+              power.suspendThenHibernate.enable = true;
+              storage = {
+                type = "lvm";
+                devices = [ "/dev/vda" ];
+                swap.size = "16G";
+                hibernate.enable = true;
+              };
+              users.testuser = {
+                fullName = "Test User";
+                initialPassword = "testpass";
+                admin = true;
+              };
+            };
+            fileSystems."/" = {
+              device = lib.mkForce "/dev/pool/root";
+              fsType = lib.mkForce "ext4";
+            };
+          }
+        ];
+      };
+      sleepSettings = result.config.systemd.sleep.settings.Sleep;
+      hasPolicy = sleepSettings ? HibernateDelaySec;
+      marker = result.config.environment.etc ? "keystone/suspend-then-hibernate";
+      valid =
+        hasPolicy == expectPolicy
+        && marker == expectPolicy
+        && (!expectPolicy || sleepSettings.HibernateDelaySec == "2h")
+        && (!expectPolicy || sleepSettings.HibernateOnACPower == false);
+    in
+    pkgs.runCommand "power-policy-${name}" { } ''
+      ${lib.optionalString (!valid) ''
+        echo 'FAIL: ${name}: unexpected suspend-then-hibernate policy' >&2
+        exit 1
+      ''}
+      echo "OK: ${name}: policy=${if expectPolicy then "enabled" else "disabled"}"
+      touch $out
+    '';
+
   assertLvmHibernateLayout =
     let
       result = (import "${pkgs.path}/nixos/lib/eval-config.nix") {
@@ -276,6 +327,26 @@ let
     '';
 
   tests = {
+    laptop-power-policy = assertPowerPolicy "laptop" "laptop" true;
+    workstation-power-policy = assertPowerPolicy "workstation" "workstation" false;
+    server-power-policy = assertPowerPolicy "server" "server" false;
+    zfs-power-policy-rejected =
+      assertHasFailingAssertion "zfs-power-policy" "Suspend-then-hibernate requires non-ZFS LVM storage."
+        [
+          adminBase
+          {
+            keystone.os = {
+              hostKind = "laptop";
+              power.suspendThenHibernate.enable = true;
+              users.alice = {
+                fullName = "Alice";
+                initialPassword = "pw";
+                admin = true;
+              };
+            };
+          }
+        ];
+
     minimal-zfs = eval "minimal-zfs" [
       {
         keystone.os = {
