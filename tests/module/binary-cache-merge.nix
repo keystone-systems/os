@@ -72,6 +72,9 @@ let
       publicKey = "ocean-1:TEST_PUBLIC_KEY";
     };
   };
+  invalidKsSystemsResult = mkResult {
+    ksSystems.url = "http://ks-systems.example.com";
+  };
   invalidUrlResult = mkResult {
     extra = {
       http = {
@@ -119,6 +122,11 @@ let
   );
   extraOnlySubstitutersJson = builtins.toJSON extraOnlyResult.config.nix.settings.substituters;
   extraOnlyKeysJson = builtins.toJSON extraOnlyResult.config.nix.settings.trusted-public-keys;
+  invalidKsSystemsMessagesJson = builtins.toJSON (
+    map (assertion: assertion.message) (failedAssertions invalidKsSystemsResult)
+  );
+  invalidKsSystemsSubstitutersJson = builtins.toJSON invalidKsSystemsResult.config.nix.settings.substituters;
+  invalidKsSystemsKeysJson = builtins.toJSON invalidKsSystemsResult.config.nix.settings.trusted-public-keys;
   invalidUrlMessagesJson = builtins.toJSON (
     map (assertion: assertion.message) (failedAssertions invalidUrlResult)
   );
@@ -162,6 +170,14 @@ pkgs.runCommand "binary-cache-merge-check" { } ''
   grep -Fq 'ocean-1:TEST_PUBLIC_KEY' <<<'${extraOnlyKeysJson}'
   if grep -Fq 'ks-systems.cachix.org' <<<'${extraOnlySubstitutersJson}${extraOnlyKeysJson}'; then
     echo 'FAIL: disabled ksSystems cache reached Nix settings' >&2
+    exit 1
+  fi
+
+  grep -Fq 'binaryCaches.ksSystems.url must use credential-free HTTPS' \
+    <<<'${invalidKsSystemsMessagesJson}'
+  if grep -Eq 'ks-systems\.example\.com|ks-systems\.cachix\.org-1:' \
+      <<<'${invalidKsSystemsSubstitutersJson}${invalidKsSystemsKeysJson}'; then
+    echo 'FAIL: invalid ksSystems cache values reached Nix settings' >&2
     exit 1
   fi
 

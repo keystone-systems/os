@@ -39,8 +39,6 @@ rec {
 
   hasPublicKey = cache: nonEmpty (cache.publicKey or null);
 
-  complete = cache: nonEmpty (cache.url or null) && nonEmpty (cache.publicKey or null);
-
   usable =
     cache:
     (cache.enable or false)

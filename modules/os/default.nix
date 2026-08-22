@@ -686,11 +686,11 @@ in
     );
 
     nix.settings.substituters = mkBefore (
-      optional cfg.binaryCaches.ksSystems.enable cfg.binaryCaches.ksSystems.url
+      optional (binaryCache.usable cfg.binaryCaches.ksSystems) cfg.binaryCaches.ksSystems.url
       ++ map (cache: cache.url) enabledExtraBinaryCaches
     );
     nix.settings.trusted-public-keys = mkBefore (
-      optional cfg.binaryCaches.ksSystems.enable cfg.binaryCaches.ksSystems.publicKey
+      optional (binaryCache.usable cfg.binaryCaches.ksSystems) cfg.binaryCaches.ksSystems.publicKey
       ++ map (cache: cache.publicKey) enabledExtraBinaryCaches
     );
 
@@ -700,6 +700,21 @@ in
       {
         assertion = !cfg.storage.enable || cfg.storage.devices != [ ];
         message = "keystone.os.storage.devices must contain at least one disk device";
+      }
+      {
+        assertion = !cfg.binaryCaches.ksSystems.enable || binaryCache.hasUrl cfg.binaryCaches.ksSystems;
+        message = "keystone.os.binaryCaches.ksSystems.url must be set when the cache is enabled";
+      }
+      {
+        assertion =
+          !cfg.binaryCaches.ksSystems.enable || binaryCache.hasPublicKey cfg.binaryCaches.ksSystems;
+        message = "keystone.os.binaryCaches.ksSystems.publicKey must be set when the cache is enabled";
+      }
+      {
+        assertion =
+          !cfg.binaryCaches.ksSystems.enable
+          || binaryCache.credentialFreeHttpsUrl cfg.binaryCaches.ksSystems.url;
+        message = "keystone.os.binaryCaches.ksSystems.url must use credential-free HTTPS without URI user-info or credential query parameters";
       }
     ]
     ++ concatLists (

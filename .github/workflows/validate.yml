@@ -123,11 +123,13 @@ jobs:
               - 'flake.nix'
               - 'flake.lock'
               - 'modules/os/agents/**'
+              - 'modules/os/default.nix'
               - 'modules/terminal/**'
               - 'tests/module/agent-task-loop-*.nix'
               - 'tests/module/agent-runtime-coherence.nix'
               - 'tests/module/agent-queue-migration.nix'
               - 'tests/module/binary-cache-*.nix'
+              - 'tests/module/terminal-sandbox-binary-caches.nix'
               - 'tests/module/zellij-*.nix'
             cached_user_share:
               - '.github/actions/nix-check/action.yml'
