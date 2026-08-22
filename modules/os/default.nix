@@ -36,11 +36,9 @@ let
   );
   isBaremetal = currentHost != null && currentHost.baremetal;
 
-  enabledExtraBinaryCaches = attrValues (
-    filterAttrs (
-      _: cache: cache.enable && cache.url != null && cache.publicKey != null
-    ) cfg.binaryCaches.extra
-  );
+  binaryCache = import ../../lib/binary-caches.nix { inherit lib; };
+
+  enabledExtraBinaryCaches = attrValues (filterAttrs (_: binaryCache.usable) cfg.binaryCaches.extra);
 
   # Users explicitly flagged as the fleet administrator.
   #
@@ -707,12 +705,16 @@ in
     ++ concatLists (
       mapAttrsToList (name: cache: [
         {
-          assertion = !cache.enable || (cache.url != null && cache.url != "");
+          assertion = !cache.enable || binaryCache.complete cache;
           message = "keystone.os.binaryCaches.extra.${name}.url must be set when the cache is enabled";
         }
         {
-          assertion = !cache.enable || (cache.publicKey != null && cache.publicKey != "");
+          assertion = !cache.enable || binaryCache.complete cache;
           message = "keystone.os.binaryCaches.extra.${name}.publicKey must be set when the cache is enabled";
+        }
+        {
+          assertion = !cache.enable || cache.url == null || binaryCache.credentialFreeHttpsUrl cache.url;
+          message = "keystone.os.binaryCaches.extra.${name}.url must use credential-free HTTPS without URI user-info or credential query parameters";
         }
       ]) cfg.binaryCaches.extra
     )

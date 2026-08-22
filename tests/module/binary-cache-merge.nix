@@ -5,123 +5,129 @@
 }:
 let
   nixosSystem = import "${pkgs.path}/nixos/lib/eval-config.nix";
-
-  result = nixosSystem {
-    system = "x86_64-linux";
-    modules = [
-      self.nixosModules.operating-system
-      {
-        system.stateVersion = "25.05";
-        boot.loader.systemd-boot.enable = true;
-        keystone.domain = "example.com";
-
-        keystone.os = {
-          enable = true;
-          storage = {
-            type = "lvm";
-            devices = [ "/dev/vda" ];
-          };
-          users.testuser = {
-            fullName = "Test User";
-            initialPassword = "testpass";
-          };
-        };
-
-        fileSystems."/" = {
-          device = lib.mkForce "/dev/vda2";
-          fsType = lib.mkForce "ext4";
-        };
-
-        keystone.os.binaryCaches.extra = {
-          ocean = {
+  mkResult =
+    binaryCaches:
+    nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        self.nixosModules.operating-system
+        {
+          system.stateVersion = "25.05";
+          boot.loader.systemd-boot.enable = true;
+          keystone.domain = "example.com";
+          keystone.os = {
             enable = true;
-            url = "https://s3.example.com/nix-cache";
-            publicKey = "ocean-1:TEST_PUBLIC_KEY";
+            inherit binaryCaches;
+            storage = {
+              type = "lvm";
+              devices = [ "/dev/vda" ];
+            };
+            users.testuser = {
+              fullName = "Test User";
+              initialPassword = "testpass";
+            };
           };
-          disabled.enable = false;
-        };
-      }
-    ];
+          fileSystems."/" = {
+            device = lib.mkForce "/dev/vda2";
+            fsType = lib.mkForce "ext4";
+          };
+        }
+      ];
+    };
+
+  result = mkResult {
+    extra = {
+      ocean = {
+        enable = true;
+        url = "https://s3.example.com/nix-cache";
+        publicKey = "ocean-1:TEST_PUBLIC_KEY";
+      };
+      disabled = {
+        enable = false;
+        url = "https://disabled.example.com/nix-cache";
+        publicKey = "disabled-1:TEST_PUBLIC_KEY";
+      };
+    };
+  };
+  incompleteResult = mkResult {
+    extra.incomplete.enable = true;
+  };
+  extraOnlyResult = mkResult {
+    ksSystems.enable = false;
+    extra.ocean = {
+      enable = true;
+      url = "https://s3.example.com/nix-cache";
+      publicKey = "ocean-1:TEST_PUBLIC_KEY";
+    };
+  };
+  invalidUrlResult = mkResult {
+    extra = {
+      http = {
+        enable = true;
+        url = "http://cache.example.com/nix-cache";
+        publicKey = "http-1:TEST_PUBLIC_KEY";
+      };
+      userinfo = {
+        enable = true;
+        url = "https://writer:secret@cache.example.com/nix-cache";
+        publicKey = "userinfo-1:TEST_PUBLIC_KEY";
+      };
+      token = {
+        enable = true;
+        url = "https://cache.example.com/nix-cache?token=secret";
+        publicKey = "token-1:TEST_PUBLIC_KEY";
+      };
+    };
   };
 
-  missingValuesResult = nixosSystem {
-    system = "x86_64-linux";
-    modules = [
-      self.nixosModules.operating-system
-      {
-        system.stateVersion = "25.05";
-        boot.loader.systemd-boot.enable = true;
-        keystone.os = {
-          enable = true;
-          binaryCaches.extra.incomplete.enable = true;
-          storage = {
-            type = "lvm";
-            devices = [ "/dev/vda" ];
-          };
-          users.testuser = {
-            fullName = "Test User";
-            initialPassword = "testpass";
-          };
-        };
-        fileSystems."/" = {
-          device = lib.mkForce "/dev/vda2";
-          fsType = lib.mkForce "ext4";
-        };
-      }
-    ];
-  };
-
+  failedAssertions =
+    evaluation: builtins.filter (assertion: !assertion.assertion) evaluation.config.assertions;
   substitutersJson = builtins.toJSON result.config.nix.settings.substituters;
   trustedPublicKeysJson = builtins.toJSON result.config.nix.settings.trusted-public-keys;
-  missingValueFailures = builtins.filter (
-    assertion: !assertion.assertion
-  ) missingValuesResult.config.assertions;
-  missingValueMessagesJson = builtins.toJSON (
-    map (assertion: assertion.message) missingValueFailures
+  incompleteSubstitutersJson = builtins.toJSON incompleteResult.config.nix.settings.substituters;
+  incompleteKeysJson = builtins.toJSON incompleteResult.config.nix.settings.trusted-public-keys;
+  incompleteMessagesJson = builtins.toJSON (
+    map (assertion: assertion.message) (failedAssertions incompleteResult)
+  );
+  extraOnlySubstitutersJson = builtins.toJSON extraOnlyResult.config.nix.settings.substituters;
+  extraOnlyKeysJson = builtins.toJSON extraOnlyResult.config.nix.settings.trusted-public-keys;
+  invalidUrlMessagesJson = builtins.toJSON (
+    map (assertion: assertion.message) (failedAssertions invalidUrlResult)
   );
 in
 pkgs.runCommand "binary-cache-merge-check" { } ''
-  if ! echo '${substitutersJson}' | grep -Fq 'https://ks-systems.cachix.org'; then
-    echo "FAIL: missing ks-systems substituter" >&2
-    echo '${substitutersJson}' >&2
+  set -euo pipefail
+
+  grep -Fq 'https://ks-systems.cachix.org' <<<'${substitutersJson}'
+  grep -Fq 'https://s3.example.com/nix-cache' <<<'${substitutersJson}'
+  grep -Fq 'ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo=' <<<'${trustedPublicKeysJson}'
+  grep -Fq 'ocean-1:TEST_PUBLIC_KEY' <<<'${trustedPublicKeysJson}'
+
+  if grep -Fq 'disabled.example.com' <<<'${substitutersJson}' \
+      || grep -Fq 'disabled-1:TEST_PUBLIC_KEY' <<<'${trustedPublicKeysJson}'; then
+    echo 'FAIL: disabled cache values reached Nix settings' >&2
     exit 1
   fi
 
-  if ! echo '${substitutersJson}' | grep -Fq 'https://s3.example.com/nix-cache'; then
-    echo "FAIL: missing generic signed cache substituter" >&2
-    echo '${substitutersJson}' >&2
+  grep -Fq 'binaryCaches.extra.incomplete.url' <<<'${incompleteMessagesJson}'
+  grep -Fq 'binaryCaches.extra.incomplete.publicKey' <<<'${incompleteMessagesJson}'
+  if grep -Fq 'incomplete' <<<'${incompleteSubstitutersJson}${incompleteKeysJson}'; then
+    echo 'FAIL: incomplete cache reached Nix settings' >&2
     exit 1
   fi
 
-  if echo '${substitutersJson}' | grep -Fq 'disabled'; then
-    echo "FAIL: disabled cache was added as a substituter" >&2
-    echo '${substitutersJson}' >&2
+  grep -Fq 'https://cache.nixos.org' <<<'${extraOnlySubstitutersJson}'
+  grep -Fq 'https://s3.example.com/nix-cache' <<<'${extraOnlySubstitutersJson}'
+  grep -Fq 'ocean-1:TEST_PUBLIC_KEY' <<<'${extraOnlyKeysJson}'
+  if grep -Fq 'ks-systems.cachix.org' <<<'${extraOnlySubstitutersJson}${extraOnlyKeysJson}'; then
+    echo 'FAIL: disabled ksSystems cache reached Nix settings' >&2
     exit 1
   fi
 
-  if ! echo '${trustedPublicKeysJson}' | grep -Fq 'ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo='; then
-    echo "FAIL: missing ks-systems public key" >&2
-    echo '${trustedPublicKeysJson}' >&2
-    exit 1
-  fi
-
-  if ! echo '${trustedPublicKeysJson}' | grep -Fq 'ocean-1:TEST_PUBLIC_KEY'; then
-    echo "FAIL: missing generic signed cache public key" >&2
-    echo '${trustedPublicKeysJson}' >&2
-    exit 1
-  fi
-
-  if ! echo '${missingValueMessagesJson}' | grep -Fq 'binaryCaches.extra.incomplete.url'; then
-    echo "FAIL: enabled caches without a URL must fail an assertion" >&2
-    echo '${missingValueMessagesJson}' >&2
-    exit 1
-  fi
-
-  if ! echo '${missingValueMessagesJson}' | grep -Fq 'binaryCaches.extra.incomplete.publicKey'; then
-    echo "FAIL: enabled caches without a public key must fail an assertion" >&2
-    echo '${missingValueMessagesJson}' >&2
-    exit 1
-  fi
+  for name in http userinfo token; do
+    grep -Fq "binaryCaches.extra.$name.url must use credential-free HTTPS" \
+      <<<'${invalidUrlMessagesJson}'
+  done
 
   touch "$out"
 ''

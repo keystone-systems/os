@@ -477,6 +477,13 @@
           binaryCacheMerge = import ./tests/module/binary-cache-merge.nix {
             inherit pkgs lib self;
           };
+          terminalSandboxBinaryCaches = import ./tests/module/terminal-sandbox-binary-caches.nix {
+            inherit
+              pkgs
+              self
+              home-manager
+              ;
+          };
           terminalZide = import ./tests/module/terminal-zide.nix {
             inherit
               pkgs
@@ -536,6 +543,7 @@
           polkit-update-session-inhibit = polkitUpdateSessionInhibit;
           agentctl-regression = agentctlRegression;
           binary-cache-merge = binaryCacheMerge;
+          terminal-sandbox-binary-caches = terminalSandboxBinaryCaches;
           terminal-zide = terminalZide;
           terminal-mail = terminalMail;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
@@ -595,6 +603,7 @@
             ln -s ${deepworkRemoval} "$out/deepwork-removal"
             ln -s ${retiredAgentAssetsCleanup} "$out/retired-agent-assets-cleanup"
             ln -s ${binaryCacheMerge} "$out/binary-cache-merge"
+            ln -s ${terminalSandboxBinaryCaches} "$out/terminal-sandbox-binary-caches"
             ln -s ${terminalZide} "$out/terminal-zide"
             ln -s ${terminalMail} "$out/terminal-mail"
           '';

@@ -17,18 +17,15 @@
 with lib;
 let
   cfg = config.keystone.terminal.sandbox;
+  binaryCache = import ../../lib/binary-caches.nix { inherit lib; };
   systemBinaryCaches =
-    if osConfig != null then
+    if osConfig != null && attrByPath [ "keystone" "os" "enable" ] false osConfig then
       let
-        caches = attrByPath [ "keystone" "os" "binaryCaches" ] null osConfig;
+        ksSystems = attrByPath [ "keystone" "os" "binaryCaches" "ksSystems" ] null osConfig;
+        extra = attrByPath [ "keystone" "os" "binaryCaches" "extra" ] { } osConfig;
       in
-      if caches == null then
-        [ ]
-      else
-        optional caches.ksSystems.enable caches.ksSystems
-        ++ attrValues (
-          filterAttrs (_: cache: cache.enable && cache.url != null && cache.publicKey != null) caches.extra
-        )
+      optional (ksSystems != null && binaryCache.usable ksSystems) ksSystems
+      ++ attrValues (filterAttrs (_: binaryCache.usable) extra)
     else
       [ ];
 in

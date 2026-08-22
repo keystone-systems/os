@@ -1,0 +1,45 @@
+{ lib }:
+let
+  nonEmpty = value: value != null && value != "";
+  credentialQueryParameters = [
+    "access-key"
+    "access_key"
+    "aws-access-key-id"
+    "aws_access_key_id"
+    "aws-secret-access-key"
+    "aws_secret_access_key"
+    "secret"
+    "secret-key"
+    "secret_key"
+    "token"
+  ];
+  hasCredentialQueryParameter =
+    url:
+    let
+      lowerUrl = lib.toLower url;
+    in
+    lib.any (
+      parameter: lib.hasInfix "?${parameter}=" lowerUrl || lib.hasInfix "&${parameter}=" lowerUrl
+    ) credentialQueryParameters;
+  authorityFor =
+    url:
+    let
+      match = builtins.match "https://([^/?#]*)(.*)" url;
+    in
+    if match == null then "" else builtins.head match;
+in
+{
+  complete = cache: nonEmpty (cache.url or null) && nonEmpty (cache.publicKey or null);
+
+  usable =
+    cache:
+    (cache.enable or false) && nonEmpty (cache.url or null) && nonEmpty (cache.publicKey or null);
+
+  credentialFreeHttpsUrl =
+    url:
+    nonEmpty url
+    && lib.hasPrefix "https://" url
+    && authorityFor url != ""
+    && !(lib.hasInfix "@" (authorityFor url))
+    && !(hasCredentialQueryParameter url);
+}
