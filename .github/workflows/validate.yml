@@ -122,6 +122,7 @@ jobs:
               - '.github/workflows/validate.yml'
               - 'flake.nix'
               - 'flake.lock'
+              - 'lib/binary-caches.nix'
               - 'modules/os/agents/**'
               - 'modules/os/default.nix'
               - 'modules/terminal/**'
