@@ -17,11 +17,20 @@
 with lib;
 let
   cfg = config.keystone.terminal.sandbox;
-  ksSystemsCache =
+  systemBinaryCaches =
     if osConfig != null then
-      attrByPath [ "keystone" "os" "binaryCaches" "ksSystems" ] null osConfig
+      let
+        caches = attrByPath [ "keystone" "os" "binaryCaches" ] null osConfig;
+      in
+      if caches == null then
+        [ ]
+      else
+        optional caches.ksSystems.enable caches.ksSystems
+        ++ attrValues (
+          filterAttrs (_: cache: cache.enable && cache.url != null && cache.publicKey != null) caches.extra
+        )
     else
-      null;
+      [ ];
 in
 {
   options.keystone.terminal.sandbox = {
@@ -66,10 +75,12 @@ in
   };
 
   config = mkIf (config.keystone.terminal.enable && cfg.enable) (mkMerge [
-    (mkIf (ksSystemsCache != null && ksSystemsCache.enable) {
-      # Keep sandboxed agent builds aligned with the system-level shared cache.
-      keystone.terminal.sandbox.extraSubstituters = mkBefore [ ksSystemsCache.url ];
-      keystone.terminal.sandbox.extraTrustedPublicKeys = mkBefore [ ksSystemsCache.publicKey ];
+    (mkIf (systemBinaryCaches != [ ]) {
+      # Keep sandboxed agent builds aligned with the system-level caches.
+      keystone.terminal.sandbox.extraSubstituters = mkBefore (map (cache: cache.url) systemBinaryCaches);
+      keystone.terminal.sandbox.extraTrustedPublicKeys = mkBefore (
+        map (cache: cache.publicKey) systemBinaryCaches
+      );
     })
     {
       home.packages = [

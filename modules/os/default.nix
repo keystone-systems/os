@@ -36,6 +36,12 @@ let
   );
   isBaremetal = currentHost != null && currentHost.baremetal;
 
+  enabledExtraBinaryCaches = attrValues (
+    filterAttrs (
+      _: cache: cache.enable && cache.url != null && cache.publicKey != null
+    ) cfg.binaryCaches.extra
+  );
+
   # Users explicitly flagged as the fleet administrator.
   #
   # CRITICAL: adminUsername and downstream path derivations (systemFlake.path,
@@ -548,6 +554,35 @@ in
           description = "Public key used to verify binaries from the shared Keystone systems cache.";
         };
       };
+
+      extra = mkOption {
+        type = types.attrsOf (
+          types.submodule (
+            { name, ... }:
+            {
+              options = {
+                enable = mkEnableOption "the ${name} signed binary cache";
+
+                url = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  example = "https://cache.example.com/nix-cache";
+                  description = "HTTPS substituter URL for this binary cache.";
+                };
+
+                publicKey = mkOption {
+                  type = types.nullOr types.str;
+                  default = null;
+                  example = "example-cache-1:AAAA...=";
+                  description = "Public key used to verify store paths from this binary cache.";
+                };
+              };
+            }
+          )
+        );
+        default = { };
+        description = "Additional signed binary caches used across the fleet.";
+      };
     };
 
     # Nix configuration
@@ -652,12 +687,14 @@ in
       mkDefault (head adminFlaggedUserNames)
     );
 
-    nix.settings.substituters = mkIf cfg.binaryCaches.ksSystems.enable (mkBefore [
-      cfg.binaryCaches.ksSystems.url
-    ]);
-    nix.settings.trusted-public-keys = mkIf cfg.binaryCaches.ksSystems.enable (mkBefore [
-      cfg.binaryCaches.ksSystems.publicKey
-    ]);
+    nix.settings.substituters = mkBefore (
+      optional cfg.binaryCaches.ksSystems.enable cfg.binaryCaches.ksSystems.url
+      ++ map (cache: cache.url) enabledExtraBinaryCaches
+    );
+    nix.settings.trusted-public-keys = mkBefore (
+      optional cfg.binaryCaches.ksSystems.enable cfg.binaryCaches.ksSystems.publicKey
+      ++ map (cache: cache.publicKey) enabledExtraBinaryCaches
+    );
 
     # Assertions for configuration validation
     assertions = [
@@ -666,6 +703,20 @@ in
         assertion = !cfg.storage.enable || cfg.storage.devices != [ ];
         message = "keystone.os.storage.devices must contain at least one disk device";
       }
+    ]
+    ++ concatLists (
+      mapAttrsToList (name: cache: [
+        {
+          assertion = !cache.enable || (cache.url != null && cache.url != "");
+          message = "keystone.os.binaryCaches.extra.${name}.url must be set when the cache is enabled";
+        }
+        {
+          assertion = !cache.enable || (cache.publicKey != null && cache.publicKey != "");
+          message = "keystone.os.binaryCaches.extra.${name}.publicKey must be set when the cache is enabled";
+        }
+      ]) cfg.binaryCaches.extra
+    )
+    ++ [
       {
         assertion =
           !cfg.storage.enable
