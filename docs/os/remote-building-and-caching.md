@@ -68,10 +68,11 @@ only the corresponding public key.
 
 ## Deployment fallback
 
-`ks-dev` builds the selected host closure and transfers it directly over SSH
-when the target does not already have its paths. A binary-cache miss or outage
-therefore does not remove the normal deployment path; it only removes the
-substitution optimization.
+A consuming fleet may provide a `ks-dev` helper that builds the selected host
+closure and transfers it directly over SSH when the target does not already
+have its paths. Keystone itself provides the equivalent `ks update --dev`
+workflow. A binary-cache miss or outage therefore does not remove the normal
+deployment path; it only removes the substitution optimization.
 
 ## Related documentation
 
