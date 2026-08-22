@@ -16,7 +16,6 @@
 #   - Forgejo PR artifacts (attachment uploads)
 #   - Forgejo issue/PR user uploads
 #
-# TODO: Configure Attic binary cache to use SeaweedFS S3 as storage backend
 # TODO: Configure Forgejo LFS to use SeaweedFS S3 as storage backend
 #
 # S3 credentials are supplied via a JSON identity config file at s3ConfigFile.

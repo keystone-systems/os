@@ -29,7 +29,6 @@
 #   8070 | miniflux     |
 #   8080 | headscale    |
 #   8082 | mail         | Stalwart admin
-#   8199 | attic        | Binary cache
 #   8222 | vaultwarden  |
 #   8333 | seaweedfs    | S3-compatible API (proxied); 8880/8888/9333 internal
 #   9090 | prometheus   |
@@ -73,7 +72,6 @@ in
     ./services/loki.nix
     ./services/headscale.nix
     ./services/miniflux.nix
-    ./services/attic.nix
     ./services/mail.nix
     ./services/adguard.nix
     ./services/seaweedfs.nix

@@ -88,8 +88,6 @@ secrets repository or flake input.
       `headscale preauthkeys create --user <user> --expiration 1h` on the
       headscale host. Short expiration, not `--reusable` unless enrolling a
       batch inside the window.
-    - **Attic token**: `atticadm make-token --sub <name> --validity <dur>`
-      plus the minimal `--pull`/`--push` cache patterns.
     - **Stalwart account**: create the account/app-password via stalwart
       admin API or webadmin; hand the credential straight to its consumer.
 15. Operator future — issuance moves into cluster controllers so no human
@@ -102,8 +100,6 @@ secrets repository or flake input.
     - **Stalwart mail operator**: stalwart-in-cluster provisions per-agent
       JMAP/mail accounts as Kubernetes Secrets consumed by resident agents
       (e.g. vega).
-    - **Attic token controller**: mints scoped, expiring cache tokens for CI
-      and hosts.
 
 ## Declaration interface (`keystone.secrets`)
 

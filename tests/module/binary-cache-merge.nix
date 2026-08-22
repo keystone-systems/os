@@ -10,7 +10,6 @@ let
     system = "x86_64-linux";
     modules = [
       self.nixosModules.operating-system
-      self.nixosModules.binaryCacheClient
       {
         system.stateVersion = "25.05";
         boot.loader.systemd-boot.enable = true;
@@ -31,11 +30,6 @@ let
         fileSystems."/" = {
           device = lib.mkForce "/dev/vda2";
           fsType = lib.mkForce "ext4";
-        };
-
-        keystone.binaryCache = {
-          enable = true;
-          publicKey = "main:TEST_PUBLIC_KEY";
         };
 
         keystone.os.binaryCaches.extra = {
@@ -86,15 +80,9 @@ let
     map (assertion: assertion.message) missingValueFailures
   );
 in
-pkgs.runCommand "binary-cache-client-merge-check" { } ''
+pkgs.runCommand "binary-cache-merge-check" { } ''
   if ! echo '${substitutersJson}' | grep -Fq 'https://ks-systems.cachix.org'; then
     echo "FAIL: missing ks-systems substituter" >&2
-    echo '${substitutersJson}' >&2
-    exit 1
-  fi
-
-  if ! echo '${substitutersJson}' | grep -Fq 'https://cache.example.com/main'; then
-    echo "FAIL: missing Attic substituter" >&2
     echo '${substitutersJson}' >&2
     exit 1
   fi
@@ -113,12 +101,6 @@ pkgs.runCommand "binary-cache-client-merge-check" { } ''
 
   if ! echo '${trustedPublicKeysJson}' | grep -Fq 'ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo='; then
     echo "FAIL: missing ks-systems public key" >&2
-    echo '${trustedPublicKeysJson}' >&2
-    exit 1
-  fi
-
-  if ! echo '${trustedPublicKeysJson}' | grep -Fq 'main:TEST_PUBLIC_KEY'; then
-    echo "FAIL: missing Attic public key" >&2
     echo '${trustedPublicKeysJson}' >&2
     exit 1
   fi

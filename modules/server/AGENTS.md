@@ -33,7 +33,6 @@ generate `virtualHosts` and DNS records automatically.
 
 | Service | Subdomain | Port | Access |
 |---------|-----------|------|--------|
-| attic | cache | 8199 | tailscale |
 | immich | photos | 2283 | tailscale |
 | vaultwarden | vaultwarden | 8222 | tailscale |
 | forgejo | git | 3001 | tailscale |
