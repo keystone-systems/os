@@ -82,6 +82,23 @@ let
 in
 {
   config = mkMerge [
+    # Keep a permanent boot path that uses the existing LUKS passphrase. A
+    # missing FIDO2 key does not reliably make systemd fall back to a
+    # passphrase, so the recovery entry must omit all automatic unlock hints.
+    #
+    # The targets come from the initrd's own LUKS table rather than from
+    # cfg.type: hosts bring their own disko layouts, and the unlock hints are
+    # contributed by more than one module (tpm2 here, fido2 from
+    # modules/hardware-keys.nix), so guessing a single name misses targets that
+    # would still hang waiting on a key. See the same reasoning in tpm.nix.
+    (mkIf (osCfg.enable && cfg.enable) {
+      specialisation.passphrase-recovery.configuration = {
+        boot.initrd.luks.devices = genAttrs (attrNames config.boot.initrd.luks.devices) (_: {
+          crypttabExtraOpts = mkForce [ ];
+        });
+      };
+    })
+
     # ZFS configuration
     (mkIf (osCfg.enable && cfg.enable && cfg.type == "zfs") {
       # Ensure ZFS support is enabled
