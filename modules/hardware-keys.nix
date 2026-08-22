@@ -159,7 +159,7 @@ let
           ''
         ]
         ++ map (entry: ''
-          Match localuser ${username} user root exec "${pkgs.bash}/bin/bash -o pipefail -c '${pkgs.yubikey-manager}/bin/ykman list --serials 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Fxq -- ${entry.serial}'"
+          Match localuser ${username} user root exec "${pkgs.bash}/bin/bash -o pipefail -c '${pkgs.coreutils}/bin/env -u PYTHONHOME -u PYTHONPATH ${pkgs.yubikey-manager}/bin/ykman list --serials 2>/dev/null | ${pkgs.gnugrep}/bin/grep -Fxq -- ${entry.serial}'"
             IdentityFile ${entry.destination}
         '') (localSshHandlesFor username)
       )

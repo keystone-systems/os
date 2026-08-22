@@ -9,6 +9,10 @@ let
   blackHandle = builtins.toFile "yubi-black-handle" "test black handle";
   greenHandle = builtins.toFile "yubi-green-handle" "test green handle";
   fakeYkman = pkgs.writeShellScriptBin "ykman" ''
+    if [[ -v PYTHONHOME || -v PYTHONPATH ]]; then
+      exit 3
+    fi
+
     if [[ "$#" == 2 && "$1" == list && "$2" == --serials ]]; then
       printf '%s\n' "''${KEYSTONE_TEST_YUBIKEY_SERIALS:-}"
       if [[ "''${KEYSTONE_TEST_YUBIKEY_ERROR:-0}" == 1 ]]; then
@@ -324,6 +328,7 @@ let
         blackSerial = lib.hasInfix "grep -Fxq -- 12345" sshClientConfig;
         greenSerial = lib.hasInfix "grep -Fxq -- 12356" sshClientConfig;
         detectorUsesPipefail = lib.hasInfix "bash -o pipefail -c" sshClientConfig;
+        detectorClearsPythonEnvironment = lib.hasInfix "env -u PYTHONHOME -u PYTHONPATH" sshClientConfig;
         blackHandle = lib.hasInfix "IdentityFile /home/alice/.ssh/id_ed25519_sk_yubi-black" sshClientConfig;
         greenHandle = lib.hasInfix "IdentityFile /home/alice/.ssh/id_ed25519_sk_yubi-green" sshClientConfig;
         suppressesYkmanErrors = lib.hasInfix "ykman list --serials 2>/dev/null" sshClientConfig;
@@ -342,6 +347,7 @@ let
         blackSerial = true;
         greenSerial = true;
         detectorUsesPipefail = true;
+        detectorClearsPythonEnvironment = true;
         blackHandle = true;
         greenHandle = true;
         suppressesYkmanErrors = true;
@@ -384,6 +390,8 @@ pkgs.runCommand "hardware-key-module-tests"
       local output
 
       output="$(
+        PYTHONHOME=/poisoned-python-home \
+        PYTHONPATH=/poisoned-python-path \
         KEYSTONE_TEST_YUBIKEY_SERIALS="$serials" \
         KEYSTONE_TEST_YUBIKEY_ERROR="$ykman_error" \
           ssh -F "$TMPDIR/ssh-config" -G root@192.0.2.1 2>/dev/null
