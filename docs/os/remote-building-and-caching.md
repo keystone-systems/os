@@ -37,10 +37,12 @@ keystone.os.binaryCaches.extra.ocean = {
 };
 ```
 
-Enabled entries are appended to `nix.settings.substituters` and
-`nix.settings.trusted-public-keys`. Disabled entries have no effect. An enabled
-entry MUST set both `url` and `publicKey`; evaluation fails when either value is
-missing.
+Enabled fleet entries are prepended to `nix.settings.substituters` and
+`nix.settings.trusted-public-keys`, ahead of values declared elsewhere.
+`cache.nixos.org` remains available through the NixOS default. Disabled entries
+have no effect. An enabled entry MUST set both `url` and `publicKey`, and its URL
+MUST use credential-free HTTPS. URI user-info and credential-bearing query
+parameters are rejected.
 
 The same enabled caches are passed into Keystone's Podman agent sandbox so
 containerized builds use the system's trust policy.
@@ -56,12 +58,13 @@ closures build successfully:
 
 ```bash
 nix copy --to \
-  's3://nix-cache?endpoint=s3.example.com&scheme=https&region=us-east-1&addressing-style=path' \
+  "s3://nix-cache?endpoint=s3.example.com&scheme=https&region=us-east-1&addressing-style=path&secret-key=$signing_key" \
   /nix/store/…
 ```
 
-Configure `secret-key-files` only in the publisher's temporary Nix config.
-Clients need only the corresponding public key.
+The `secret-key` store parameter points at the publisher's temporary signing
+key. Keep that file mode `0600` and remove it after publication. Clients need
+only the corresponding public key.
 
 ## Deployment fallback
 

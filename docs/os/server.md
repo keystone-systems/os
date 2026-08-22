@@ -319,13 +319,13 @@ port 8080 used by: service1, service2
 
 ## Legacy Modules
 
-These modules are still available but only configure the service itself (no nginx/DNS):
+The remaining legacy modules configure only their service, without nginx or
+DNS integration:
 
-- `keystone.server.binaryCache` - Harmonia with signing keys
 - `keystone.server.monitoring` - Prometheus/Grafana stack
 - `keystone.server.vpn` - Headscale (Kubernetes-based)
 
-The consumer is responsible for nginx/TLS/access control when using legacy modules.
+The consumer is responsible for nginx/TLS/access control when using them.
 
 ## Troubleshooting
 
