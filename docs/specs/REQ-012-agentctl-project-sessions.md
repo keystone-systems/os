@@ -14,7 +14,7 @@ MAY, REQUIRED, OPTIONAL).
 
 - `modules/os/agents/scripts/agentctl.sh` — main CLI script
 - `modules/os/agents/agentctl.nix` — Nix module with replaceVars
-- `packages/podman-agent/podman-agent.sh` — sandbox backend
+- `ks.systems/terminal/packages/podman-agent/podman-agent.sh` — sandbox backend
 
 ## Requirements
 

@@ -25,7 +25,7 @@ What this covers:
 - Per-user files in `$HOME` (config files, scripts, layouts, agent assets).
 - Per-user `~/.config/nix/nix.conf` — but only via home-manager `home.file`
   writes, not via `nix.settings`. The existing Darwin block in
-  `modules/terminal/shell.nix` writes flake/nix-command experimental features
+  `ks.systems/terminal` writes flake/nix-command experimental features
   this way.
 
 What it does **not** cover:

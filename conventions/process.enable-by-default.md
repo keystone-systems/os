@@ -85,7 +85,7 @@ keystone.terminal.tasks.enable = true;    # manual opt-in
 # nixos-config/hosts/ocean/default.nix (server config)
 # nothing needed here, but the pattern invites it
 
-# keystone/modules/terminal/tasks.nix (module definition)
+# ks.systems/terminal/modules/terminal/tasks.nix (module definition)
 enable = mkOption { default = false; ... };
 ```
 
@@ -93,7 +93,7 @@ After this convention — cfait auto-enables when its prerequisite (mail) is
 configured:
 
 ```nix
-# keystone/modules/terminal/tasks.nix
+# ks.systems/terminal/modules/terminal/tasks.nix
 enable = mkOption {
   type = types.bool;
   default = mailCfg.enable;  # auto-on when mail is configured

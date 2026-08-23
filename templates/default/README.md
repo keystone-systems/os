@@ -92,5 +92,5 @@ to install programs, NixOS vs Home Manager, and links to upstream Nix docs.
 - Keystone admin and user option schema: `keystone/modules/os/default.nix`
 - Keystone admin/user synthesis: `keystone/modules/os/users.nix`
 - Keystone NixOS modules: `keystone/modules/`
-- Keystone terminal Home Manager module: `keystone/modules/terminal/default.nix`
+- Keystone terminal Home Manager module: `ks.systems/terminal`
 - Keystone desktop modules: the ks.systems/desktop flake (keystone’s `desktop` input)

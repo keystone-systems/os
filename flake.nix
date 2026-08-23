@@ -11,6 +11,10 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    terminal = {
+      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     lanzaboote = {
       url = "github:nix-community/lanzaboote";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -22,34 +26,7 @@
     desktop = {
       url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    himalaya = {
-      url = "github:pimalaya/himalaya";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    calendula = {
-      url = "github:pimalaya/calendula";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    cardamum = {
-      url = "github:pimalaya/cardamum";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    comodoro = {
-      # Newer revisions export only a development shell, while the terminal
-      # module consumes the packaged CLI.
-      url = "github:pimalaya/comodoro/b70b3605acc358e0d9cb57525adba9c05fc53f3d";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    # AI coding agents (claude-code, gemini-cli, codex, opencode).
-    # Keystone keeps this input at nightly-latest. Contributors should follow
-    # keystone's pin (llm-agents.follows = "keystone/llm-agents") so that
-    # relocking keystone automatically bumps agent versions.
-    # Consumers who prefer a stable pin can declare their own llm-agents input
-    # and override keystone's with: keystone.inputs.llm-agents.follows = "llm-agents".
-    llm-agents = {
-      url = "github:numtide/llm-agents.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.terminal.follows = "terminal";
     };
     browser-previews = {
       url = "github:nix-community/browser-previews";
@@ -78,18 +55,6 @@
     };
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
 
-    # Helix editor themes
-    kinda-nvim-hx = {
-      url = "github:strash/kinda_nvim.hx";
-      flake = false;
-    };
-
-    # MCP servers
-    grafana-mcp-src = {
-      url = "github:grafana/mcp-grafana";
-      flake = false;
-    };
-
     lfs-s3-src = {
       url = "github:nicolas-graves/lfs-s3/0.2.1";
       flake = false;
@@ -108,20 +73,14 @@
       disko,
       home-manager,
       lanzaboote,
+      terminal,
       desktop,
-      himalaya,
-      calendula,
-      cardamum,
-      comodoro,
-      llm-agents,
       browser-previews,
       ghostty,
       yazi,
       sops-nix,
       nix-index-database,
       nixos-hardware,
-      kinda-nvim-hx,
-      grafana-mcp-src,
       lfs-s3-src,
       ...
     }:
@@ -134,13 +93,11 @@
           disko
           lanzaboote
           home-manager
-          himalaya
-          llm-agents
+          terminal
           browser-previews
           sops-nix
           nix-index-database
           nixos-hardware
-          kinda-nvim-hx
           ;
         self = self;
         keystoneOverlay = self.overlays.default;
@@ -164,6 +121,7 @@
           self
           nixpkgs
           home-manager
+          terminal
           ;
         lib = nixpkgs.lib;
       };
@@ -219,6 +177,7 @@
 
       # Overlay that provides keystone packages
       overlays.default = nixpkgs.lib.composeManyExtensions [
+        terminal.overlays.default
         # Desktop packages (write-polkit-theme, hyprpolkitagent,
         # keystone-dpms-wake) moved to ks.systems/desktop; compose its overlay
         # so pkgs.keystone-desktop.* resolves wherever keystone's overlay is
@@ -228,15 +187,9 @@
           inherit
             self
             crane
-            himalaya
-            calendula
-            cardamum
-            comodoro
-            llm-agents
             browser-previews
             ghostty
             yazi
-            grafana-mcp-src
             lfs-s3-src
             ;
         })
@@ -300,14 +253,14 @@
           # Only pass inputs that represent managed repos — not all upstream dependencies.
           keystone._repoInputs = {
             keystone = self;
-            inherit desktop;
+            inherit terminal desktop;
           };
           home-manager = {
             useGlobalPkgs = true;
             useUserPackages = true;
             sharedModules = [
-              self.homeModules.terminal
-              self.homeModules.notes
+              terminal.homeModules.default
+              ./modules/notes/core.nix
             ];
           };
         };
@@ -359,14 +312,6 @@
 
       # Export home-manager modules (homeModules is the standard flake output name)
       homeModules = {
-        # Keystone-specific home-manager modules
-        terminal = {
-          imports = [
-            keystoneInputs.nix-index-database.homeModules.nix-index
-            ./modules/terminal/default.nix
-          ];
-          _module.args.keystoneInputs = keystoneInputs;
-        };
         # Plain re-export of ks.systems/desktop's HM module. That flake's
         # wrapper is the SOLE importer of walker's HM module — do not import
         # walker here or downstream, or `programs.walker.elephant` is declared
@@ -487,18 +432,11 @@
           alloyGracefulShutdown = import ./tests/module/alloy-graceful-shutdown.nix {
             inherit pkgs lib self;
           };
-          terminalZide = import ./tests/module/terminal-zide.nix {
+          themeHookTransaction = import ./tests/module/theme-hook-transaction.nix {
             inherit
               pkgs
               lib
-              self
-              home-manager
-              ;
-          };
-          terminalMail = import ./tests/module/terminal-mail.nix {
-            inherit
-              pkgs
-              self
+              terminal
               home-manager
               ;
           };
@@ -524,9 +462,6 @@
             pkgs.runCommand "deepwork-removal" { } ''
               touch "$out"
             '';
-          retiredAgentAssetsCleanup = import ./tests/module/retired-agent-assets-cleanup.nix {
-            inherit pkgs;
-          };
         in
         {
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
@@ -545,18 +480,14 @@
           polkit-keystone-approve-cache = polkitKeystoneApproveCache;
           polkit-update-session-inhibit = polkitUpdateSessionInhibit;
           agentctl-regression = agentctlRegression;
-          binary-cache-merge = binaryCacheMerge;
-          terminal-sandbox-binary-caches = terminalSandboxBinaryCaches;
           alloy-graceful-shutdown = alloyGracefulShutdown;
-          terminal-zide = terminalZide;
-          terminal-mail = terminalMail;
+          theme-hook-transaction = themeHookTransaction;
           agent-task-loop-hash-regression = agentTaskLoopHashRegression;
           agent-task-loop-ping-pong = agentTaskLoopPingPong;
           agent-task-loop-invalid-pending-task = agentTaskLoopInvalidPendingTask;
           agent-runtime-coherence = agentRuntimeCoherence;
           agent-queue-migration = agentQueueMigration;
           deepwork-removal = deepworkRemoval;
-          retired-agent-assets-cleanup = retiredAgentAssetsCleanup;
           ks-hardware-key-register = ksHardwareKeyRegister;
           ks-age-identity = ksAgeIdentity;
 
@@ -606,11 +537,6 @@
             ln -s ${agentRuntimeCoherence} "$out/agent-runtime-coherence"
             ln -s ${agentQueueMigration} "$out/agent-queue-migration"
             ln -s ${deepworkRemoval} "$out/deepwork-removal"
-            ln -s ${retiredAgentAssetsCleanup} "$out/retired-agent-assets-cleanup"
-            ln -s ${binaryCacheMerge} "$out/binary-cache-merge"
-            ln -s ${terminalSandboxBinaryCaches} "$out/terminal-sandbox-binary-caches"
-            ln -s ${terminalZide} "$out/terminal-zide"
-            ln -s ${terminalMail} "$out/terminal-mail"
           '';
         }
         // {
@@ -663,26 +589,12 @@
             inherit nixos-anywhere-fast;
             iso = self.lib.mkInstallerIso { inherit nixpkgs; };
             inherit (pkgs.keystone)
-              zesh
               agents-e2e
-              agent-coding-agent
-              agent-mail
-              fetch-email-source
-              fetch-forgejo-sources
-              forgejo-cli-ex
-              forgejo-project
-              fetch-github-sources
               repo-sync
-              podman-agent
               ks
-              cfait
-              zide
               zellij-tab-name
               write-polkit-theme
-              chrome-devtools-mcp
-              grafana-mcp
               lfs-s3
-              keystone-conventions
               slidev
               ;
             keystone-ha-tui-client = pkgs.callPackage ./packages/keystone-ha/tui { };

@@ -33,7 +33,7 @@ support, system-level agent integration, and service coordination.
 ```nix
 # In your NixOS flake
 home-manager.users.you = {
-  imports = [ keystone.homeModules.terminal ];
+  imports = [ terminal.homeModules.default ];
   keystone.terminal.enable = true;
 };
 ```
@@ -53,7 +53,7 @@ nix-channel --update
 nix-shell '<home-manager>' -A install
 ```
 
-Then import `keystone.homeModules.terminal` in your `~/.config/home-manager/flake.nix`.
+Then import `terminal.homeModules.default` in your `~/.config/home-manager/flake.nix`.
 
 ### macOS
 
@@ -65,7 +65,7 @@ Most terminal tools work identically. Desktop modules are not available on macOS
 sh <(curl -L https://nixos.org/nix/install)
 
 # Install nix-darwin + Home Manager
-# Then import keystone.homeModules.terminal in your darwin flake
+# Then import terminal.homeModules.default in your Darwin flake
 ```
 
 ### Windows (WSL2)
@@ -90,7 +90,7 @@ stack alongside Omarchy's existing config.
 # Install Nix on Arch
 sh <(curl -L https://nixos.org/nix/install) --daemon
 
-# Use standalone Home Manager with keystone.homeModules.terminal
+# Use standalone Home Manager with terminal.homeModules.default
 ```
 
 ## What You Get

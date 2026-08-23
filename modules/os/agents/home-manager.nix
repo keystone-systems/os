@@ -50,9 +50,8 @@ in
             nameValuePair username (
               { pkgs, osConfig, ... }:
               {
-                # notes and terminal are provided as sharedModules by
-                # nixosModules.operating-system. keystoneInputs is set by
-                # homeModules.terminal — do not redeclare either here.
+                # Notes and the standalone terminal product are shared by
+                # nixosModules.operating-system. Do not redeclare them here.
 
                 # NOTE: Do NOT wrap in mkIf — see users.nix for explanation.
                 keystone.terminal = {
@@ -170,7 +169,7 @@ in
                     mcpServers =
                       optionalAttrs (agentCfg.chrome.enable && agentCfg.chrome.mcp.enable) {
                         chrome-devtools = {
-                          command = "${sysPkgs.keystone.chrome-devtools-mcp}/bin/chrome-devtools-mcp";
+                          command = "${sysPkgs.keystone-terminal.chrome-devtools-mcp}/bin/chrome-devtools-mcp";
                           args = [
                             "--browserUrl"
                             "http://127.0.0.1:${toString (globalAgentChromeDebugPort name agentCfg)}"
@@ -212,7 +211,7 @@ in
                   sysPkgs.keystone.slidev
                 ]
                 ++ optionals (agentCfg.chrome.enable && agentCfg.chrome.mcp.enable) [
-                  sysPkgs.keystone.chrome-devtools-mcp
+                  sysPkgs.keystone-terminal.chrome-devtools-mcp
                 ];
 
                 home.stateVersion = config.system.stateVersion;

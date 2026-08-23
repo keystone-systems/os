@@ -66,7 +66,7 @@ in
       ]
       ++ lib.optionals hasSandbox [
         pkgs.keystone.agentctl
-        pkgs.keystone.podman-agent
+        pkgs.keystone-terminal.podman-agent
       ];
   };
 }

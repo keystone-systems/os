@@ -64,9 +64,11 @@ Enable one with a toggle; Keystone auto-wires TLS, reverse proxy, and DNS.
 ## Terminal, desktop, and OS agents
 
 - **Terminal** — Zsh + starship, Helix, Zellij, mail (Himalaya), calendar
-  (Khal), and AI coding tools (Claude Code, Codex, Gemini, OpenCode)
+  (Khal), and AI coding tools (Claude Code, Codex, Gemini, OpenCode). The
+  standalone `ks.systems/terminal` product provides this environment on
+  headless hosts, desktop hosts, Linux, and macOS.
 - **Desktop** — Hyprland with themes, app launcher, clipboard history,
-  screenshot tools
+  screenshot tools. The desktop product depends on the terminal product.
 - **OS agents** — service-account user identities with their own mail, git
   workspace, and task queue. They fetch issues, write code, open PRs, and
   process documents under their own UID, on your hardware.

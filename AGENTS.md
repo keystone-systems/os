@@ -4,7 +4,9 @@
 
 Keystone is a NixOS-based self-sovereign infrastructure platform for deploying secure,
 encrypted infrastructure on any hardware. It provides declarative modules for OS
-configuration, desktop environments, terminal tooling, and server services.
+configuration and server services. `ks.systems/terminal` owns terminal tooling.
+`ks.systems/desktop` owns desktop environments and depends on the terminal
+product.
 
 ## Fleet model
 
@@ -25,7 +27,7 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 
 - `modules/os/` — Core OS: storage, Secure Boot, TPM, users, SSH, agents, containers, Tailscale
 - `modules/os/agents/` — Autonomous agent service accounts: task loop, scheduler, desktop, mail
-- `modules/terminal/` — Home-manager terminal: shell, editor, AI tools, mail, calendar
+- `ks.systems/terminal` input — Home Manager terminal product for headless, desktop, Linux, and macOS users
 - `modules/desktop/` — keystone glue only (`keystone-glue.nix`); the desktop implementation lives in the ks.systems/desktop flake (the `desktop` input)
 - `modules/server/` — Server services: DNS, mail, monitoring, Forgejo, Grafana, Immich, Vaultwarden
 - `modules/notes/` — Zettelkasten notebook management via zk
@@ -36,15 +38,13 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 - `docs/milestones/` — product deliverables, one dir per GitHub milestone (`M<N>-<slug>/`)
 - `docs/specs/` — normative requirement specs (`REQ-NNN-<slug>.md`, flat files)
 - `docs/releases/` — release artifacts and per-tag release notes
-- `docs/{os,desktop,terminal,agents,cluster,research,posts}/` — topical guides and supporting material
+- `docs/{os,desktop,agents,cluster,research,posts}/` — topical guides and supporting material
 - `conventions/` — project-level conventions (process, code style, archetypes)
 
 ## Packages
 
 - `packages/ks/` — Keystone CLI (shell): build, deploy, approve, secrets, hardware-key, kube
-- `packages/fetch-email-source/` — Email notification fetcher (himalaya)
-- `packages/fetch-github-sources/` — GitHub notification fetcher (gh API)
-- `packages/fetch-forgejo-sources/` — Forgejo notification fetcher (curl)
+- `ks.systems/terminal` input — Terminal packages and editable starter templates
 - `packages/keystone-ha/` — Home-assistant integration
 
 ## Flake Exports
@@ -62,21 +62,23 @@ list to deploy multiple: `ks update --lock ocean,mercury`.
 | `domain`, `hosts`, `repos`, `services`, `keys` | Shared options modules |
 | `headscale-dns` | Consume server DNS records on headscale host |
 
-### Home-Manager Modules (`keystone.homeModules.*`)
+### Home Manager modules
 
-`terminal`, `desktop` (re-export of ks.systems/desktop's `homeModules.default`), `notes`
+This repository exports `desktop` and `notes`. Consumers MUST import
+`terminal.homeModules.default` directly from the `ks.systems/terminal` input.
+The OS wrapper imports it for managed NixOS users.
 
 ### Overlay (`pkgs.keystone.*`)
 
-`claude-code`, `gemini-cli`, `codex`, `opencode`, `keystone-conventions`,
-`chrome-devtools-mcp`, `grafana-mcp`, `google-chrome`, `ghostty`,
-`yazi`, `himalaya`, `calendula`, `cardamum`, `comodoro`, `cfait`, `slidev`
+Terminal packages use `pkgs.keystone-terminal.*`. OS packages use
+`pkgs.keystone.*`. Desktop packages use `pkgs.keystone-desktop.*`.
 
 ## Important Notes
 
 - ZFS pool is **always** named `rpool`
 - The `operating-system` module includes disko and lanzaboote — no separate import needed
-- Terminal and desktop modules are home-manager based, not NixOS system modules
+- The terminal product is a Home Manager product. It MUST support headless hosts.
+- The desktop product MUST depend on the terminal product.
 - `keystone.repos` auto-populates from flake inputs; `keystone.development` enables local checkout paths
 - `keystone.experimental` (default `false`) gates experimental features. Defined in `modules/shared/experimental.nix`.
 

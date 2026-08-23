@@ -13,7 +13,7 @@ MAY, REQUIRED, OPTIONAL).
 
 ## Affected Modules
 
-- `packages/podman-agent/podman-agent.sh` — extend with archetype-based AGENTS.md generation
+- `ks.systems/terminal/packages/podman-agent/podman-agent.sh` — extend with archetype-based AGENTS.md generation
 - `modules/os/containers.nix` — Podman runtime configuration
 - `modules/os/agents/` — sub-agent configuration options
 - `modules/os/agents/` — archetype definitions and agent provisioning patterns (reference)

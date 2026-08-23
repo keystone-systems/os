@@ -85,7 +85,7 @@ let
         NIX="${pkgs.nix}"
         PROJECT_PREFS="${pkgs.coreutils}/bin/false"
         ZELLIJ="${pkgs.zellij}/bin/zellij"
-        PODMAN_AGENT="${pkgs.keystone.podman-agent}/bin/podman-agent"
+        PODMAN_AGENT="${pkgs.keystone-terminal.podman-agent}/bin/podman-agent"
         PROJECT_INDEX_HELPER="${projectIndexHelper}/bin/keystone-project-index"
         KNOWN_AGENTS="${knownAgents}"
 

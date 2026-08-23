@@ -7,7 +7,7 @@
 #   - modules/os/git-server.nix: auto-enables Forgejo when hostName matches services.git.host
 #   - modules/os/agents.nix: agentctl provision uses mail.host for secret recipients
 #   - modules/os/users.nix: bridges forgejo.enable into home-manager when git.host is set
-#   - modules/terminal/forgejo.nix: installs forgejo-cli when forgejo.enable is true
+#   - ks.systems/terminal: installs Forgejo clients when forgejo.enable is true
 #
 # Usage:
 #   keystone.services = {

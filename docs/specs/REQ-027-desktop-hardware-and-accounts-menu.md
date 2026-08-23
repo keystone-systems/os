@@ -191,7 +191,7 @@ extraction; the first three paths now live in that repo:
 - `modules/home/scripts/default.nix` (ks.systems/desktop)
 - `modules/home/scripts/keystone-setup-menu.sh` (ks.systems/desktop)
 - `modules/home/components/launcher.nix` (ks.systems/desktop)
-- `modules/terminal/mail.nix`
-- `modules/terminal/calendar.nix`
+- `ks.systems/terminal/modules/terminal/mail.nix`
+- `ks.systems/terminal/modules/terminal/calendar.nix`
 - `modules/os/tpm.nix`
 - `modules/os/hardware-key.nix`

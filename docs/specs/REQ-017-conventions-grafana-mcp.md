@@ -10,7 +10,7 @@ MAY, REQUIRED, OPTIONAL).
 ## Affected Modules
 
 - `flake.nix` — `keystone-conventions` derivation, `grafana-mcp` package
-- `modules/terminal/conventions.nix` — new module for AGENTS.md generation
+- `ks.systems/terminal/modules/terminal/conventions.nix` — new module for AGENTS.md generation
 - `modules/os/agents/scripts/agentctl.sh` — conventions loading order
 - `modules/os/agents/types.nix` — Grafana MCP options
 - `modules/os/agents/home-manager.nix` — Grafana MCP wiring
@@ -34,7 +34,7 @@ What lives where:
 **REQ-017.1** A `keystone-conventions` Nix derivation MUST package
 keystone's `conventions/` directory into the Nix store.
 
-**REQ-017.2** A new home-manager module (`modules/terminal/conventions.nix`)
+**REQ-017.2** A new home-manager module (`ks.systems/terminal/modules/terminal/conventions.nix`)
 MUST write conventions to each CLI coding tool's native instruction file
 path at build time: `~/.claude/CLAUDE.md`, `~/.gemini/GEMINI.md`,
 `~/.codex/AGENTS.md`. OpenCode reads `~/.claude/CLAUDE.md` via legacy compat.

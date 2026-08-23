@@ -288,11 +288,11 @@ let
     overlays = [ flake.overlays.default ];
   };
 in [
-  pkgs.keystone.claude-code
-  pkgs.keystone.gemini-cli
-  pkgs.keystone.codex
-  pkgs.keystone.opencode
-  pkgs.keystone.himalaya
+  pkgs.keystone-terminal.claude-code
+  pkgs.keystone-terminal.gemini-cli
+  pkgs.keystone-terminal.codex
+  pkgs.keystone-terminal.opencode
+  pkgs.keystone-terminal.himalaya
   pkgs.yazi
   # walker/hyprland moved to the ks.systems/desktop flake — reach through the
   # desktop input (same pattern as bin/dev/test-polkit-theme.sh's omarchy).

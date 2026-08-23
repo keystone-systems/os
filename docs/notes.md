@@ -353,7 +353,7 @@ and update a relevant system or operations hub if one exists.
 
 ## Related docs
 
-- [Terminal](terminal/terminal.md) for the terminal environment and AI command support
+- [Terminal](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/terminal.md) for the terminal environment and AI command support
 - [Agents](agents/agents.md) for human-side agent interaction
 - [OS Agents](agents/os-agents.md) for agent-space provisioning and notes sync
 

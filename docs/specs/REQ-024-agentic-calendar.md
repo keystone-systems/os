@@ -75,7 +75,7 @@ relying solely on static schedule patterns.
 - `modules/os/agents/notes.nix` — Pass calendar config values to scheduler/task-loop scripts
 - `modules/os/agents/types.nix` — Add `calendar.teamEvents` option for declaring team cadence events
 - `modules/os/agents/home-manager.nix` — Ensure calendar + tasks modules are enabled for all agents
-- `modules/terminal/calendar.nix` — No structural changes (already functional)
+- `ks.systems/terminal/modules/terminal/calendar.nix` — No structural changes (already functional)
 - `modules/server/services/mail.nix` — MAY need Stalwart ACL config for cross-calendar read access
 
 ## Requirements
@@ -269,7 +269,7 @@ milestone):
 - Milestone: Calendar Integration
 - `modules/os/agents/scripts/scheduler.sh` — Current scheduler implementation
 - `modules/os/agents/scripts/task-loop.sh` — Current task loop implementation
-- `modules/terminal/calendar.nix` — Calendula CalDAV module
+- `ks.systems/terminal/modules/terminal/calendar.nix` — Calendula CalDAV module
 - `conventions/process.agentic-team.md` — Team operating cadences (rule 30)
 - `docs/specs/REQ-021-cfait-tasks.md` — cfait packaging (completed)
 - `docs/specs/REQ-022-cfait-tasks.md` — cfait terminal module (completed)

@@ -48,7 +48,7 @@ zk integration may be restructured.
 
 | | |
 |---|---|
-| **Module** | `modules/terminal/conventions.nix` |
+| **Module** | `ks.systems/terminal/modules/terminal/conventions.nix` |
 | **Flag** | `keystone.terminal.conventions.enable` (defaults to `keystone.experimental`) |
 | **Milestone** | [v2 — Un-experimental](https://github.com/ncrmro/keystone/milestone/10) |
 

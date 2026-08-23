@@ -9,14 +9,6 @@
     home-manager.follows = "keystone/home-manager";
     disko.follows = "keystone/disko";
     lanzaboote.follows = "keystone/lanzaboote";
-    himalaya.follows = "keystone/himalaya";
-    llm-agents.follows = "keystone/llm-agents";
-    # These inputs are consumed directly by the tests flake. Keep explicit
-    # definitions here because the path-based parent lock can lag nested inputs.
-    kinda-nvim-hx = {
-      url = "github:strash/kinda_nvim.hx";
-      flake = false;
-    };
     microvm = {
       url = "github:astro/microvm.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,9 +23,6 @@
       home-manager,
       disko,
       lanzaboote,
-      kinda-nvim-hx,
-      himalaya,
-      llm-agents,
       microvm,
     }:
     let

@@ -29,7 +29,7 @@ The platform constructs missions from skills and subagents in your
 
 | Layer | What | Where to read |
 |---|---|---|
-| **L1 Terminal agents** | You + your CLI coding agents (Claude Code, Gemini CLI, Codex, OpenCode) + per-tool skills and subagents synced from your consumer flake. | [`tool.cli-coding-agents`](../../conventions/tool.cli-coding-agents.md) convention; [`docs/terminal/cli-coding-agents.md`](../terminal/cli-coding-agents.md) reference |
+| **L1 Terminal agents** | You + your CLI coding agents (Claude Code, Gemini CLI, Codex, OpenCode) + per-tool skills and subagents synced from your consumer flake. | [`tool.cli-coding-agents`](../../conventions/tool.cli-coding-agents.md) convention; [`ks.systems/terminal`](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/cli-coding-agents.md) reference |
 | **L2 OS agents** | Sandboxed service-account principals (`agent-<name>` users) that inherit L1 skills and subagents into isolated home dirs and run on systemd timers. | [`os-agents.md`](os-agents.md), [`os-agents.agent-space.md`](os-agents.agent-space.md) |
 
 L1 is the substrate. L2 builds on L1 by giving agents their own identity, mail,

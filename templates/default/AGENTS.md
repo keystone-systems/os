@@ -202,7 +202,7 @@ understand *why* an option exists or what a module wires up, that's where to
 look:
 
 - `keystone/modules/` — NixOS modules (OS, server, desktop, agents)
-- `keystone/modules/terminal/` — Home Manager terminal modules
+- `ks.systems/terminal` — Home Manager terminal product
 - `keystone/lib/templates.nix` — the `mkSystemFlake` helper that turns your
   `flake.nix` into `nixosConfigurations` / `homeConfigurations` / `packages.iso`
 - `keystone/packages/ks/` — the `ks` CLI source

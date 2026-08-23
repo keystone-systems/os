@@ -62,8 +62,8 @@ What you get:
 
 Start here:
 
-- [Install the terminal environment](terminal/tui-install.md)
-- [Terminal module overview](terminal/terminal.md)
+- [Install the terminal environment](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-install.md)
+- [Terminal module overview](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/terminal.md)
 - [Navigation guide](navigation.md)
 
 ## Core concept: `keystone-config`
@@ -107,15 +107,15 @@ Use the template, keep the default single-machine structure, and work through:
 
 1. [ISO Generation](os/iso-generation.md)
 2. [Keystone OS install](os/installation.md)
-3. [Terminal module overview](terminal/terminal.md)
+3. [Terminal module overview](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/terminal.md)
 4. [Navigation guide](navigation.md)
 
 ### If you are iterating or contributing
 
 Keep development workflows separate from initial setup:
 
-- [Developer workflow](terminal/tui-developer-workflow.md)
-- [Thin client workflow](terminal/tui-developer-workflow-thin-client.md)
+- [Developer workflow](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-developer-workflow.md)
+- [Thin client workflow](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-developer-workflow-thin-client.md)
 - [Testing procedures](os/testing-procedure.md)
 - [VM testing](os/testing-vm.md)
 - [ISO and OS VM testing](testing/iso-os-virtual-machine.md)

@@ -60,7 +60,7 @@ in
 
     # Install himalaya CLI system-wide for mail-enabled agents
     environment.systemPackages = [
-      pkgs.keystone.himalaya
+      pkgs.keystone-terminal.himalaya
     ];
   };
 }

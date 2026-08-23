@@ -50,9 +50,9 @@ from the terminal without switching to a browser.
 ## Affected Modules
 
 - `flake.nix` — Add cfait as a Nix package (no upstream flake; build from crates.io or GitHub source)
-- `modules/terminal/tasks.nix` — New module: cfait config generation + credential inheritance
-- `modules/terminal/default.nix` — Import `tasks.nix`
-- `modules/terminal/calendar.nix` — No changes (events remain separate from tasks)
+- `ks.systems/terminal/modules/terminal/tasks.nix` — New module: cfait config generation + credential inheritance
+- `ks.systems/terminal/modules/terminal/default.nix` — Import `tasks.nix`
+- `ks.systems/terminal/modules/terminal/calendar.nix` — No changes (events remain separate from tasks)
 
 ## Requirements
 
@@ -74,12 +74,12 @@ alongside the existing pimalaya tools.
 
 ### Terminal Module
 
-**REQ-021.5** A new module `modules/terminal/tasks.nix` MUST be created
+**REQ-021.5** A new module `ks.systems/terminal/modules/terminal/tasks.nix` MUST be created
 following the same pattern as `calendar.nix`.
 
 **REQ-021.6** The module MUST expose options at `keystone.terminal.tasks`.
 
-**REQ-021.7** The module MUST be imported by `modules/terminal/default.nix`.
+**REQ-021.7** The module MUST be imported by `ks.systems/terminal/modules/terminal/default.nix`.
 
 **REQ-021.8** When enabled, the module MUST add `pkgs.keystone.cfait` to
 `home.packages`.
@@ -213,5 +213,5 @@ implements the "Package cfait TUI calendar client" user story from GitHub issue
 - Milestone #3 — Calendar Integration
 - [cfait upstream](https://github.com/trougnouf/cfait) — Rust CalDAV task manager
 - [cfait on crates.io](https://crates.io/crates/cfait)
-- `modules/terminal/calendar.nix` — Calendula integration (pattern to follow)
+- `ks.systems/terminal/modules/terminal/calendar.nix` — Calendula integration (pattern to follow)
 - `docs/specs/REQ-020-journal-remote.md` — Most recent spec for format reference

@@ -191,7 +191,7 @@ populated by `ks sync-agent-assets`):
 
 `~/.keystone/AGENTS.md`, `~/.keystone/repos/AGENTS.md`, and
 `~/.config/opencode/AGENTS.md` remain immutable Nix-store-backed writes via
-`home.file.text` in `modules/terminal/conventions.nix`. They are not tool
+`home.file.text` in `ks.systems/terminal/modules/terminal/conventions.nix`. They are not tool
 discovery paths; they are legacy/reference material keystone reads itself.
 
 ### Skill schema
@@ -319,7 +319,7 @@ can review them.
     - `~/.codex/AGENTS.md`    → `<consumer-flake>/agents/_shared/AGENTS.md`
     The canonical `_shared/AGENTS.md` is the only regular file in the
     chain — every tool reads the same bytes.
-    `modules/terminal/conventions.nix` MUST NOT write the per-tool
+    `ks.systems/terminal/modules/terminal/conventions.nix` MUST NOT write the per-tool
     instruction files via `home.file.<path>.text` — the symlink activation
     owns them. The Keystone-canonical files `~/.keystone/AGENTS.md` and
     `~/.keystone/repos/AGENTS.md`, and the OpenCode instruction file
@@ -375,14 +375,14 @@ before re-running activation.
 
 ## Keystone Module Responsibilities
 
-### `modules/terminal/conventions.nix`
+### `ks.systems/terminal/modules/terminal/conventions.nix`
 
 1. MUST generate the system-wide conventions content from `keystone-conventions` derivation
 2. MUST write the canonical user-level instruction file to `~/.keystone/AGENTS.md`
 3. MUST derive the tool-native user-level files from the same generated content
 4. MUST symlink `~/.config/keystone/conventions/` to the conventions store path for on-demand reading
 
-### `modules/terminal/agents/extensions.nix`
+### `ks.systems/terminal/modules/terminal/agents/extensions.nix`
 
 1. MUST generate only the curated Keystone command surface by default: `/ks` and optional `/ks-dev`
 2. MUST gate `/ks-dev` on `keystone.development = true`
@@ -395,7 +395,7 @@ before re-running activation.
 9. Skill directory names and SKILL.md frontmatter `name:` fields MUST be lowercase with hyphens per the [`.agents/skills/` spec][agent-skills-doc] (e.g., `ks-system`, `ks-dev`, `configure-reviews`). The same name is used by every tool — no per-tool transform.
 10. Generated instruction files (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`) MUST NOT duplicate the list of available skills. CLI coding agents inject the skill catalog into the system prompt automatically; repeating it in instruction files wastes context tokens.
 
-### `modules/terminal/agents/mcp-configs.nix`
+### `ks.systems/terminal/modules/terminal/agents/mcp-configs.nix`
 
 1. MUST generate MCP server configs at each tool's expected path
 2. MUST NOT embed secrets (API keys, tokens) — these are world-readable in the Nix store
@@ -412,7 +412,7 @@ before re-running activation.
    - OpenCode: reads `AGENTS.md` natively from working directory
 3. For sandboxed (Podman) agents, SHOULD generate overlay instruction files at the tool-native paths inside the container
 
-### `packages/podman-agent/podman-agent.sh`
+### `ks.systems/terminal/packages/podman-agent/podman-agent.sh`
 
 1. MUST mount host tool config directories into the container (`~/.claude`, `~/.gemini`, `~/.codex`, `~/.opencode`)
 2. MUST mount `~/.config/keystone/` for conventions access
@@ -433,11 +433,11 @@ When an agent runs inside a Podman container via `podman-agent`:
 
 ## Rules for Adding New Tools
 
-1. Add the tool's package to `modules/terminal/agents/ai.nix`
-2. Add MCP config generation to `modules/terminal/agents/mcp-configs.nix`
-3. Add instruction file generation to `modules/terminal/conventions.nix` at the tool's expected user-level path
-4. Add slash-command or skill generation to `modules/terminal/agents/extensions.nix`, depending on the tool's native workflow surface
-5. Add the tool's config directory mount to `packages/podman-agent/podman-agent.sh`
+1. Add the tool's package to `ks.systems/terminal/modules/terminal/agents/ai.nix`
+2. Add MCP config generation to `ks.systems/terminal/modules/terminal/agents/mcp-configs.nix`
+3. Add instruction file generation to `ks.systems/terminal/modules/terminal/conventions.nix` at the tool's expected user-level path
+4. Add slash-command or skill generation to `ks.systems/terminal/modules/terminal/agents/extensions.nix`, depending on the tool's native workflow surface
+5. Add the tool's config directory mount to `ks.systems/terminal/packages/podman-agent/podman-agent.sh`
 6. Add the tool's prompt injection mechanism to `modules/os/agents/scripts/agentctl.sh`
-7. Add a pre-resolved store path env var to `modules/terminal/sandbox.nix`
+7. Add a pre-resolved store path env var to `ks.systems/terminal/modules/terminal/sandbox.nix`
 8. Update this convention document

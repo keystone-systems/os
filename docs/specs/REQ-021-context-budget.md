@@ -62,9 +62,9 @@ Current breakdown (bytes → est. tokens):
 ## Affected Modules
 
 - `CLAUDE.md` (repo root) — project instructions, largest contributor at 44k bytes
-- `modules/terminal/conventions.nix` — generates global `~/.claude/CLAUDE.md` from archetypes
+- `ks.systems/terminal/modules/terminal/conventions.nix` — generates global `~/.claude/CLAUDE.md` from archetypes
 - `conventions/archetypes.yaml` — controls inlined vs referenced convention balance
-- `modules/terminal/ai.nix` — Claude Code package configuration
+- `ks.systems/terminal/modules/terminal/agents/ai.nix` — Claude Code package configuration
 - `modules/os/agents/agentctl.nix` — agent MCP server configuration
 
 ## Requirements

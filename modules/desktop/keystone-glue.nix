@@ -28,13 +28,6 @@
           ...
         }:
         {
-          # keystone.experimental is normally declared at HM scope by the
-          # terminal sharedModule (modules/terminal imports it). Import the
-          # declaration path here too so the glue stays evaluable when the
-          # desktop module is used without operating-system — path imports
-          # deduplicate safely.
-          imports = [ ../shared/experimental.nix ];
-
           # keystone-owned option values the standalone desktop flake may not
           # declare/set:
           keystone.terminal.enable = lib.mkDefault true; # desktop implies terminal

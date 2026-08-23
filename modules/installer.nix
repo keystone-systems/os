@@ -125,8 +125,7 @@ in
               home-manager.useUserPackages = true;
               home-manager.backupFileExtension = "backup";
               home-manager.users.root = {
-                imports = [ ./terminal/default.nix ];
-                _module.args.keystoneInputs = keystoneInputs;
+                imports = [ keystoneInputs.terminal.homeModules.default ];
                 home.stateVersion = "24.11";
                 keystone.terminal = {
                   enable = true;

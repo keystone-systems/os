@@ -284,14 +284,14 @@ not derived from `archetypes.yaml`.
 ## llm-agents input strategy
 
 AI agent packages (`claude-code`, `gemini-cli`, `codex`, `opencode`) come from
-the `llm-agents` flake input pinned at nightly-latest. Consumer flakes choose:
+the `llm-agents` input in `ks.systems/terminal`. Consumer flakes choose:
 
-- **Nightly-latest**: `llm-agents.follows = "keystone/llm-agents"` — relocking
-  keystone bumps agent versions automatically.
+- **Nightly-latest**: follow `terminal/llm-agents`. Relocking the terminal
+  product bumps agent versions automatically.
 - **Stable**: declare independent `llm-agents` input and override with
-  `keystone.inputs.llm-agents.follows = "llm-agents"`.
+  `terminal.inputs.llm-agents.follows = "llm-agents"`.
 
-See `modules/terminal/AGENTS.md` § "llm-agents input strategy" for examples.
+See the `ks.systems/terminal` editing guide for examples.
 
 ## VM testing
 

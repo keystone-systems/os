@@ -2,6 +2,7 @@
   self,
   nixpkgs,
   home-manager,
+  terminal,
   lib,
 }:
 let
@@ -200,7 +201,7 @@ let
     home-manager.lib.homeManagerConfiguration {
       pkgs = nixpkgs.legacyPackages.${system};
       modules = [
-        self.homeModules.terminal
+        terminal.homeModules.default
         {
           nixpkgs.overlays = [ self.overlays.default ];
           home.username = username;
@@ -511,14 +512,8 @@ let
             home-manager = {
               useGlobalPkgs = true;
               useUserPackages = true;
-              extraSpecialArgs = {
-                # Pass keystone's own outputs in so keystone._repoInputs
-                # can derive when applicable. The terminal module guards
-                # this with `mkIf (keystoneInputs ? self)`.
-                keystoneInputs = { inherit self; };
-              };
               users.${adminUsername} = {
-                imports = [ self.homeModules.terminal ];
+                imports = [ terminal.homeModules.default ];
                 home.stateVersion = "25.05";
                 keystone.terminal = {
                   enable = true;
@@ -756,7 +751,7 @@ rec {
     home-manager.lib.homeManagerConfiguration {
       pkgs = nixpkgs.legacyPackages.${system};
       modules = [
-        self.homeModules.terminal
+        terminal.homeModules.default
         {
           nixpkgs.overlays = [ self.overlays.default ];
           home.username = username;

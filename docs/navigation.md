@@ -57,5 +57,5 @@ when you are done for now.
 
 - [Desktop keybindings](desktop/keybindings.md)
 - [Walker](desktop/walker.md)
-- [Terminal module overview](terminal/terminal.md)
-- [Developer workflow](terminal/tui-developer-workflow.md)
+- [Terminal module overview](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/terminal.md)
+- [Developer workflow](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-developer-workflow.md)
