@@ -278,6 +278,33 @@ cd ~/repos/ncrmro/ks-config
 ks-dev HOST
 ```
 
+### Disk-unlock enrollment state
+
+FIDO2 enrollment changes the LUKS header, but Keystone enables
+`fido2-device=auto` only after the consumer configuration records the observed
+token mapping in `keystone.hardwareKeyState.luks`. This gate is intentional:
+systemd does not reliably fall back to a passphrase when FIDO2 is configured
+but no matching token is enrolled.
+
+Until the setup workflow automates this transition, operators MUST enroll one
+physical key at a time, prove that key can unlock the target independently,
+and record its observed token number with the target LUKS UUID. The password
+recovery slot MUST remain present. TPM enrollment MUST happen only after the
+FIDO2 records have been deployed and independently verified.
+
+Future setup automation MUST:
+
+1. Identify the inserted key by its declared serial before enrollment.
+2. Enroll exactly that key and preserve every existing recovery slot.
+3. Read back the new FIDO2 token and keyslot from the LUKS2 metadata.
+4. Prove the key unlocks the target without another authenticator present.
+5. Write the UUID and key-to-token mapping into the consumer repository as
+   resumable workflow state.
+6. Rebuild the initrd only after the committed state matches the live header.
+
+`keystone-enroll-fido2` currently performs only the LUKS mutation and a coarse
+token-presence check; it does not yet satisfy this complete workflow.
+
 ## SSH Key Details
 
 ### Firmware Requirements
