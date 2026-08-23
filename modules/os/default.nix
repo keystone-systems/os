@@ -685,6 +685,11 @@ in
   config = mkIf cfg.enable {
     keystone.security.privilegedApproval.enable = mkDefault true;
 
+    # Ask systemd-boot to select the highest-resolution firmware console mode
+    # before handing the display to the kernel. Consumers can retain the
+    # firmware-selected mode with an explicit `consoleMode = "keep"` override.
+    boot.loader.systemd-boot.consoleMode = mkDefault "max";
+
     systemd.sleep.settings.Sleep = mkIf suspendThenHibernateActive {
       HibernateDelaySec = cfg.power.suspendThenHibernate.hibernateDelay;
       HibernateOnACPower = false;

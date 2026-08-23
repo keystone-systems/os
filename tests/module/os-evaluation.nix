@@ -5,7 +5,7 @@
 # to actually partition disks), but validates the module's NixOS options
 # and configuration generation.
 #
-# Build: nix build .#test-os-evaluation
+# Build: nix build .#checks.x86_64-linux.os-evaluation
 #
 {
   pkgs,
@@ -98,6 +98,31 @@ let
             exit 1
           ''
       }
+      touch $out
+    '';
+
+  assertConsoleMode =
+    name: expected: modules:
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+          }
+        ]
+        ++ modules;
+      };
+      actual = result.config.boot.loader.systemd-boot.consoleMode;
+    in
+    pkgs.runCommand "systemd-boot-console-mode-${name}" { } ''
+      if [ "${actual}" != "${expected}" ]; then
+        echo "FAIL: ${name}: expected consoleMode=${expected}, got ${actual}" >&2
+        exit 1
+      fi
+      echo "OK: ${name}: consoleMode=${actual}"
       touch $out
     '';
 
@@ -403,6 +428,11 @@ let
     '';
 
   tests = {
+    systemd-boot-console-mode-default = assertConsoleMode "default" "max" [ adminBase ];
+    systemd-boot-console-mode-override = assertConsoleMode "override" "keep" [
+      adminBase
+      { boot.loader.systemd-boot.consoleMode = "keep"; }
+    ];
     laptop-power-policy = assertPowerPolicy "laptop" "laptop" true;
     workstation-power-policy = assertPowerPolicy "workstation" "workstation" false;
     server-power-policy = assertPowerPolicy "server" "server" false;
