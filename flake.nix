@@ -375,6 +375,14 @@
             self = self;
           };
           virtualMachineUnit = import ./tests/unit/virtual-machine.nix { inherit pkgs; };
+          ollamaZfsDataset = import ./tests/module/ollama-zfs-dataset.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          zfsDatasetMigration = import ./tests/integration/zfs-dataset-migration.nix {
+            inherit pkgs;
+            self = self;
+          };
           zreplBackupEvaluation = import ./tests/module/zrepl-backup-evaluation.nix {
             inherit pkgs lib;
             self = self;
@@ -489,6 +497,8 @@
           zfs-dataset-registry = zfsDatasetRegistry;
           zvol-storage-evaluation = zvolStorageEvaluation;
           virtual-machine-unit = virtualMachineUnit;
+          ollama-zfs-dataset = ollamaZfsDataset;
+          zfs-dataset-migration = zfsDatasetMigration;
           zrepl-backup-evaluation = zreplBackupEvaluation;
           cached-user-share-evaluation = cachedUserShareEvaluation;
           agent-evaluation = agentEvaluation;
@@ -522,6 +532,8 @@
             mkdir -p "$out"
             ln -s ${osEvaluation} "$out/os-evaluation"
             ln -s ${zvolStorageEvaluation} "$out/zvol-storage-evaluation"
+            ln -s ${zfsDatasetRegistry} "$out/zfs-dataset-registry"
+            ln -s ${ollamaZfsDataset} "$out/ollama-zfs-dataset"
             ln -s ${cachedUserShareEvaluation} "$out/cached-user-share-evaluation"
             ln -s ${agentEvaluation} "$out/agent-evaluation"
             ln -s ${templateEvaluation} "$out/template-evaluation"
