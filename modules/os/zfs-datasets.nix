@@ -101,7 +101,9 @@ in
     );
   };
 
-  config = mkIf (config.keystone.os.enable && cfg.enable && cfg.type == "zfs" && managed != { }) {
+  # Consumers with an existing disko layout disable Keystone partitioning but
+  # still use this registry to declaratively reconcile datasets.
+  config = mkIf (config.keystone.os.enable && cfg.type == "zfs" && managed != { }) {
     assertions = mapAttrsToList (name: dataset: {
       assertion =
         lib.hasPrefix "rpool/" name && !(dataset.properties ? mountpoint && dataset.mountpoint != null);

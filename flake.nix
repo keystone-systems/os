@@ -370,6 +370,11 @@
             inherit pkgs lib;
             self = self;
           };
+          zvolStorageEvaluation = import ./tests/module/zvol-storage-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          virtualMachineUnit = import ./tests/unit/virtual-machine.nix { inherit pkgs; };
           zreplBackupEvaluation = import ./tests/module/zrepl-backup-evaluation.nix {
             inherit pkgs lib;
             self = self;
@@ -482,6 +487,8 @@
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
           os-evaluation = osEvaluation;
           zfs-dataset-registry = zfsDatasetRegistry;
+          zvol-storage-evaluation = zvolStorageEvaluation;
+          virtual-machine-unit = virtualMachineUnit;
           zrepl-backup-evaluation = zreplBackupEvaluation;
           cached-user-share-evaluation = cachedUserShareEvaluation;
           agent-evaluation = agentEvaluation;
@@ -514,6 +521,7 @@
           check-eval = pkgs.runCommand "check-eval" { } ''
             mkdir -p "$out"
             ln -s ${osEvaluation} "$out/os-evaluation"
+            ln -s ${zvolStorageEvaluation} "$out/zvol-storage-evaluation"
             ln -s ${cachedUserShareEvaluation} "$out/cached-user-share-evaluation"
             ln -s ${agentEvaluation} "$out/agent-evaluation"
             ln -s ${templateEvaluation} "$out/template-evaluation"
@@ -543,6 +551,7 @@
             ln -s ${keystoneSecretsMenu} "$out/keystone-secrets-menu"
             ln -s ${keystoneFingerprintMenu} "$out/keystone-fingerprint-menu"
             ln -s ${keystoneUpdateApproveFlow} "$out/keystone-update-approve-flow"
+            ln -s ${virtualMachineUnit} "$out/virtual-machine-unit"
           '';
 
           # Agent runtime and miscellaneous module tests
