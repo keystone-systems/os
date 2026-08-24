@@ -1,327 +1,399 @@
-# ZFS Backup Module
-#
-# Auto-derives sanoid snapshot management, syncoid replication, receiver
-# user/dataset setup, and Prometheus metrics from keystone.hosts ZFS
-# backup topology.
-#
-# See conventions/os.zfs-backup.md (30 rules)
-# Follows the journal-remote.nix pattern of auto-deriving from keystone.hosts.
+# Registry-derived zrepl snapshot and pull-replication topology (REQ-033).
 {
   config,
   lib,
-  pkgs,
   ...
 }:
-with lib;
 let
+  inherit (lib)
+    attrNames
+    attrValues
+    concatMap
+    filter
+    findFirst
+    flatten
+    hasPrefix
+    mapAttrsToList
+    mkIf
+    optionals
+    splitString
+    unique
+    ;
   osCfg = config.keystone.os;
   hostname = config.networking.hostName;
   hosts = config.keystone.hosts;
+  current = findFirst (host: host.hostname == hostname) null (attrValues hosts);
+  backups = if current != null && current.zfs != null then current.zfs.backups else { };
+  registry = osCfg.storage.zfs.datasets;
+  durableClasses = [
+    "system"
+    "state"
+    "critical-state"
+  ];
+  dataDatasets = attrNames (
+    lib.filterAttrs (_: dataset: builtins.elem dataset.class durableClasses) registry
+  );
+  escrowDatasets = attrNames (lib.filterAttrs (_: dataset: dataset.class == "key-escrow") registry);
+  replicatedPools = attrNames backups;
+  streams = [
+    "data"
+    "escrow"
+  ];
 
-  # Find this host's entry in the registry
-  currentHostEntry = findFirst (h: h.hostname == hostname) null (attrValues hosts);
-
-  # Sender: does this host declare ZFS backups?
-  hasBackups =
-    currentHostEntry != null && currentHostEntry.zfs != null && currentHostEntry.zfs.backups != { };
-
-  backupDecls = if hasBackups then currentHostEntry.zfs.backups else { };
-  backedUpPools = attrNames backupDecls;
-
-  # Parse "host:pool" target string (convention rule 9)
+  validTarget =
+    target:
+    let
+      parts = splitString ":" target;
+    in
+    builtins.length parts == 2 && builtins.elemAt parts 0 != "" && builtins.elemAt parts 1 != "";
   parseTarget =
-    targetStr:
+    target:
     let
-      parts = splitString ":" targetStr;
+      parts = splitString ":" target;
     in
     {
-      hostKey = elemAt parts 0;
-      pool = elemAt parts 1;
+      hostKey = builtins.elemAt parts 0;
+      pool = builtins.elemAt parts 1;
     };
+  safeParseTarget =
+    target:
+    if validTarget target then
+      parseTarget target
+    else
+      {
+        hostKey = "";
+        pool = "";
+      };
 
-  # Validate target string format (exactly "host:pool")
-  isValidTarget =
-    targetStr:
+  sourceTargets = flatten (
+    mapAttrsToList (
+      sourcePool: poolCfg:
+      map (
+        target:
+        let
+          parsed = safeParseTarget target;
+        in
+        {
+          inherit sourcePool target;
+          sourceHost = current;
+          sourceKey = currentKey;
+          inherit (parsed) hostKey pool;
+          policy = poolCfg.targetPolicies.${target} or null;
+          targetHost = hosts.${parsed.hostKey} or null;
+          local = parsed.hostKey != "" && parsed.hostKey == currentKey;
+        }
+      ) poolCfg.targets
+    ) backups
+  );
+
+  findHostKey =
+    wantedHostname:
     let
-      parts = splitString ":" targetStr;
+      matches = filter (key: hosts.${key}.hostname == wantedHostname) (attrNames hosts);
     in
-    length parts == 2 && elemAt parts 0 != "" && elemAt parts 1 != "";
+    if matches == [ ] then "" else builtins.head matches;
+  currentKey = findHostKey hostname;
 
-  # All target strings across all pools (for assertions)
-  allTargetStrings = concatMap (pc: pc.targets) (attrValues backupDecls);
-
-  # Build flat list of syncoid command definitions
-  syncoidCmds =
-    let
-      mkCommands =
-        sourcePool: poolCfg:
-        concatMap (
-          target:
-          let
-            parsed = parseTarget target;
-            targetHost = hosts.${parsed.hostKey} or null;
-            sshTarget = if targetHost.sshTarget != null then targetHost.sshTarget else targetHost.hostname;
-            name = "${sourcePool}-to-${parsed.hostKey}";
-            keyDir = "/run/syncoid/${name}";
-          in
-          if targetHost != null then
-            [
-              (nameValuePair name {
-                source = sourcePool;
-                # convention rules 13-17: raw send, no-sync-snap, skip-parent, exclude, compress
-                target = "${hostname}-sync@${sshTarget}:${parsed.pool}/backups/${hostname}/${sourcePool}";
-                sendOptions = "w";
-                extraArgs = [
-                  "--no-sync-snap"
-                  "--skip-parent"
-                  "--exclude-datasets=nix|docker|containers|images|libvirt"
-                  "--compress=none"
-                  "--sshkey"
-                  "${keyDir}/ssh_key"
-                ];
-                # convention rules 18-21: SSH key handling with sandbox fix
-                service = {
-                  serviceConfig = {
-                    ExecStartPre = [
-                      "+${pkgs.coreutils}/bin/install -d -m 0700 ${keyDir}"
-                      "+${pkgs.coreutils}/bin/install -m 0600 /etc/ssh/ssh_host_ed25519_key ${keyDir}/ssh_key"
-                    ];
-                    ReadWritePaths = [ keyDir ];
-                    ExecStopPost = [ "${backupMetricsScript} ${name}" ];
-                  };
-                };
-              })
-            ]
-          else
-            [ ]
-        ) poolCfg.targets;
-    in
-    flatten (mapAttrsToList mkCommands backupDecls);
-
-  # Receiver: find all incoming backup connections targeting this host
-  incomingBackups =
-    let
-      perHost = mapAttrsToList (
-        _name: hostCfg:
-        if hostCfg.zfs != null then
-          flatten (
-            mapAttrsToList (
-              sourcePool: poolCfg:
-              map (
-                target:
-                let
-                  parsed = parseTarget target;
-                  targetHostEntry = hosts.${parsed.hostKey} or null;
-                in
-                if targetHostEntry != null && targetHostEntry.hostname == hostname then
-                  {
-                    senderHostname = hostCfg.hostname;
-                    senderPublicKey = hostCfg.hostPublicKey;
-                    inherit sourcePool;
-                    targetPool = parsed.pool;
-                  }
-                else
-                  null
-              ) poolCfg.targets
-            ) hostCfg.zfs.backups
-          )
-        else
-          [ ]
-      ) hosts;
-    in
-    filter (x: x != null) (flatten perHost);
-
-  hasIncomingBackups = incomingBackups != [ ];
-  uniqueSenderHostnames = unique (map (b: b.senderHostname) incomingBackups);
-
-  # ZFS binary (matches kernel module version)
-  zfsBin = "${config.boot.zfs.package}/bin/zfs";
-
-  # Metrics: snapshot age/count exporter (convention rules 25-26)
-  snapshotMetricsScript = pkgs.writeShellScript "zfs-snapshot-metrics" ''
-    outfile="/var/lib/prometheus-node-exporter/zfs_snapshots.prom"
-    tmpfile="''${outfile}.tmp.$$"
-
-    {
-    ${concatMapStringsSep "\n" (pool: ''
-      count=$(${zfsBin} list -t snapshot -r ${escapeShellArg pool} -H -o name 2>/dev/null | wc -l || echo 0)
-      newest=$(${zfsBin} list -t snapshot -r ${escapeShellArg pool} -H -o creation -s creation 2>/dev/null | tail -1)
-      if [ -n "$newest" ]; then
-        newest_epoch=$(${pkgs.coreutils}/bin/date -d "$newest" +%s 2>/dev/null || echo 0)
-        now=$(${pkgs.coreutils}/bin/date +%s)
-        age=$((now - newest_epoch))
+  allIncoming = flatten (
+    mapAttrsToList (
+      sourceKey: sourceHost:
+      if sourceHost.zfs == null then
+        [ ]
       else
-        age=-1
-      fi
-      echo "zfs_snapshot_count{pool=\"${pool}\"} $count"
-      echo "zfs_snapshot_newest_age_seconds{pool=\"${pool}\"} $age"
-    '') backedUpPools}
-    } > "$tmpfile"
-
-    mv "$tmpfile" "$outfile"
-  '';
-
-  # Metrics: per-target backup exit code/timestamp (convention rule 27)
-  backupMetricsScript = pkgs.writeShellScript "zfs-backup-metrics" ''
-    name="$1"
-    exit_status="''${EXIT_STATUS:-1}"
-    outfile="/var/lib/prometheus-node-exporter/zfs_backup_''${name}.prom"
-    tmpfile="''${outfile}.tmp.$$"
-
-    {
-      echo "zfs_backup_last_exit_code{target=\"$name\"} $exit_status"
-      if [ "$exit_status" = "0" ]; then
-        echo "zfs_backup_last_success_timestamp{target=\"$name\"} $(${pkgs.coreutils}/bin/date +%s)"
-      elif [ -f "$outfile" ]; then
-        # Preserve last success timestamp on failure
-        ${pkgs.gnugrep}/bin/grep -F "zfs_backup_last_success_timestamp" "$outfile" || true
-      fi
-    } > "$tmpfile"
-
-    mv "$tmpfile" "$outfile"
-  '';
-in
-{
-  config = mkIf osCfg.enable (mkMerge [
-    # --- Assertions ---
-    {
-      assertions =
-        # Sender assertions: validate target format
-        (optionals hasBackups (
-          map (target: {
-            assertion = isValidTarget target;
-            message = "ZFS backup target '${target}' is malformed. Must be 'host:pool' format (e.g., 'ocean:ocean').";
-          }) allTargetStrings
-        ))
-        ++
-          # Sender assertions: all backup targets must reference valid hosts
-          (optionals hasBackups (
+        flatten (
+          mapAttrsToList (
+            sourcePool: poolCfg:
             map (
               target:
               let
-                parsed = parseTarget target;
+                parsed = safeParseTarget target;
               in
               {
-                assertion = !isValidTarget target || hasAttr parsed.hostKey hosts;
-                message = "ZFS backup target '${target}' references unknown host '${parsed.hostKey}'. It must exist in keystone.hosts.";
+                inherit
+                  sourceKey
+                  sourceHost
+                  sourcePool
+                  target
+                  ;
+                inherit (parsed) hostKey pool;
+                policy = poolCfg.targetPolicies.${target} or null;
+                local = parsed.hostKey == sourceKey;
               }
-            ) allTargetStrings
-          ))
-        ++ [
-          # ZFS backups require ZFS storage on the sender
+            ) poolCfg.targets
+          ) sourceHost.zfs.backups
+        )
+    ) hosts
+  );
+  incoming = filter (entry: entry.hostKey == currentKey) allIncoming;
+
+  slug = value: lib.replaceStrings [ "." ":" "/" ] [ "-" "-" "-" ] value;
+  listener = entry: "${slug entry.sourceHost.hostname}-${slug entry.sourcePool}-${slug entry.pool}";
+  streamPort = entry: stream: entry.policy.port + (if stream == "escrow" then 1 else 0);
+  filesystems =
+    stream: lib.genAttrs (if stream == "data" then dataDatasets else escrowDatasets) (_: true);
+  retentionGrid =
+    policy:
+    "1x1h(keep=all) | ${toString policy.retention.hourly}x1h | ${toString policy.retention.daily}x1d | ${toString policy.retention.monthly}x30d";
+  preserveForeign = {
+    type = "regex";
+    negate = true;
+    regex = "^zrepl_";
+  };
+  keepZrepl = policy: {
+    type = "grid";
+    grid = retentionGrid policy;
+    regex = "^zrepl_";
+  };
+
+  mkServe =
+    entry: stream:
+    if entry.local then
+      {
+        type = "local";
+        listener_name = "${listener entry}-${stream}";
+      }
+    else
+      {
+        type = "tcp";
+        listen = "${current.tailscaleIP}:${toString (streamPort entry stream)}";
+        clients = {
+          "${entry.targetHost.tailscaleIP}" = entry.targetHost.hostname;
+        };
+      };
+  mkConnect =
+    entry: stream:
+    if entry.local then
+      {
+        type = "local";
+        listener_name = "${listener entry}-${stream}";
+        client_identity = hostname;
+      }
+    else
+      {
+        type = "tcp";
+        address = "${entry.sourceHost.tailscaleIP}:${toString (streamPort entry stream)}";
+      };
+  mkSourceJob = entry: stream: {
+    type = "source";
+    name = "source-${slug entry.target}-${slug entry.sourcePool}-${stream}";
+    serve = mkServe entry stream;
+    filesystems = filesystems stream;
+    snapshotting.type = "manual";
+    send =
+      if stream == "data" then
+        { encrypted = true; }
+      else
+        {
+          raw = true;
+          encrypted = false;
+        };
+  };
+  mkPullJob =
+    entry: stream:
+    {
+      type = "pull";
+      name = "pull-${slug entry.sourceHost.hostname}-${slug entry.sourcePool}-${stream}";
+      connect = mkConnect entry stream;
+      root_fs = "${entry.pool}/backups/${
+        if stream == "data" then "zfs" else "escrow"
+      }/${entry.sourceHost.hostname}/${entry.sourcePool}";
+      interval = entry.policy.schedule;
+      conflict_resolution.initial_replication = "most_recent";
+      pruning = {
+        keep_sender = [
           {
-            assertion = !hasBackups || osCfg.storage.type == "zfs";
-            message = "ZFS backups are declared for this host but storage type is '${osCfg.storage.type}'. ZFS backups require storage.type = \"zfs\".";
+            type = "regex";
+            regex = ".*";
           }
-          # ZFS incoming backups require ZFS storage on the receiver
-          {
-            assertion = !hasIncomingBackups || osCfg.storage.type == "zfs";
-            message = "ZFS incoming backups target this host but storage type is '${osCfg.storage.type}'. Receiving ZFS backups requires storage.type = \"zfs\".";
-          }
-        ]
-        ++
-          # Receiver assertions: senders must have hostPublicKey for SSH auth
-          (optionals hasIncomingBackups (
-            map (backup: {
-              assertion = backup.senderPublicKey != null;
-              message = "ZFS backup sender '${backup.senderHostname}' targets this host but has no hostPublicKey set in keystone.hosts. SSH authentication requires hostPublicKey.";
-            }) incomingBackups
-          ));
+        ];
+        keep_receiver = [
+          preserveForeign
+          (keepZrepl entry.policy)
+        ];
+      };
     }
+    // lib.optionalAttrs (entry.policy.receiveBandwidthLimit != null) {
+      recv.bandwidth_limit.max = entry.policy.receiveBandwidthLimit;
+    };
 
-    # --- Sender: sanoid snapshot management (convention rules 4-7) ---
-    (mkIf hasBackups {
-      services.sanoid = {
-        enable = true;
-        datasets = mapAttrs (_pool: _poolCfg: {
-          recursive = true;
-          process_children_only = true;
-          autoprune = true;
-          autosnap = true;
-          hourly = 24;
-          daily = 7;
-          weekly = 4;
-          monthly = 6;
-        }) backupDecls;
-      };
-    })
-
-    # --- Sender: syncoid replication (convention rules 12-21) ---
-    (mkIf hasBackups {
-      services.syncoid = {
-        enable = true;
-        interval = "hourly";
-        commands = builtins.listToAttrs syncoidCmds;
-      };
-    })
-
-    # --- Sender: snapshot metrics timer (convention rules 25-26) ---
-    (mkIf hasBackups {
-      systemd.services.zfs-snapshot-metrics = {
-        description = "Export ZFS snapshot metrics for Prometheus";
-        serviceConfig = {
-          Type = "oneshot";
-          ExecStart = snapshotMetricsScript;
-        };
-      };
-
-      systemd.timers.zfs-snapshot-metrics = {
-        description = "ZFS snapshot metrics exporter (every 5 min)";
-        wantedBy = [ "timers.target" ];
-        timerConfig = {
-          OnCalendar = "*:0/5";
-          Persistent = true;
-        };
-      };
-    })
-
-    # --- Ensure metrics directory exists ---
-    (mkIf (hasBackups || hasIncomingBackups) {
-      systemd.tmpfiles.rules = [
-        "d /var/lib/prometheus-node-exporter 0755 root root -"
+  snapJobs = map (sourcePool: {
+    type = "snap";
+    name = "snap-${slug sourcePool}";
+    filesystems = filesystems "data" // filesystems "escrow";
+    snapshotting = {
+      type = "periodic";
+      prefix = "zrepl_";
+      interval = "1h";
+    };
+    pruning.keep = [
+      preserveForeign
+      {
+        type = "grid";
+        grid = "1x1h(keep=all) | 24x1h | 7x1d | 4x7d | 6x30d";
+        regex = "^zrepl_";
+      }
+    ];
+  }) replicatedPools;
+  sourceJobs = concatMap (entry: map (mkSourceJob entry) streams) sourceTargets;
+  pullJobs = concatMap (entry: map (mkPullJob entry) streams) incoming;
+  jobs = snapJobs ++ sourceJobs ++ pullJobs;
+  remoteSourceTargets = filter (entry: !entry.local) sourceTargets;
+  ports = concatMap (entry: map (streamPort entry) streams) (
+    filter (entry: entry.policy != null) remoteSourceTargets
+  );
+  targetStrings = concatMap (pool: pool.targets) (attrValues backups);
+  policiesComplete = builtins.all (entry: entry.policy != null) (sourceTargets ++ incoming);
+  tailnetComplete = builtins.all (
+    entry:
+    entry.local
+    || (
+      entry.sourceHost.tailscaleIP != null
+      && builtins.hasAttr entry.hostKey hosts
+      && hosts.${entry.hostKey}.tailscaleIP != null
+    )
+  ) (sourceTargets ++ incoming);
+  bandwidthValid = value: value == null || builtins.match "[1-9][0-9]* (K|M|G)i?B" value != null;
+  scheduleValid = value: builtins.match "[1-9][0-9]*(s|m|h)" value != null;
+  policiesMatchTargets = builtins.all (
+    poolCfg:
+    lib.sort builtins.lessThan poolCfg.targets
+    == lib.sort builtins.lessThan (attrNames poolCfg.targetPolicies)
+  ) (attrValues backups);
+in
+{
+  config = mkIf (osCfg.enable && (backups != { } || incoming != [ ])) {
+    assertions =
+      map (target: {
+        assertion = validTarget target && builtins.hasAttr (safeParseTarget target).hostKey hosts;
+        message = "ZFS backup target '${target}' MUST reference a known '<host>:<pool>'.";
+      }) targetStrings
+      ++ [
+        {
+          assertion = osCfg.storage.type == "zfs";
+          message = "zrepl backup endpoints require ZFS storage.";
+        }
+        {
+          assertion = policiesComplete;
+          message = "Every ZFS backup target MUST define a matching targetPolicies entry.";
+        }
+        {
+          assertion = policiesMatchTargets;
+          message = "ZFS targetPolicies keys MUST exactly match the declared targets.";
+        }
+        {
+          assertion = tailnetComplete;
+          message = "Both ends of every remote ZFS target MUST declare tailscaleIP.";
+        }
+        {
+          assertion = builtins.length ports == builtins.length (unique ports);
+          message = "Remote zrepl data and escrow source ports MUST NOT collide.";
+        }
+        {
+          assertion = backups == { } || escrowDatasets == [ "rpool/credstore" ];
+          message = "The key-escrow registry MUST contain exactly rpool/credstore.";
+        }
+        {
+          assertion = backups == { } || builtins.all (dataset: hasPrefix "rpool/crypt/" dataset) dataDatasets;
+          message = "Replicated data datasets MUST be native-encrypted children of rpool/crypt.";
+        }
+        {
+          assertion = builtins.all (
+            entry: entry.policy == null || bandwidthValid entry.policy.receiveBandwidthLimit
+          ) (sourceTargets ++ incoming);
+          message = "zrepl receive bandwidth limits MUST be positive IEC byte rates such as '10 MiB'.";
+        }
+        {
+          assertion = builtins.all (entry: entry.policy == null || scheduleValid entry.policy.schedule) (
+            sourceTargets ++ incoming
+          );
+          message = "zrepl schedules MUST be positive second, minute, or hour durations such as '1h'.";
+        }
       ];
-    })
 
-    # --- Receiver: sync users (convention rules 22, 19) ---
-    (mkIf hasIncomingBackups {
-      users.users = builtins.listToAttrs (
-        map (
-          senderHostname:
-          let
-            backup = findFirst (b: b.senderHostname == senderHostname) null incomingBackups;
-          in
-          nameValuePair "${senderHostname}-sync" {
-            isSystemUser = true;
-            group = "${senderHostname}-sync";
-            home = "/var/empty";
-            shell = "${pkgs.bash}/bin/bash";
-            openssh.authorizedKeys.keys = optional (
-              backup != null && backup.senderPublicKey != null
-            ) backup.senderPublicKey;
+    services.zrepl = {
+      enable = true;
+      settings = {
+        global.monitoring = [
+          {
+            type = "prometheus";
+            listen = "127.0.0.1:9811";
           }
-        ) uniqueSenderHostnames
-      );
-
-      users.groups = builtins.listToAttrs (
-        map (senderHostname: nameValuePair "${senderHostname}-sync" { }) uniqueSenderHostnames
-      );
-    })
-
-    # --- Receiver: ZFS dataset initialization and permission delegation (convention rules 23-24) ---
-    (mkIf hasIncomingBackups {
-      system.activationScripts.zfsBackupDatasets = {
-        deps = [ "users" ];
-        text = concatStringsSep "\n" (
-          map (backup: ''
-            # Create backup dataset hierarchy if it doesn't exist
-            if ! ${zfsBin} list ${escapeShellArg "${backup.targetPool}/backups/${backup.senderHostname}/${backup.sourcePool}"} >/dev/null 2>&1; then
-              ${zfsBin} create -p ${escapeShellArg "${backup.targetPool}/backups/${backup.senderHostname}/${backup.sourcePool}"} || true
-            fi
-            # Delegate ZFS permissions to sync user
-            ${zfsBin} allow -u ${escapeShellArg "${backup.senderHostname}-sync"} receive,create,mount,rollback,destroy ${escapeShellArg "${backup.targetPool}/backups/${backup.senderHostname}"} || true
-          '') incomingBackups
-        );
+        ];
+        inherit jobs;
       };
-    })
-  ]);
+    };
+
+    # The fleet Prometheus receives Alloy remote-write metrics from every
+    # endpoint. Keep alert expressions beside the metric-producing module so
+    # consumers cannot silently retain the retired Syncoid series.
+    services.prometheus.rules = optionals config.services.prometheus.enable [
+      (builtins.toJSON {
+        groups = [
+          {
+            name = "zrepl";
+            rules = [
+              {
+                alert = "ZreplReplicationFilesystemErrors";
+                expr = "zrepl_replication_filesystem_errors > 0";
+                "for" = "10m";
+                labels.severity = "warning";
+                annotations.summary = "zrepl replication has filesystem errors on {{ $labels.instance }} ({{ $labels.zrepl_job }})";
+              }
+              {
+                alert = "ZreplReplicationFilesystemErrors";
+                expr = "zrepl_replication_filesystem_errors > 0";
+                "for" = "3h";
+                labels.severity = "critical";
+                annotations.summary = "zrepl replication keeps failing on {{ $labels.instance }} ({{ $labels.zrepl_job }})";
+              }
+              {
+                alert = "ZreplReplicationStale";
+                expr = "time() - zrepl_replication_last_successful > 2 * 3600";
+                "for" = "15m";
+                labels.severity = "warning";
+                annotations.summary = "zrepl replication is over two intervals stale on {{ $labels.instance }} ({{ $labels.zrepl_job }})";
+              }
+              {
+                alert = "ZreplReplicationStale";
+                expr = "time() - zrepl_replication_last_successful > 6 * 3600";
+                "for" = "15m";
+                labels.severity = "critical";
+                annotations.summary = "zrepl replication is critically stale on {{ $labels.instance }} ({{ $labels.zrepl_job }})";
+              }
+              {
+                alert = "ZreplSnapshotsInactive";
+                expr = "sum by (instance) (increase(zrepl_zfs_snapshot_duration_count[2h])) == 0";
+                "for" = "15m";
+                labels.severity = "warning";
+                annotations.summary = "zrepl created no snapshots for two intervals on {{ $labels.instance }}";
+              }
+              {
+                alert = "ZreplMetricsAbsent";
+                expr = "absent(zrepl_start_time)";
+                "for" = "10m";
+                labels.severity = "critical";
+                annotations.summary = "zrepl metrics are absent from Prometheus";
+              }
+              {
+                alert = "ZfsPoolCapacityHigh";
+                expr = "zfs_pool_allocated_bytes / zfs_pool_size_bytes > 0.80";
+                "for" = "30m";
+                labels.severity = "warning";
+                annotations.summary = "ZFS pool {{ $labels.pool }} on {{ $labels.instance }} is over 80% full";
+              }
+              {
+                alert = "ZfsPoolCapacityHigh";
+                expr = "zfs_pool_allocated_bytes / zfs_pool_size_bytes > 0.90";
+                "for" = "30m";
+                labels.severity = "critical";
+                annotations.summary = "ZFS pool {{ $labels.pool }} on {{ $labels.instance }} is over 90% full";
+              }
+            ];
+          }
+        ];
+      })
+    ];
+
+    networking.firewall.interfaces.tailscale0.allowedTCPPorts = ports;
+  };
 }

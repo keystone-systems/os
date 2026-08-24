@@ -196,6 +196,16 @@ in
           forward_to = [prometheus.relabel.instance.receiver]
         }
       ''
+      + lib.optionalString (cfg.enableMetrics && config.services.zrepl.enable) ''
+
+        // zrepl exposes its native Prometheus collector on loopback only.
+        prometheus.scrape "zrepl" {
+          targets = [{ __address__ = "127.0.0.1:9811" }]
+          scrape_interval = "15s"
+          job_name = "zrepl"
+          forward_to = [prometheus.relabel.instance.receiver]
+        }
+      ''
       + lib.optionalString cfg.enableMetrics ''
 
         // Relabel instance to hostname instead of IP:port

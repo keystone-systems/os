@@ -101,6 +101,46 @@ in
                               type = types.listOf types.str;
                               description = "Backup targets as 'host:pool' strings (e.g. 'maia:lake')";
                             };
+                            targetPolicies = mkOption {
+                              default = { };
+                              description = "zrepl policy keyed by the matching '<host>:<pool>' target.";
+                              type = types.attrsOf (
+                                types.submodule {
+                                  options = {
+                                    port = mkOption {
+                                      type = types.nullOr types.port;
+                                      default = null;
+                                      description = "Stable TCP source port for the data stream; escrow uses the following port.";
+                                    };
+                                    schedule = mkOption {
+                                      type = types.str;
+                                      default = "1h";
+                                      description = "Positive zrepl pull and snapshot interval.";
+                                    };
+                                    receiveBandwidthLimit = mkOption {
+                                      type = types.nullOr types.str;
+                                      default = null;
+                                      example = "10 MiB";
+                                      description = "Optional zrepl receive bandwidth maximum.";
+                                    };
+                                    retention = {
+                                      hourly = mkOption {
+                                        type = types.ints.positive;
+                                        default = 24;
+                                      };
+                                      daily = mkOption {
+                                        type = types.ints.positive;
+                                        default = 30;
+                                      };
+                                      monthly = mkOption {
+                                        type = types.ints.positive;
+                                        default = 12;
+                                      };
+                                    };
+                                  };
+                                }
+                              );
+                            };
                           };
                         }
                       );
