@@ -5,6 +5,7 @@
   config,
   pkgs,
   options,
+  terminalSharedModules,
   ...
 }:
 with lib;
@@ -12,7 +13,7 @@ let
   agentsLib = import ./lib.nix { inherit lib config pkgs; };
   inherit (agentsLib) osCfg cfg topDomain;
   inherit (agentsLib) globalAgentVncPort agentSvcHelper;
-  devScripts = import ../../shared/dev-script-link.nix { inherit lib; };
+  devScripts = import terminalSharedModules.dev-script-link { inherit lib; };
   inherit (devScripts) mkHomeScriptCommand mkSystemScriptPackage;
   projectIndexHelper = pkgs.writeShellScriptBin "keystone-project-index" (
     builtins.readFile ./scripts/project-index.sh

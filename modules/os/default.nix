@@ -226,7 +226,6 @@ in
     ../keys.nix
     ../hardware-keys.nix
     ../secrets.nix
-    ../shared/system-flake.nix
     ./notifications.nix
     ./storage.nix
     ./zfs-datasets.nix

@@ -108,6 +108,7 @@ in
             {
               nixpkgs.overlays = [ keystoneInputs.keystoneOverlay ];
               _module.args.keystoneInputs = keystoneInputs;
+              _module.args.terminalSharedModules = keystoneInputs.terminal.lib.sharedModules;
 
               keystone.installer.sshKeys = installerCfg.sshKeys;
 

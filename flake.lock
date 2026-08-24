@@ -213,11 +213,11 @@
         "walker": "walker"
       },
       "locked": {
-        "lastModified": 1787507832,
-        "narHash": "sha256-WKp89z23PDOaBmUIApNXkCboI/QRAJQncECR4knaGhM=",
+        "lastModified": 1787533235,
+        "narHash": "sha256-RuzwndRnZt7bEZ1lsCdKcmAj8W/kd7aASwJknbe82Eo=",
         "ref": "refs/heads/main",
-        "rev": "d0195e9dd85cc9514e841cc020c12f0842d65298",
-        "revCount": 39,
+        "rev": "91db7a5a5fefd83de1b262d895d79171812173e0",
+        "revCount": 41,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
       },
@@ -1615,11 +1615,11 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1787507796,
-        "narHash": "sha256-JcGYFQoNB4lzizBdDiJk7Jx2OSlPKs2WKiieAZnSEls=",
+        "lastModified": 1787533257,
+        "narHash": "sha256-f+eVHc92a6eZf9ayXcsyacELe8RaOPafkteRuKBdQkM=",
         "ref": "refs/heads/main",
-        "rev": "e3ce2504851970778df6ff7a6aacbddd830ae8c0",
-        "revCount": 2,
+        "rev": "336386e9f11e5e178165e7720e7727e572ad02f7",
+        "revCount": 4,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
       },

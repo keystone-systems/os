@@ -14,8 +14,6 @@ let
   cfg = osCfg.zram;
 in
 {
-  imports = [ ../shared/experimental.nix ];
-
   options.keystone.os.zram = {
     enable = lib.mkOption {
       type = lib.types.bool;

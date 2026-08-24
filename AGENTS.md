@@ -80,7 +80,7 @@ Terminal packages use `pkgs.keystone-terminal.*`. OS packages use
 - The terminal product is a Home Manager product. It MUST support headless hosts.
 - The desktop product MUST depend on the terminal product.
 - `keystone.repos` auto-populates from flake inputs; `keystone.development` enables local checkout paths
-- `keystone.experimental` (default `false`) gates experimental features. Defined in `modules/shared/experimental.nix`.
+- `keystone.experimental` (default `false`) gates experimental features. Its shared declaration is obtained from the already-required `ks.systems/terminal` input.
 
 ## Keystone Config Repo
 

@@ -220,13 +220,13 @@
         hosts = ./modules/hosts.nix;
 
         # Experimental feature flag (keystone.experimental)
-        experimental = ./modules/shared/experimental.nix;
+        experimental = terminal.lib.sharedModules.experimental;
 
         # Update channel selector (keystone.update.channel) — stable | unstable
-        update = ./modules/shared/update.nix;
+        update = terminal.lib.sharedModules.update;
 
         # Managed repo registry + development mode toggle (keystone.repos, keystone.development)
-        repos = ./modules/shared/repos.nix;
+        repos = terminal.lib.sharedModules.repos;
 
         # Core OS module - storage, secure boot, TPM, remote unlock, users, services
         # Pass flake inputs to installer via dedicated option — NOT _module.args,
@@ -242,13 +242,15 @@
             ./modules/domain.nix
             ./modules/services.nix
             ./modules/hosts.nix
-            ./modules/shared/experimental.nix
-            ./modules/shared/repos.nix
-            ./modules/shared/update.nix
+            terminal.lib.sharedModules.experimental
+            terminal.lib.sharedModules.repos
+            terminal.lib.sharedModules.update
+            terminal.lib.sharedModules.system-flake
             ./modules/os
             ./modules/installer.nix
           ];
           keystone.os.installer._keystoneInputs = keystoneInputs;
+          _module.args.terminalSharedModules = terminal.lib.sharedModules;
           # Auto-populate keystone.repos from flake inputs with discoverable URLs.
           # Only pass inputs that represent managed repos — not all upstream dependencies.
           keystone._repoInputs = {
@@ -317,7 +319,12 @@
         # walker here or downstream, or `programs.walker.elephant` is declared
         # twice.
         desktop = desktop.homeModules.default;
-        notes = ./modules/notes/default.nix;
+        notes = {
+          imports = [
+            terminal.lib.sharedModules.experimental
+            ./modules/notes/core.nix
+          ];
+        };
       };
 
       # Focused flake checks — run via `nix flake check` and CI.
