@@ -1,10 +1,11 @@
 # Convention: ZFS Backup (os.zfs-backup)
 
 Standards for ZFS snapshot management, off-site replication, and backup
-verification across the keystone fleet. Sanoid handles snapshot creation and
-retention; syncoid handles replication. The `keystone.hosts` registry drives
-backup topology — each host declares its source pools and target hosts, and
-all configuration auto-derives from that single declaration.
+verification across the keystone fleet. The normative replacement for this
+legacy Sanoid/Syncoid convention is
+[`REQ-033`](../docs/specs/REQ-033-zfs-dataset-registry-and-zrepl.md). New work
+MUST use the classed dataset registry and zrepl; these rules remain only to
+describe fleets that have not completed the gated migration.
 
 ## Tool Choice
 
@@ -32,8 +33,10 @@ all configuration auto-derives from that single declaration.
 6. Sanoid MUST be configured with `autoprune = true` to enforce retention limits
    automatically.
 7. Datasets that contain only immutable or reproducible data (e.g., `/nix`) SHOULD
-   set `com.sun:auto-snapshot = false` to avoid wasting snapshot space — sanoid
-   honors this ZFS property.
+   set `com.sun:auto-snapshot = false` as a compatibility marker. Sanoid does
+   **not** honor this property; legacy configurations MUST also exclude such
+   datasets explicitly. zrepl configurations MUST derive selection from the
+   classed registry.
 
 ## Backup Topology
 
