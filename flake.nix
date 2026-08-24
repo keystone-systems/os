@@ -359,6 +359,10 @@
             inherit pkgs lib;
             self = self;
           };
+          zfsDatasetRegistry = import ./tests/module/zfs-dataset-registry.nix {
+            inherit pkgs lib;
+            self = self;
+          };
           cachedUserShareEvaluation = import ./tests/module/cached-user-share-evaluation.nix {
             inherit pkgs lib;
             self = self;
@@ -466,6 +470,7 @@
         {
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
           os-evaluation = osEvaluation;
+          zfs-dataset-registry = zfsDatasetRegistry;
           cached-user-share-evaluation = cachedUserShareEvaluation;
           agent-evaluation = agentEvaluation;
           template-evaluation = templateEvaluation;

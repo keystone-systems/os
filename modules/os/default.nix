@@ -229,6 +229,7 @@ in
     ../shared/system-flake.nix
     ./notifications.nix
     ./storage.nix
+    ./zfs-datasets.nix
     ./secure-boot.nix
     ./tpm.nix
     ./zram.nix
