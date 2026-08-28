@@ -79,6 +79,9 @@ let
   dataSource = lib.findFirst (job: job.name == "source-target-lake-rpool-data") null sourceJobs;
   escrowSource = lib.findFirst (job: job.name == "source-target-lake-rpool-escrow") null sourceJobs;
   dataPull = lib.findFirst (job: job.name == "pull-source-rpool-data") null targetJobs;
+  escrowPull = lib.findFirst (job: job.name == "pull-source-rpool-escrow") null targetJobs;
+  receiverRootUnit = target.config.systemd.services.zrepl-receiver-roots;
+  receiverRootScript = receiverRootUnit.serviceConfig.ExecStart;
   prometheusTarget = eval "target" { services.prometheus.enable = true; };
   alertRules = builtins.concatStringsSep "\n" prometheusTarget.config.services.prometheus.rules;
   failingMessages =
@@ -189,6 +192,36 @@ pkgs.runCommand "zrepl-backup-evaluation" { nativeBuildInputs = [ pkgs.zrepl ]; 
       exit 1
     ''
   }
+  ${lib.optionalString
+    (
+      dataPull == null
+      || dataPull.root_fs != "lake/backups/zfs/source"
+      || escrowPull == null
+      || escrowPull.root_fs != "lake/backups/escrow/source"
+    )
+    ''
+      echo "receiver roots duplicate or omit the source pool path" >&2
+      exit 1
+    ''
+  }
+  ${lib.optionalString
+    (!(builtins.elem "zrepl-receiver-roots.service" target.config.systemd.services.zrepl.requires))
+    ''
+      echo "zrepl does not require receiver-root provisioning" >&2
+      exit 1
+    ''
+  }
+  for dataset in \
+    lake/backups \
+    lake/backups/zfs \
+    lake/backups/zfs/source \
+    lake/backups/escrow \
+    lake/backups/escrow/source; do
+    grep -F -- "$dataset" ${receiverRootScript} >/dev/null || {
+      echo "zrepl receiver-root setup omits $dataset" >&2
+      exit 1
+    }
+  done
   ${lib.optionalString (!hasFailure "known '<host>:<pool>'" unknownTarget) ''
     echo "unknown target did not fail closed" >&2
     exit 1

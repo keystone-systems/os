@@ -2,6 +2,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 let
@@ -173,6 +174,10 @@ let
         type = "tcp";
         address = "${entry.sourceHost.tailscaleIP}:${toString (streamPort entry stream)}";
       };
+  receiverRootPrefix =
+    entry: stream: "${entry.pool}/backups/${if stream == "data" then "zfs" else "escrow"}";
+  receiverRoot = entry: stream: "${receiverRootPrefix entry stream}/${entry.sourceHost.hostname}";
+  receiverRootBase = entry: "${entry.pool}/backups";
   mkSourceJob = entry: stream: {
     type = "source";
     name = "source-${slug entry.target}-${slug entry.sourcePool}-${stream}";
@@ -194,9 +199,9 @@ let
       type = "pull";
       name = "pull-${slug entry.sourceHost.hostname}-${slug entry.sourcePool}-${stream}";
       connect = mkConnect entry stream;
-      root_fs = "${entry.pool}/backups/${
-        if stream == "data" then "zfs" else "escrow"
-      }/${entry.sourceHost.hostname}/${entry.sourcePool}";
+      # zrepl appends the complete source dataset path below root_fs. Keep the
+      # source pool out of this prefix so rpool/crypt/... lands exactly once.
+      root_fs = receiverRoot entry stream;
       interval = entry.policy.schedule;
       conflict_resolution.initial_replication = "most_recent";
       pruning = {
@@ -236,6 +241,32 @@ let
   }) replicatedPools;
   sourceJobs = concatMap (entry: map (mkSourceJob entry) streams) sourceTargets;
   pullJobs = concatMap (entry: map (mkPullJob entry) streams) incoming;
+  receiverRootDatasets = unique (
+    concatMap (
+      entry:
+      concatMap (stream: [
+        (receiverRootBase entry)
+        (receiverRootPrefix entry stream)
+        (receiverRoot entry stream)
+      ]) streams
+    ) incoming
+  );
+  receiverRootSetup = pkgs.writeShellScript "zrepl-receiver-roots" ''
+    set -eu
+    ${lib.concatMapStringsSep "\n" (dataset: ''
+      if ! ${config.boot.zfs.package}/bin/zfs list -H -o name ${lib.escapeShellArg dataset} >/dev/null 2>&1; then
+        ${config.boot.zfs.package}/bin/zfs create \
+          -o canmount=off \
+          -o mountpoint=none \
+          ${lib.escapeShellArg dataset}
+      fi
+      type="$(${config.boot.zfs.package}/bin/zfs get -H -o value type ${lib.escapeShellArg dataset})"
+      if [ "$type" != filesystem ]; then
+        echo "zrepl receiver root ${dataset} exists but is not a filesystem" >&2
+        exit 1
+      fi
+    '') receiverRootDatasets}
+  '';
   jobs = snapJobs ++ sourceJobs ++ pullJobs;
   remoteSourceTargets = filter (entry: !entry.local) sourceTargets;
   ports = concatMap (entry: map (streamPort entry) streams) (
@@ -320,6 +351,23 @@ in
           }
         ];
         inherit jobs;
+      };
+    };
+
+    systemd.services = mkIf (incoming != [ ]) {
+      zrepl = {
+        requires = [ "zrepl-receiver-roots.service" ];
+        after = [ "zrepl-receiver-roots.service" ];
+      };
+      zrepl-receiver-roots = {
+        description = "Provision fail-closed zrepl receiver roots";
+        after = [ "zfs-mount.service" ];
+        before = [ "zrepl.service" ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = receiverRootSetup;
+          RemainAfterExit = true;
+        };
       };
     };
 
