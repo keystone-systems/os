@@ -213,11 +213,11 @@
         "walker": "walker"
       },
       "locked": {
-        "lastModified": 1787718799,
-        "narHash": "sha256-O+6K2AnB3nfxyLSzOm4pr9QDiCBKQ2+YbOnOSZiq5yg=",
-        "ref": "refs/heads/fix/lid-sleep-and-battery-monitor",
-        "rev": "adb1020deeec3e67ba163213763ea29ecacf36fb",
-        "revCount": 48,
+        "lastModified": 1787977579,
+        "narHash": "sha256-4lDVZoIpxBPxRoG1ATF9J3JWCp+pjA2mfiu7NhyIrZE=",
+        "ref": "refs/heads/main",
+        "rev": "7d634bff015a51bfc3ae1b010906c4645e6c1c08",
+        "revCount": 50,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
       },
