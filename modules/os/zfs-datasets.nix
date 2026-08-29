@@ -1,4 +1,4 @@
-# Classed ZFS dataset registry and non-destructive reconciler (REQ-033).
+# Role-aware ZFS dataset registry and non-destructive reconciler (REQ-033).
 {
   config,
   lib,
@@ -21,8 +21,46 @@ let
     types
     ;
   cfg = config.keystone.os.storage;
-  datasets = cfg.zfs.datasets;
+  rootNames = [
+    "users"
+    "shared"
+    "services"
+    "device-backups"
+    "vms"
+    "scratch"
+    "replicas"
+    "migrations"
+    "legacy"
+  ];
+  generatedRoots = lib.foldlAttrs (
+    result: pool: poolCfg:
+    result
+    // lib.listToAttrs (
+      map (root: {
+        name = "${pool}/${root}";
+        value = {
+          class = "ephemeral";
+          role = "structural";
+          managed = true;
+          mountpoint = null;
+          preserveExisting = false;
+          properties = {
+            canmount = "off";
+            mountpoint = "none";
+          };
+        };
+      }) (builtins.filter (root: poolCfg.roots.${root}) rootNames)
+    )
+  ) { } (filterAttrs (_: pool: pool.role == "fleet-data") cfg.zfs.pools);
+  datasets = cfg.zfs.datasets // generatedRoots;
   managed = filterAttrs (_: dataset: dataset.managed) datasets;
+  poolOf = name: builtins.head (lib.splitString "/" name);
+  systemManaged = filterAttrs (
+    name: _: (cfg.zfs.pools.${poolOf name} or { role = "system"; }).role == "system"
+  ) managed;
+  fleetManaged = filterAttrs (
+    name: _: (cfg.zfs.pools.${poolOf name} or { role = "system"; }).role == "fleet-data"
+  ) managed;
   zfs = "${config.boot.zfs.package}/bin/zfs";
 
   # Effective mountpoint of a registry entry: the dedicated option, or a raw
@@ -42,6 +80,12 @@ let
     mountpoint != null && mountpoint != "none" && mountpoint != "legacy";
 
   filesystemDatasets = filterAttrs (_: isFilesystemMount) managed;
+  diskoDatasets = filterAttrs (name: _: lib.hasPrefix "rpool/" name) filesystemDatasets;
+  importServices = lib.unique (
+    builtins.filter (service: service != null) (
+      mapAttrsToList (_: pool: pool.importService) cfg.zfs.pools
+    )
+  );
 
   reconcileDataset =
     name: dataset:
@@ -158,84 +202,178 @@ let
     '';
 in
 {
-  options.keystone.os.storage.zfs.datasets = mkOption {
-    default = { };
-    description = ''
-      Registry of ZFS datasets keyed by their full ZFS name. Managed entries
-      are created and have declared properties reasserted; observed entries
-      are policy inputs only.
-    '';
-    type = types.attrsOf (
-      types.submodule (
-        { name, ... }:
-        {
+  options.keystone.os.storage.zfs = {
+    pools = mkOption {
+      default.rpool = {
+        role = "system";
+        importService = null;
+      };
+      description = "ZFS pools available to the dataset registry.";
+      type = types.attrsOf (
+        types.submodule {
           options = {
-            class = mkOption {
+            role = mkOption {
               type = types.enum [
                 "system"
-                "state"
-                "critical-state"
-                "log"
-                "cache"
-                "ephemeral"
-                "key-escrow"
+                "fleet-data"
               ];
-              description = "Snapshot and replication policy class for ${name}.";
+              description = "Whether the pool contains an operating system or fleet data.";
             };
-            managed = mkOption {
-              type = types.bool;
-              default = true;
-              description = "Whether Keystone creates the dataset and reasserts its properties.";
-            };
-            mountpoint = mkOption {
+            importService = mkOption {
               type = types.nullOr types.str;
               default = null;
-              description = "Optional managed ZFS mountpoint property.";
+              description = "Systemd unit that imports a non-root pool before reconciliation.";
             };
-            preserveExisting = mkOption {
-              type = types.bool;
-              default = false;
-              description = "Migrate existing mountpoint contents when first creating the dataset.";
-            };
-            properties = mkOption {
-              type = types.attrsOf types.str;
-              default = { };
-              description = "ZFS properties reasserted for a managed dataset.";
-            };
+            roots = lib.genAttrs rootNames (
+              root:
+              mkOption {
+                type = types.bool;
+                default =
+                  !builtins.elem root [
+                    "migrations"
+                    "legacy"
+                  ];
+                description = "Create the structural ${root} root on a fleet-data pool.";
+              }
+            );
           };
         }
-      )
-    );
+      );
+    };
+
+    datasets = mkOption {
+      default = { };
+      description = ''
+        Registry of ZFS datasets keyed by their full ZFS name. Managed entries
+        are created and have declared properties reasserted; observed entries
+        are policy inputs only.
+      '';
+      type = types.attrsOf (
+        types.submodule (
+          { name, ... }:
+          {
+            options = {
+              class = mkOption {
+                type = types.enum [
+                  "system"
+                  "state"
+                  "critical-state"
+                  "log"
+                  "cache"
+                  "ephemeral"
+                  "key-escrow"
+                ];
+                description = "Snapshot and replication policy class for ${name}.";
+              };
+              role = mkOption {
+                type = types.enum [
+                  "system"
+                  "user"
+                  "shared"
+                  "service"
+                  "device-backup"
+                  "vm"
+                  "scratch"
+                  "replica"
+                  "migration"
+                  "legacy"
+                  "structural"
+                ];
+                default = "system";
+                description = "Fleet layout role for ${name}; independent of snapshot retention class.";
+              };
+              managed = mkOption {
+                type = types.bool;
+                default = true;
+                description = "Whether Keystone creates the dataset and reasserts its properties.";
+              };
+              mountpoint = mkOption {
+                type = types.nullOr types.str;
+                default = null;
+                description = "Optional managed ZFS mountpoint property.";
+              };
+              preserveExisting = mkOption {
+                type = types.bool;
+                default = false;
+                description = "Migrate existing mountpoint contents when first creating the dataset.";
+              };
+              properties = mkOption {
+                type = types.attrsOf types.str;
+                default = { };
+                description = "ZFS properties reasserted for a managed dataset.";
+              };
+            };
+          }
+        )
+      );
+    };
   };
 
   # Consumers with an existing disko layout disable Keystone partitioning but
   # still use this registry to declaratively reconcile datasets.
   config = mkIf (config.keystone.os.enable && cfg.type == "zfs" && managed != { }) (mkMerge [
     {
-      assertions = mapAttrsToList (name: dataset: {
-        assertion =
-          lib.hasPrefix "rpool/" name && !(dataset.properties ? mountpoint && dataset.mountpoint != null);
-        message = "ZFS registry entry '${name}' MUST use an rpool/ name and MUST NOT declare mountpoint twice.";
-      }) managed;
+      assertions =
+        mapAttrsToList (
+          name: dataset:
+          let
+            pool = builtins.head (lib.splitString "/" name);
+            poolCfg = cfg.zfs.pools.${pool} or null;
+          in
+          {
+            assertion =
+              builtins.match "[^/]+/.+" name != null
+              && poolCfg != null
+              && !(dataset.properties ? mountpoint && dataset.mountpoint != null)
+              && (pool == "rpool" || (poolCfg.role == "fleet-data" && poolCfg.importService != null));
+            message = "ZFS registry entry '${name}' MUST name a declared pool, avoid duplicate mountpoints, and use an import service for non-rpool fleet-data pools.";
+          }
+        ) managed
+        ++ mapAttrsToList (pool: poolCfg: {
+          assertion = pool == "rpool" || poolCfg.role != "fleet-data" || poolCfg.importService != null;
+          message = "Fleet-data pool '${pool}' MUST declare importService.";
+        }) cfg.zfs.pools;
 
-      systemd.services.keystone-zfs-datasets = {
-        description = "Reconcile Keystone-managed ZFS datasets";
-        wantedBy = [ "local-fs.target" ];
-        after = [ "zfs-mount.service" ];
-        requires = [ "zfs-mount.service" ];
-        before = [ "local-fs.target" ];
-        unitConfig.DefaultDependencies = false;
-        path = [
-          pkgs.coreutils
-          pkgs.findutils
-          pkgs.rsync
-        ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-        };
-        script = concatStringsSep "\n" (mapAttrsToList reconcileDataset managed);
-      };
+      systemd.services = mkMerge [
+        (mkIf (systemManaged != { }) {
+          keystone-zfs-datasets = {
+            description = "Reconcile Keystone-managed system ZFS datasets";
+            wantedBy = [ "local-fs.target" ];
+            after = [ "zfs-mount.service" ];
+            requires = [ "zfs-mount.service" ];
+            before = [ "local-fs.target" ];
+            unitConfig.DefaultDependencies = false;
+            path = [
+              pkgs.coreutils
+              pkgs.findutils
+              pkgs.rsync
+            ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = concatStringsSep "\n" (mapAttrsToList reconcileDataset systemManaged);
+          };
+        })
+        (mkIf (fleetManaged != { }) {
+          keystone-zfs-fleet-datasets = {
+            description = "Reconcile Keystone-managed fleet-data ZFS datasets";
+            wantedBy = [ "multi-user.target" ];
+            after = importServices;
+            requires = importServices;
+            path = [
+              pkgs.coreutils
+              pkgs.findutils
+              pkgs.rsync
+            ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = concatStringsSep "\n" (mapAttrsToList reconcileDataset fleetManaged);
+          };
+        })
+      ];
     }
 
     # Only hosts whose partitioning Keystone owns get a Disko layout. The
@@ -251,7 +389,7 @@ in
           mountpoint = mountpointOf dataset;
           mountOptions = [ "nofail" ];
         }
-      ) filesystemDatasets;
+      ) diskoDatasets;
     })
   ]);
 }

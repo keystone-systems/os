@@ -229,6 +229,7 @@ in
     ./notifications.nix
     ./storage.nix
     ./zfs-datasets.nix
+    ./device-backups.nix
     ./secure-boot.nix
     ./tpm.nix
     ./zram.nix
@@ -259,6 +260,15 @@ in
 
   options.keystone.os = {
     enable = mkEnableOption "Keystone OS - secure storage, boot, and user management";
+
+    networks.headscale = mkOption {
+      type = types.listOf types.str;
+      default = [
+        "100.64.0.0/10"
+        "fd7a:115c:a1e0::/48"
+      ];
+      description = "IP networks assigned to the current Headscale tailnet.";
+    };
 
     hostKind = mkOption {
       type = types.enum [

@@ -387,6 +387,10 @@
             inherit pkgs lib;
             self = self;
           };
+          deviceBackupsEvaluation = import ./tests/module/device-backups-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
           cachedUserShareEvaluation = import ./tests/module/cached-user-share-evaluation.nix {
             inherit pkgs lib;
             self = self;
@@ -500,6 +504,7 @@
           ollama-zfs-dataset = ollamaZfsDataset;
           zfs-dataset-migration = zfsDatasetMigration;
           zrepl-backup-evaluation = zreplBackupEvaluation;
+          device-backups-evaluation = deviceBackupsEvaluation;
           cached-user-share-evaluation = cachedUserShareEvaluation;
           agent-evaluation = agentEvaluation;
           template-evaluation = templateEvaluation;
@@ -533,6 +538,7 @@
             ln -s ${osEvaluation} "$out/os-evaluation"
             ln -s ${zvolStorageEvaluation} "$out/zvol-storage-evaluation"
             ln -s ${zfsDatasetRegistry} "$out/zfs-dataset-registry"
+            ln -s ${deviceBackupsEvaluation} "$out/device-backups-evaluation"
             ln -s ${ollamaZfsDataset} "$out/ollama-zfs-dataset"
             ln -s ${cachedUserShareEvaluation} "$out/cached-user-share-evaluation"
             ln -s ${agentEvaluation} "$out/agent-evaluation"

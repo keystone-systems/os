@@ -22,7 +22,7 @@ properties. It MUST NOT destroy a dataset or mount over a non-empty path.
 **REQ-033.4** Durable classes (`system`, `state`, and `critical-state`) MUST use
 24 hourly, 7 daily, 4 weekly, and 6 monthly local snapshots by default.
 `cache`, `ephemeral`, and the current `log` policy MUST NOT be snapshotted or
-replicated. `key-escrow` MUST be handled only by its dedicated stream.
+replicated. `key-escrow` MUST be handled only by its dedicated credstore stream.
 
 ## Topology
 
@@ -44,13 +44,13 @@ distinct source job per receiver. Snapshot selection MUST be derived from the
 registry and MUST use the `zrepl_` prefix.
 
 **REQ-033.8** Native-encrypted filesystems and the `rpool/credstore` LUKS zvol
-MUST use separate, non-overlapping jobs. Evaluation MUST reject a mixed or
-overlapping filter.
+MUST use separate jobs and separate zrepl daemon instances so their send
+policies can differ while both preserve the same receiver hierarchy.
 
 **REQ-033.9** The data job MUST select only registry-derived encrypted durable
-filesystems and set `send.encrypted = true`. The escrow job MUST select exactly
-`rpool/credstore`, set `send.raw = true`, and set `encrypted = false`. A
-receiver MUST remain unable to read the native-encrypted data stream; the
+filesystems and set `send.encrypted = true`. The credstore job MUST select
+exactly `rpool/credstore`, set `send.raw = true`, and set `encrypted = false`.
+A receiver MUST remain unable to read the native-encrypted data stream; the
 credstore remains protected by its inner LUKS container.
 
 **REQ-033.10** Receivers MUST own pull jobs. A same-host source and receiver
@@ -58,9 +58,11 @@ MUST use local transport; remote receivers MUST use authenticated TCP over the
 tailnet. Fan-out jobs MUST be independent and MUST NOT relay one receiver
 through another.
 
-**REQ-033.11** Data destinations MUST be
-`<pool>/backups/zfs/<source>/<source-pool>/...`; escrow destinations MUST be
-`<pool>/backups/escrow/<source>/<source-pool>/credstore`.
+**REQ-033.11** Every destination MUST preserve a one-to-one copy of the source
+hierarchy below `<pool>/replicas/<source>/`. A source dataset
+`<source-pool>/<path>` MUST land at
+`<pool>/replicas/<source>/<source-pool>/<path>` without transport-specific
+dataset levels.
 
 **REQ-033.12** Receiver retention MUST default to 24 hourly, 30 daily, and 12
 monthly snapshots. Initial replication MUST use `most_recent`. Invalid
@@ -99,10 +101,10 @@ pruning.
 
 ## Verification
 
-Module evaluation tests MUST reject mixed streams, overlapping filters,
-unknown targets, missing tailnet identities, port conflicts, and invalid
-bandwidth or retention settings. A three-host VM test MUST prove exclusions,
-strict raw-encrypted fan-out, receiver-owned pruning, bandwidth configuration,
+Module evaluation tests MUST reject mixed streams, unknown
+targets, missing tailnet identities, port conflicts, and invalid bandwidth or
+retention settings. A three-host VM test MUST prove exclusions, strict
+raw-encrypted fan-out, receiver-owned pruning, bandwidth configuration,
 credstore zvol replication, incremental recovery after lag, and resumable
 receives. Release verification MUST include `zrepl configcheck`, `zrepl test
 filesystems`, Keystone flake checks, consumer host evaluation, and exact source
@@ -114,4 +116,3 @@ and receiver closure builds.
   container.
 - An age/SOPS-encrypted `cryptsetup luksHeaderBackup` SHOULD be refreshed after
   enrollment changes.
-

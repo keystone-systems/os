@@ -37,6 +37,19 @@ let
                   managed = false;
                 };
               };
+              zfs.pools.ocean = {
+                role = "fleet-data";
+                importService = "import-ocean.service";
+                roots = {
+                  migrations = true;
+                  legacy = true;
+                };
+              };
+              zfs.datasets."ocean/shared/media" = {
+                class = "state";
+                role = "shared";
+                mountpoint = "/ocean/media";
+              };
             };
             users.test = {
               fullName = "Test User";
@@ -52,6 +65,8 @@ let
   partitioned = eval true [ ];
   script = runtimeOnly.config.systemd.services.keystone-zfs-datasets.script;
   service = runtimeOnly.config.systemd.services.keystone-zfs-datasets;
+  fleetScript = runtimeOnly.config.systemd.services.keystone-zfs-fleet-datasets.script;
+  fleetService = runtimeOnly.config.systemd.services.keystone-zfs-fleet-datasets;
   invalid = eval false [
     {
       keystone.os.storage.zfs.datasets."other/data" = {
@@ -62,12 +77,41 @@ let
     }
   ];
   invalidAssertions = builtins.filter (assertion: !assertion.assertion) invalid.config.assertions;
+  missingImport = eval false [
+    {
+      keystone.os.storage.zfs.pools.ocean.role = "fleet-data";
+    }
+  ];
+  missingImportAssertions = builtins.filter (
+    assertion: !assertion.assertion
+  ) missingImport.config.assertions;
 in
 pkgs.runCommand "zfs-dataset-registry-evaluation" { } ''
   ${lib.optionalString (!lib.hasInfix "rpool/crypt/home/test" script) ''
     echo "explicit dataset is absent when partition management is disabled" >&2
     exit 1
   ''}
+  ${lib.optionalString (!lib.hasInfix "ocean/shared/media" fleetScript) ''
+    echo "fleet-data dataset is absent from reconciliation" >&2
+    exit 1
+  ''}
+  ${lib.optionalString
+    (!lib.hasInfix "ocean/device-backups" fleetScript || !lib.hasInfix "ocean/legacy" fleetScript)
+    ''
+      echo "fleet-data structural roots are incomplete" >&2
+      exit 1
+    ''
+  }
+  ${lib.optionalString
+    (
+      !lib.elem "import-ocean.service" fleetService.after
+      || !lib.elem "import-ocean.service" fleetService.requires
+    )
+    ''
+      echo "fleet-data import service ordering is absent" >&2
+      exit 1
+    ''
+  }
   ${lib.optionalString (lib.hasInfix "rpool/crypt/cache/test" script) ''
     echo "observed dataset leaked into reconciler" >&2
     exit 1
@@ -139,6 +183,12 @@ pkgs.runCommand "zfs-dataset-registry-evaluation" { } ''
     echo "partition-managed registry dataset is absent from Disko" >&2
     exit 1
   ''}
+  ${lib.optionalString (partitioned.config.disko.devices.zpool.rpool.datasets ? "ocean/shared/media")
+    ''
+      echo "fleet-data dataset leaked into the rpool Disko layout" >&2
+      exit 1
+    ''
+  }
   ${lib.optionalString
     (
       !lib.elem "nofail"
@@ -151,6 +201,10 @@ pkgs.runCommand "zfs-dataset-registry-evaluation" { } ''
   }
   ${lib.optionalString (invalidAssertions == [ ]) ''
     echo "invalid registry entry did not fail an assertion" >&2
+    exit 1
+  ''}
+  ${lib.optionalString (missingImportAssertions == [ ]) ''
+    echo "fleet-data pool without import service did not fail" >&2
     exit 1
   ''}
   touch "$out"
