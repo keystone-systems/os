@@ -227,12 +227,13 @@ pkgs.runCommand "zrepl-backup-evaluation" { nativeBuildInputs = [ pkgs.zrepl ]; 
   ${lib.optionalString
     (
       dataPull == null
+      || dataPull.recv.placeholder.encryption != "off"
       || dataPull.recv.properties.override.mountpoint != "none"
       || dataPull.recv.properties.override.canmount != "off"
       || dataPull.recv.properties.override."org.openzfs.systemd:ignore" != "on"
     )
     ''
-      echo "received filesystems are not forced non-mounting" >&2
+      echo "REQ-033.19 data receives do not use unencrypted, non-mounting placeholders" >&2
       exit 1
     ''
   }
@@ -242,6 +243,10 @@ pkgs.runCommand "zrepl-backup-evaluation" { nativeBuildInputs = [ pkgs.zrepl ]; 
   }
   grep -F -- 'mountpoint: none' ${targetCredstoreConfig} >/dev/null || {
     echo "credstore receives are not forced non-mounting" >&2
+    exit 1
+  }
+  grep -A1 -F -- 'placeholder:' ${targetCredstoreConfig} | grep -F -- "encryption: 'off'" >/dev/null || {
+    echo "REQ-033.19 credstore receives do not use unencrypted placeholders" >&2
     exit 1
   }
   ${lib.optionalString
