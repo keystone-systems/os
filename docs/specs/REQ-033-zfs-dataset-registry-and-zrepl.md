@@ -99,6 +99,10 @@ healthy soak have succeeded.
 snapshots. Manual and `migration-*` snapshots MUST remain outside automatic
 pruning.
 
+**REQ-033.19** Pull receivers MUST set `recv.placeholder.encryption = "off"`
+for structural placeholder filesystems. Native-encrypted child streams MUST
+remain raw encrypted, and received datasets MUST remain nonmounting.
+
 ## Verification
 
 Module evaluation tests MUST reject mixed streams, unknown
