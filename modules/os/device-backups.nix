@@ -26,8 +26,8 @@ let
   backupList = attrValues backups;
   users = unique (map (backup: backup.auth.user) backupList);
   userServices = map (user: "keystone-samba-user-${user}.service") users;
-  leaf = backup: if backup.kind == "time-machine" then "timemachine" else "files";
-  dataset = name: backup: "${backup.pool}/device-backups/${name}/${leaf backup}";
+  namespace = backup: if backup.kind == "time-machine" then "timemachine" else "images";
+  dataset = name: backup: "${backup.pool}/clients/${namespace backup}/${name}";
   mountpoint = name: backup: "/${dataset name backup}";
   userBackup = user: findFirst (backup: backup.auth.user == user) null backupList;
   shares = mapAttrs' (
@@ -135,7 +135,7 @@ in
       mapAttrsToList (
         name: backup:
         let
-          parent = "${backup.pool}/device-backups/${name}";
+          parent = "${backup.pool}/clients/${namespace backup}";
           target = dataset name backup;
         in
         {

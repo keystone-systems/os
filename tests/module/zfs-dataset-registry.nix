@@ -96,7 +96,7 @@ pkgs.runCommand "zfs-dataset-registry-evaluation" { } ''
     exit 1
   ''}
   ${lib.optionalString
-    (!lib.hasInfix "ocean/device-backups" fleetScript || !lib.hasInfix "ocean/legacy" fleetScript)
+    (!lib.hasInfix "ocean/clients" fleetScript || !lib.hasInfix "ocean/legacy" fleetScript)
     ''
       echo "fleet-data structural roots are incomplete" >&2
       exit 1

@@ -25,7 +25,7 @@ let
     "users"
     "shared"
     "services"
-    "device-backups"
+    "clients"
     "vms"
     "scratch"
     "replicas"

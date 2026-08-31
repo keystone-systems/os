@@ -52,20 +52,60 @@ let
     keystone.os.storage.deviceBackups.macbook.pool = lib.mkForce "missing";
   };
   invalidAssertions = builtins.filter (assertion: !assertion.assertion) invalid.config.assertions;
-  dataset =
-    configured.config.keystone.os.storage.zfs.datasets."ocean/device-backups/macbook/timemachine";
+  datasets = configured.config.keystone.os.storage.zfs.datasets;
+  timeMachineDataset = datasets."ocean/clients/timemachine/macbook";
+  filesDataset = datasets."ocean/clients/images/phone";
   share = configured.config.services.samba.settings."timemachine-macbook";
   phoneShare = configured.config.services.samba.settings."timemachine-phone";
   sambaGlobal = configured.config.services.samba.settings.global;
   mountGuard = configured.config.systemd.services.keystone-device-backup-mounts;
 in
 pkgs.runCommand "device-backups-evaluation" { } ''
-  ${lib.optionalString (dataset.role != "device-backup" || dataset.properties.quota != "2T") ''
-    echo "device backup dataset contract is incomplete" >&2
+  ${lib.optionalString
+    (
+      timeMachineDataset.role != "device-backup"
+      || timeMachineDataset.properties.quota != "2T"
+      || filesDataset.role != "device-backup"
+      || filesDataset.properties.quota != "100G"
+    )
+    ''
+      echo "device backup dataset contracts are incomplete" >&2
+      exit 1
+    ''
+  }
+  ${lib.optionalString
+    (
+      datasets."ocean/clients/timemachine".properties != {
+        canmount = "off";
+        mountpoint = "none";
+      }
+      ||
+        datasets."ocean/clients/images".properties != {
+          canmount = "off";
+          mountpoint = "none";
+        }
+    )
+    ''
+      echo "device backup structural namespaces are incomplete" >&2
+      exit 1
+    ''
+  }
+  ${lib.optionalString
+    (
+      builtins.any (name: lib.hasPrefix "ocean/device-backups/" name) (builtins.attrNames datasets)
+      || datasets ? "ocean/device-backups"
+    )
+    ''
+      echo "legacy device backup datasets are still generated" >&2
+      exit 1
+    ''
+  }
+  ${lib.optionalString (share.path != "/ocean/clients/timemachine/macbook") ''
+    echo "Time Machine share does not target its canonical client dataset" >&2
     exit 1
   ''}
-  ${lib.optionalString (share.path != "/ocean/device-backups/macbook/timemachine") ''
-    echo "device backup share does not target its leaf dataset" >&2
+  ${lib.optionalString (phoneShare.path != "/ocean/clients/images/phone") ''
+    echo "files share does not target its canonical client dataset" >&2
     exit 1
   ''}
   ${lib.optionalString ((share."fruit:time machine" or "") != "yes") ''
