@@ -366,6 +366,10 @@
             inherit pkgs lib;
             self = self;
           };
+          espPermissionsEvaluation = import ./tests/module/esp-permissions-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
           zfsDatasetRegistry = import ./tests/module/zfs-dataset-registry.nix {
             inherit pkgs lib;
             self = self;
@@ -498,6 +502,7 @@
         {
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
           os-evaluation = osEvaluation;
+          esp-permissions-evaluation = espPermissionsEvaluation;
           zfs-dataset-registry = zfsDatasetRegistry;
           zvol-storage-evaluation = zvolStorageEvaluation;
           virtual-machine-unit = virtualMachineUnit;
@@ -536,6 +541,7 @@
           check-eval = pkgs.runCommand "check-eval" { } ''
             mkdir -p "$out"
             ln -s ${osEvaluation} "$out/os-evaluation"
+            ln -s ${espPermissionsEvaluation} "$out/esp-permissions-evaluation"
             ln -s ${zvolStorageEvaluation} "$out/zvol-storage-evaluation"
             ln -s ${zfsDatasetRegistry} "$out/zfs-dataset-registry"
             ln -s ${deviceBackupsEvaluation} "$out/device-backups-evaluation"

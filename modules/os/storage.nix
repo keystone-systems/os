@@ -266,6 +266,10 @@ in
                         type = "filesystem";
                         format = "vfat";
                         mountpoint = "/boot";
+                        # The ESP contains Secure Boot artifacts and systemd's
+                        # random seed. VFAT has no Unix ownership metadata, so
+                        # enforce root-only access through its mount mask.
+                        mountOptions = [ "umask=0077" ];
                       };
                     };
                     # ZFS partition - leave room for swap on last disk
@@ -417,6 +421,10 @@ in
                   type = "filesystem";
                   format = "vfat";
                   mountpoint = "/boot";
+                  # Keep the LVM backend's ESP as private as the ZFS backend.
+                  # Lanzaboote writes as root and remains compatible with this
+                  # VFAT mask.
+                  mountOptions = [ "umask=0077" ];
                 };
               };
               root = {

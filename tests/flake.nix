@@ -165,6 +165,11 @@
           self = keystone;
         };
 
+        test-esp-permissions-evaluation = import ./module/esp-permissions-evaluation.nix {
+          inherit pkgs lib;
+          self = keystone;
+        };
+
         test-cached-user-share-evaluation = import ./module/cached-user-share-evaluation.nix {
           inherit pkgs lib;
           self = keystone;
