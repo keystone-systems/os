@@ -103,6 +103,13 @@ pruning.
 for structural placeholder filesystems. Native-encrypted child streams MUST
 remain raw encrypted, and received datasets MUST remain nonmounting.
 
+Amendment (2026-08-31): Pull receivers MUST NOT apply filesystem-only
+`mountpoint` or `canmount` overrides to received streams because a stream MAY
+contain ZFS volumes. Receiver-root provisioning MUST keep structural parent
+filesystems nonmounting with `mountpoint=none` and `canmount=off`. Pull jobs
+MUST set `org.openzfs.systemd:ignore=on`, which is valid for filesystems and
+volumes, on received datasets.
+
 ## Verification
 
 Module evaluation tests MUST reject mixed streams, unknown

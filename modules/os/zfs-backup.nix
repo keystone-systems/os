@@ -231,8 +231,6 @@ let
     recv = {
       placeholder.encryption = "off";
       properties.override = {
-        mountpoint = "none";
-        canmount = "off";
         "org.openzfs.systemd:ignore" = "on";
       };
     }
