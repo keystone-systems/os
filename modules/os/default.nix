@@ -853,8 +853,18 @@ in
     # Firewall configuration
     networking.firewall.enable = cfg.services.firewall.enable;
 
-    # DNS resolution
-    services.resolved.enable = cfg.services.resolved.enable;
+    # Keep systemd-resolved as the DNS integration point without letting it
+    # compete with Avahi for multicast DNS.  Avahi is Keystone's sole mDNS
+    # responder.
+    services.resolved = {
+      enable = cfg.services.resolved.enable;
+      settings.Resolve.MulticastDNS = false;
+    };
+
+    # NetworkManager must not opt individual connections back into mDNS when
+    # Avahi owns discovery for the host.
+    networking.networkmanager.connectionConfig."connection.mdns" =
+      mkIf config.networking.networkmanager.enable 0;
 
     # Nix configuration
     nix.settings.experimental-features = mkIf cfg.nix.flakes [

@@ -427,6 +427,74 @@ let
       touch $out
     '';
 
+  assertMdnsOwnership =
+    name:
+    {
+      avahiEnable,
+      resolvedEnable,
+      networkManagerEnable,
+    }:
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.os.services = {
+              avahi.enable = avahiEnable;
+              resolved.enable = resolvedEnable;
+            };
+            networking.networkmanager.enable = networkManagerEnable;
+          }
+        ];
+      };
+      actualAvahi = result.config.services.avahi.enable;
+      actualResolved = result.config.services.resolved.enable;
+      actualResolvedMdns = result.config.services.resolved.settings.Resolve.MulticastDNS;
+      actualNetworkManagerDns = result.config.networking.networkmanager.dns;
+      expectedNetworkManagerDns = if resolvedEnable then "systemd-resolved" else "default";
+      hasNetworkManagerConfig = builtins.hasAttr "NetworkManager/NetworkManager.conf" result.config.environment.etc;
+      networkManagerConfig =
+        if hasNetworkManagerConfig then
+          result.config.environment.etc."NetworkManager/NetworkManager.conf".source
+        else
+          null;
+      ok =
+        actualAvahi == avahiEnable
+        && actualResolved == resolvedEnable
+        && actualResolvedMdns == false
+        && actualNetworkManagerDns == expectedNetworkManagerDns
+        && hasNetworkManagerConfig == networkManagerEnable;
+    in
+    pkgs.runCommand "mdns-ownership-${name}" { } ''
+      ${lib.optionalString (!ok) ''
+        echo "FAIL: mDNS ownership ${name} did not match its expected state" >&2
+        echo 'avahi=${builtins.toJSON actualAvahi}' >&2
+        echo 'resolved=${builtins.toJSON actualResolved}' >&2
+        echo 'resolvedMdns=${builtins.toJSON actualResolvedMdns}' >&2
+        echo 'networkManagerDns=${builtins.toJSON actualNetworkManagerDns}' >&2
+        echo 'hasNetworkManagerConfig=${builtins.toJSON hasNetworkManagerConfig}' >&2
+        exit 1
+      ''}
+      ${lib.optionalString networkManagerEnable ''
+        if ! grep -Fqx 'connection.mdns=0' ${networkManagerConfig}; then
+          echo 'FAIL: rendered NetworkManager [connection] policy lacks connection.mdns=0' >&2
+          cat ${networkManagerConfig} >&2
+          exit 1
+        fi
+        if grep -Fqx 'mdns=0' ${networkManagerConfig}; then
+          echo 'FAIL: rendered NetworkManager policy contains the ineffective unqualified mdns key' >&2
+          cat ${networkManagerConfig} >&2
+          exit 1
+        fi
+      ''}
+      echo "OK: mDNS ownership ${name}"
+      touch $out
+    '';
+
   tests = {
     systemd-boot-console-mode-default = assertConsoleMode "default" "max" [ adminBase ];
     systemd-boot-console-mode-override = assertConsoleMode "override" "keep" [
@@ -436,6 +504,16 @@ let
     laptop-power-policy = assertPowerPolicy "laptop" "laptop" true;
     workstation-power-policy = assertPowerPolicy "workstation" "workstation" false;
     server-power-policy = assertPowerPolicy "server" "server" false;
+    mdns-ownership-enabled = assertMdnsOwnership "enabled" {
+      avahiEnable = true;
+      resolvedEnable = true;
+      networkManagerEnable = true;
+    };
+    mdns-ownership-disabled = assertMdnsOwnership "disabled" {
+      avahiEnable = false;
+      resolvedEnable = false;
+      networkManagerEnable = false;
+    };
     zfs-power-policy-rejected =
       assertHasFailingAssertion "zfs-power-policy" "Suspend-then-hibernate requires non-ZFS LVM storage."
         [
