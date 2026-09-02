@@ -207,17 +207,18 @@
           "nixpkgs"
         ],
         "omarchy": "omarchy",
+        "quickshell": "quickshell",
         "terminal": [
           "terminal"
         ],
         "walker": "walker"
       },
       "locked": {
-        "lastModified": 1787977579,
-        "narHash": "sha256-4lDVZoIpxBPxRoG1ATF9J3JWCp+pjA2mfiu7NhyIrZE=",
+        "lastModified": 1788379274,
+        "narHash": "sha256-gvujASKMOiOMPeZk849BaJlNorJIAnB5qZlwN/erYEY=",
         "ref": "refs/heads/main",
-        "rev": "7d634bff015a51bfc3ae1b010906c4645e6c1c08",
-        "revCount": 50,
+        "rev": "b33f126492a7ba6c67a1e02a696a91f7475cfd3a",
+        "revCount": 58,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
       },
@@ -1237,16 +1238,16 @@
     "omarchy": {
       "flake": false,
       "locked": {
-        "lastModified": 1759093827,
-        "narHash": "sha256-1QJBoMe6MzaD/dcOcqC8QpRxG0Z2c1p+WYqtNFlsTOA=",
+        "lastModified": 1788279117,
+        "narHash": "sha256-mL4ZeoHDMq6OGCbJ+9YdL6P8Vi44HlRgu80nR5YQAkk=",
         "owner": "basecamp",
         "repo": "omarchy",
-        "rev": "f634bfeeb6225cf6cd2df9bb336831f81b1c99c6",
+        "rev": "b71dcad96e9d0b2962b7d225828a5cb6000ad720",
         "type": "github"
       },
       "original": {
         "owner": "basecamp",
-        "ref": "v3.0.2",
+        "ref": "quattro",
         "repo": "omarchy",
         "type": "github"
       }
@@ -1358,6 +1359,28 @@
         "owner": "cachix",
         "repo": "git-hooks.nix",
         "type": "github"
+      }
+    },
+    "quickshell": {
+      "inputs": {
+        "nixpkgs": [
+          "desktop",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787279335,
+        "narHash": "sha256-CLX2Zp5i5BuLbOxNOkwRd9YY84IOrACNxBV79o9/F9Y=",
+        "ref": "refs/tags/v0.3.1",
+        "rev": "1a4716cde794a59928d9d9fc15f2afc7a95de360",
+        "revCount": 846,
+        "type": "git",
+        "url": "https://git.outfoxxed.me/quickshell/quickshell"
+      },
+      "original": {
+        "ref": "refs/tags/v0.3.1",
+        "type": "git",
+        "url": "https://git.outfoxxed.me/quickshell/quickshell"
       }
     },
     "root": {
@@ -1615,11 +1638,11 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1787577045,
-        "narHash": "sha256-X/+tBm7Tz6lloUddcCC+I5J+HvZCrlOqtUmPsw74NHw=",
+        "lastModified": 1788150120,
+        "narHash": "sha256-nA411RgUEo8L23LRduL4ghA6oJVL1SCs1WNst7P1fpY=",
         "ref": "refs/heads/main",
-        "rev": "2d8c4c0bc7b308a7673fc1de94310515785d3a8e",
-        "revCount": 5,
+        "rev": "0c00ceb67331f2d96b4a75979dc4bb3524a078e3",
+        "revCount": 9,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
       },
