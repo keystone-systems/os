@@ -126,6 +126,39 @@ let
       touch $out
     '';
 
+  assertKernelPolicy =
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+          }
+        ];
+      };
+      kernelPackages = result.config.boot.kernelPackages;
+      zfsPackage = result.config.boot.zfs.package;
+      zfsModule = kernelPackages.${zfsPackage.kernelModuleAttribute};
+      valid =
+        lib.versions.majorMinor kernelPackages.kernel.version == "7.1"
+        && lib.versions.majorMinor zfsPackage.version == "2.4"
+        && !(zfsModule.meta.broken or false);
+    in
+    pkgs.runCommand "linux-7-1-zfs-kernel-policy" { } ''
+      ${lib.optionalString (!valid) ''
+        echo 'FAIL: expected Linux 7.1 with a buildable OpenZFS 2.4 module' >&2
+        echo 'kernel=${kernelPackages.kernel.version}' >&2
+        echo 'zfs=${zfsPackage.version}' >&2
+        echo 'module=${zfsModule.name}' >&2
+        exit 1
+      ''}
+      echo 'OK: kernel=${kernelPackages.kernel.version} zfs=${zfsPackage.version} module=${zfsModule.name}'
+      touch $out
+    '';
+
   assertPowerPolicy =
     name: hostKind: expectPolicy:
     let
@@ -1102,6 +1135,7 @@ pkgs.runCommand "test-os-evaluation"
   {
     nativeBuildInputs = (lib.attrValues tests) ++ [
       assertLvmHibernateLayout
+      assertKernelPolicy
       assertPassphraseRecovery
     ];
   }
@@ -1117,6 +1151,7 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - full-zfs: Full ZFS with all options"
     echo "  - lvm-simple: LVM-backed ext4 setup"
     echo "  - lvm-hibernate: LVM-backed ext4 with hibernation enabled"
+    echo "  - kernel-policy: Linux 7.1 with a buildable OpenZFS 2.4 module"
     echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"

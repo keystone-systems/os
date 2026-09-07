@@ -58,12 +58,15 @@ upstream support when the kernel lies outside OpenZFS's declared compatibility
 range. The initial ks-config battle test passed Linux 7.1.5 with OpenZFS 2.4.3
 twice using OpenZFS's experimental Linux support.
 
-The current executable reference lives in the consumer repository as the
+Keystone now owns Linux 7.1 plus the OpenZFS experimental-kernel build as its
+fleet-wide default. The consumer repository retains the workstation-shaped
+validation fixture and libvirt runner:
+
 [Linux 7.1/OpenZFS twin configuration](https://git.ncrmro.com/ncrmro/ks-config/src/branch/main/modules/os/twins/kernel-zfs-7-1.nix)
 and its
 [libvirt runner](https://git.ncrmro.com/ncrmro/ks-config/src/branch/main/bin/libvirt-twin-zfs-kernel-7-1).
-Reusable support SHOULD graduate into Keystone only after it has passed in
-ks-config without weakening this oracle.
+The twin MUST consume Keystone's default kernel package set; it MUST NOT carry
+a second consumer-only kernel or ZFS override.
 
 ## The Core Problem
 

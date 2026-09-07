@@ -59,26 +59,6 @@ let
   # Generate device list for systemd dependencies
   deviceUnits = map (p: utils.escapeSystemdPath p + ".device") cfg.devices;
 
-  # Newest kernelPackages whose ZFS module is not marked broken.
-  # linuxPackages_latest regularly outruns ZFS support (e.g. 7.1 vs ZFS 2.4's
-  # 6.18 ceiling), which previously forced every consumer to hand-pin a
-  # kernel. Only stable series attrs (linux_X_Y) are considered; tryEval
-  # guards series that fail to evaluate. Falls back to pkgs.linuxPackages if
-  # nothing qualifies. The compatibility assertion below stays as backstop.
-  latestZfsCompatibleKernelPackages =
-    let
-      zfsAttr = pkgs.zfs.kernelModuleAttribute;
-      stableSeries = filterAttrs (
-        name: _: builtins.match "linux_[0-9]+_[0-9]+" name != null
-      ) pkgs.linuxKernel.packages;
-      compatible = filter (
-        kp: (builtins.tryEval (kp ? ${zfsAttr} && !(kp.${zfsAttr}.meta.broken or false))).value
-      ) (attrValues stableSeries);
-      newest = foldl' (
-        best: kp: if best == null || versionOlder best.kernel.version kp.kernel.version then kp else best
-      ) null compatible;
-    in
-    if newest != null then newest else pkgs.linuxPackages;
 in
 {
   config = mkMerge [
@@ -104,11 +84,12 @@ in
       # Ensure ZFS support is enabled
       boot.supportedFilesystems = [ "zfs" ];
 
-      # Kernel selection — "latest" resolves to the newest ZFS-compatible
-      # kernel automatically, so consumers never hand-pin around ZFS support.
+      # "latest" follows the fleet-wide Keystone kernel package set. That set
+      # carries the matching ZFS module override, so ZFS and non-ZFS hosts boot
+      # the same kernel by default.
       boot.kernelPackages =
         if cfg.zfs.kernel == "latest" then
-          latestZfsCompatibleKernelPackages
+          osCfg.kernelPackages
         else if cfg.zfs.kernel == "default" then
           pkgs.linuxPackages
         else

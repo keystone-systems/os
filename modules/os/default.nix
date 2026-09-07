@@ -31,6 +31,22 @@ let
   cfg = config.keystone.os;
   suspendThenHibernateActive = cfg.power.suspendThenHibernate.enable && cfg.hostKind == "laptop";
 
+  # Linux 7.1 is newer than OpenZFS 2.4's declared support ceiling. The
+  # libvirt digital twin validates this exact pair through a real ZFS-root
+  # reboot and scrub before it becomes the fleet default. Keep the override
+  # here so every Keystone host consumes one kernel package set and ZFS hosts
+  # receive the matching experimental module build.
+  linux71ZfsKernelPackages = pkgs.linuxPackages_7_1.extend (
+    _final: previous: {
+      zfs_2_4 = previous.zfs_2_4.overrideAttrs (old: {
+        configureFlags = old.configureFlags ++ [ "--enable-linux-experimental" ];
+        meta = old.meta // {
+          broken = false;
+        };
+      });
+    }
+  );
+
   # Look up the current host in the registry to access per-host metadata (e.g. baremetal).
   currentHost = findFirst (h: h.hostname == config.networking.hostName) null (
     attrValues config.keystone.hosts
@@ -261,6 +277,18 @@ in
   options.keystone.os = {
     enable = mkEnableOption "Keystone OS - secure storage, boot, and user management";
 
+    kernelPackages = mkOption {
+      type = types.raw;
+      default = linux71ZfsKernelPackages;
+      defaultText = literalExpression "pkgs.linuxPackages_7_1 with OpenZFS experimental-kernel support";
+      description = ''
+        Fleet-wide Linux kernel package set. Keystone defaults every host to
+        Linux 7.1 and builds OpenZFS 2.4 with its experimental-kernel support
+        enabled. Override this only when a host has a demonstrated hardware or
+        kernel compatibility requirement.
+      '';
+    };
+
     networks.headscale = mkOption {
       type = types.listOf types.str;
       default = [
@@ -414,7 +442,7 @@ in
           description = ''
             Kernel package selection for ZFS hosts:
             - "default": NixOS default kernel (linuxPackages)
-            - "latest": Latest stable kernel (linuxPackages_latest)
+            - "latest": Keystone's fleet-wide kernel package set
             - Or a kernel packages set (e.g., pkgs.linuxPackages_6_12)
           '';
         };
@@ -694,6 +722,8 @@ in
 
   config = mkIf cfg.enable {
     keystone.security.privilegedApproval.enable = mkDefault true;
+
+    boot.kernelPackages = mkDefault cfg.kernelPackages;
 
     # Ask systemd-boot to select the highest-resolution firmware console mode
     # before handing the display to the kernel. Consumers can retain the
