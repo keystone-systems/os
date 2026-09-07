@@ -159,6 +159,35 @@ let
       touch $out
     '';
 
+  assertNixChannelPolicy =
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+          }
+        ];
+      };
+      channelEnabled = result.config.nix.channel.enable;
+      hasLegacyChannelPath = builtins.elem "/nix/var/nix/profiles/per-user/root/channels" result.config.nix.nixPath;
+    in
+    pkgs.runCommand "nix-channel-policy" { } ''
+      ${lib.optionalString channelEnabled ''
+        echo 'FAIL: legacy Nix channels are enabled' >&2
+        exit 1
+      ''}
+      ${lib.optionalString hasLegacyChannelPath ''
+        echo 'FAIL: NIX_PATH contains the legacy root channel path' >&2
+        exit 1
+      ''}
+      echo 'OK: legacy Nix channels and their search path are disabled'
+      touch $out
+    '';
+
   assertPowerPolicy =
     name: hostKind: expectPolicy:
     let
@@ -1136,6 +1165,7 @@ pkgs.runCommand "test-os-evaluation"
     nativeBuildInputs = (lib.attrValues tests) ++ [
       assertLvmHibernateLayout
       assertKernelPolicy
+      assertNixChannelPolicy
       assertPassphraseRecovery
     ];
   }
@@ -1152,6 +1182,7 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - lvm-simple: LVM-backed ext4 setup"
     echo "  - lvm-hibernate: LVM-backed ext4 with hibernation enabled"
     echo "  - kernel-policy: Linux 7.1 with a buildable OpenZFS 2.4 module"
+    echo "  - nix-channel-policy: Legacy Nix channels and their search path are disabled"
     echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"

@@ -897,6 +897,9 @@ in
       mkIf config.networking.networkmanager.enable 0;
 
     # Nix configuration
+    # Keystone systems are flake-managed. Disable the legacy channel machinery
+    # so Nix does not retain a nonexistent root channel in NIX_PATH.
+    nix.channel.enable = mkDefault false;
     nix.settings.experimental-features = mkIf cfg.nix.flakes [
       "nix-command"
       "flakes"
