@@ -119,6 +119,7 @@ Keep development workflows separate from initial setup:
 - [Testing procedures](os/testing-procedure.md)
 - [VM testing](os/testing-vm.md)
 - [ISO and OS VM testing](testing/iso-os-virtual-machine.md)
+- [Newer-kernel/OpenZFS validation](os/zfs-kernel-compatibility.md#primary-validation-workflow)
 
 ## Quick Links
 
