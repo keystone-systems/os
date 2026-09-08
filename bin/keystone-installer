@@ -81,6 +81,7 @@ done
 host="${flake##*#}"
 flake_root="${flake%#*}"
 [[ -n "$host" && -n "$flake_root" ]] || die "--flake must be PATH#HOST"
+[[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "the flake host selector contains unsupported characters"
 
 mkdir -p "$state"
 chmod 700 "$state"
@@ -129,6 +130,7 @@ printf 'Hardware reported by the live ISO:\n'
 "${ssh_base[@]}" 'lsblk -d -o NAME,PATH,SIZE,MODEL,SERIAL,TRAN,TYPE'
 
 phase="evaluation"
+git config --global --add safe.directory "$flake_root"
 disk_json="$(nix eval --json "${flake_root}#nixosConfigurations.${host}.config.keystone.os.storage.devices")" \
   || die "cannot evaluate storage devices for $host"
 mapfile -t disks < <(jq -r '.[]' <<<"$disk_json")
@@ -158,11 +160,17 @@ nixos-anywhere \
 phase="first-boot"
 printf '\nAt the target console, enter %s to unlock the root disk.\n' "$DEFAULT_PASSWORD"
 printf 'Waiting up to %s seconds for installed root SSH...\n' "$timeout"
+# The live ISO and installed system deliberately have different SSH host keys.
+# Forget only this exact endpoint after NixOS Anywhere has completed, then pin
+# the installed key on the first successful health-check connection.
+ssh-keygen -R "$target" -f "$known_hosts" >/dev/null 2>&1 || true
 deadline=$((SECONDS + timeout))
 until "${ssh_base[@]}" true >/dev/null 2>&1; do
   ((SECONDS < deadline)) || die "installed host did not return over SSH before timeout"
   sleep 5
 done
+installed_fingerprint="$(ssh-keyscan -T 10 "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
+printf 'Installed SSH identity: %s\n' "${installed_fingerprint:-unavailable}"
 
 phase="health-check"
 revision="$("${ssh_base[@]}" 'readlink -f /run/current-system')"
