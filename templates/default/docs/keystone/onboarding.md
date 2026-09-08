@@ -19,11 +19,12 @@ first boot.
 
 ## What you'll have at the end
 
-- An installer ISO with your SSH key baked in, flashed to a USB stick.
+- The release installer ISO flashed to a USB stick and its matching controller
+  image available through Docker or Podman.
 - The target host installed, booting from its own disk, reachable over SSH.
 - A per-host SSH key generated on the target — your driver's key was only the
   bootstrap.
-- The temporary `keystone` LUKS password and TPM-less unlock replaced with a
+- The temporary `changeme` LUKS password and TPM-less unlock replaced with a
   user-chosen password and TPM auto-unlock.
 - (Optional) A sops-encrypted GitHub PAT wired in so `ks update` and
   `nix flake update` don't trip the 60 req/hr anonymous rate limit.
@@ -234,38 +235,44 @@ maybe the `dd` was interrupted.
 
 ## Step 5 — Install the target
 
-**Goal:** Use `ks install` (or `nixos-anywhere`) to lay down the OS on the
-target's local disk.
+**Goal:** Use the release controller's pinned NixOS Anywhere to lay down the OS
+on the target's local disk without installing Nix on the driver.
 
 **Run:**
 
-The installer auto-DHCPs and starts SSH. From the target's console, note its
-IP (`ip addr show`). From your driver:
+The installer auto-DHCPs and starts root password SSH. Read the address on the
+target console. If it is not visible, log in as `root` with password
+`changeme`, then run `ip -br address`.
+
+From the root of this repository on your driver:
 
 ```bash
-ssh root@<installer-ip>           # SSH key from Step 2 auths you
+mkdir -p .keystone-install
+docker run --rm -it \
+  -v "$PWD:/workspace:ro" \
+  -v "$PWD/.keystone-install:/state" \
+  ghcr.io/ncrmro/keystone-installer:v1.0.0-rc.5 \
+  install --target <installer-ip> --flake /workspace#laptop
 ```
 
-Once SSHed in, on the target:
+The controller:
 
-```bash
-ks install --host laptop
-```
+1. Authenticates to the live ISO as `root` with the public password
+   `changeme` and shows its SSH fingerprint and hardware inventory.
+2. Evaluates the stable disk identifiers in `hosts/laptop/` and requires you
+   to type an exact erase phrase. Stop if any identity or disk is wrong.
+3. Runs NixOS Anywhere and creates root encryption with the temporary
+   password `changeme`.
+4. Reboots. Enter `changeme` at the target's disk-unlock prompt.
+5. Reconnects as `root` with `changeme` and checks the installed revision,
+   root storage health, and failed systemd units.
 
-This runs the headless disko + nixos-install flow. The installer:
-
-1. Partitions the target's disk per the disko config in `hosts/laptop/`.
-2. Creates a LUKS volume with the **temporary password `keystone`**. You'll
-   replace it in Step 7.
-3. Installs the closure built for your `laptop` configuration.
-4. Reboots into the installed system.
-
-**Alternative:** If you prefer to drive from the driver rather than over SSH,
-use `nixos-anywhere --flake .#laptop root@<installer-ip>`. Same result.
+This password is public. Use only a trusted local network and do not expose the
+target to the Internet during bootstrap.
 
 **Verify:** The target reboots and boots into the installed system. You can
-SSH in as your owner user: `ssh <username>@<target-ip>`. The initial password
-is `changeme` (from `flake.nix`).
+SSH in as `root` with `changeme` for the health check, or as your owner user.
+Both are temporary bootstrap accounts in this generation.
 
 **If it fails:** Install errors usually surface in the SSH session.
 `nixos-install` failures are the most common — check disk free space and
@@ -328,9 +335,9 @@ repo over, or wait until `ks update` is wired up).
 
 ---
 
-## Step 7 — Enroll TPM unlock + replace the `keystone` LUKS password
+## Step 7 — Enroll TPM unlock + replace the `changeme` LUKS password
 
-**Goal:** Move from "anyone with the literal string `keystone` can unlock your
+**Goal:** Move from "anyone with the literal string `changeme` can unlock your
 disk" to "the TPM unlocks the disk automatically when Secure Boot, kernel, and
 initrd match expected measurements, and a user-chosen password is the fallback."
 
@@ -344,11 +351,11 @@ sudo keystone-enroll-password
 
 This script:
 
-1. Prompts you for a new LUKS password (cannot be `keystone`).
+1. Prompts you for a new LUKS password (cannot be `changeme`).
 2. Adds your new password to a LUKS keyslot.
 3. Enrolls the TPM with the current PCR measurements so future boots
    auto-unlock without prompting (unless boot integrity changes).
-4. **Removes the default `keystone` keyslot.**
+4. **Removes the default `changeme` keyslot.**
 
 For TPM-only enrollment (no password fallback — advanced; rescue media required
 if the TPM ever fails) or recovery-key enrollment, see `keystone-enroll-tpm`
@@ -365,19 +372,19 @@ After reboot, the disk should unlock without prompting for a password. The
 shell login prompts for your *user* password (set in Step 6), not the LUKS
 password.
 
-To prove the `keystone` slot is gone:
+To prove the `changeme` slot is gone:
 
 ```bash
 sudo cryptsetup luksDump /dev/disk/by-partlabel/disk-root-root | grep -A1 'Keyslot'
 ```
 
-Should not show the slot that was tied to `keystone`. (Slot indices differ by
+Should not show the slot that was tied to `changeme`. (Slot indices differ by
 disko config — the key signal is that `cryptsetup open --test-passphrase` with
-input `keystone` fails.)
+input `changeme` fails.)
 
 **If it fails:** TPM enrollment can fail if the system was booted without
 Secure Boot enabled or with mismatched PCRs. The script tells you which. If
-you can't recover, the `keystone` slot is still active until the script
+you can't recover, the `changeme` slot is still active until the script
 explicitly removes it (read the script's output carefully — it confirms before
 deleting).
 

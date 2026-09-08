@@ -1,13 +1,67 @@
 ---
-title: OS installer — build the ISO and write it to USB
-description: Build the Keystone installer ISO from this flake and write it to a USB stick on Linux, macOS, or Windows
+title: Install Keystone OS with the release ISO and controller
+description: Boot the Keystone ISO, find the target address, and install from Docker or Podman without host Nix
 ---
 
 # OS installer
 
-Companion to [`onboarding.md`](onboarding.md) steps 3–4. Build the
-Keystone installer ISO from this flake and write it to a USB stick. Pick
-the section that matches your driver's OS.
+The v1 release candidate is a matched pair: a bootable ISO for the target and
+an OCI controller image for the computer doing the installation. Docker or
+Podman is the only prerequisite on the controller; host Nix is not required.
+
+> **Release-candidate security boundary:** the live ISO, first installed root
+> account, and root-disk encryption all use the public password `changeme`.
+> Use an isolated or trusted wired network. The controller performs one
+> post-install health check, but the resulting bootstrap generation is not a
+> hardened machine.
+
+## Install from the public release
+
+The `v1.0.0-rc.5` assets remain pending until the clean-room release test
+passes. Once published, download the ISO and `SHA256SUMS` from the matching
+[GitHub release](https://github.com/ncrmro/keystone/releases), then verify it:
+
+```bash
+sha256sum --check SHA256SUMS --ignore-missing
+```
+
+Write the ISO to a USB device using the platform-specific instructions below.
+Connect the target to a trusted wired network, boot the USB from its UEFI boot
+menu, and note the IPv4 address printed on the target console. If no address is
+shown, log in as `root` with password `changeme` and run:
+
+```bash
+ip -br address
+```
+
+From the controller, open your starter `keystone-config` repository, confirm
+the target host and stable disk identifiers, then run:
+
+```bash
+mkdir -p .keystone-install
+docker run --rm -it \
+  -v "$PWD:/workspace:ro" \
+  -v "$PWD/.keystone-install:/state" \
+  ghcr.io/ncrmro/keystone-installer:v1.0.0-rc.5 \
+  install --target 192.0.2.10 --flake /workspace#laptop
+```
+
+Replace the example address and host. The controller shows the target's SSH
+fingerprint and hardware inventory, evaluates the declared storage devices,
+and requires an exact interactive erase phrase before NixOS Anywhere can
+touch a disk. When the new host reaches its disk-unlock prompt, enter
+`changeme`. The controller then reconnects as `root`, verifies the installed
+revision, checks root storage, and fails on unexpected failed systemd units.
+Its timestamped log and JSON result remain in `.keystone-install/`.
+
+After that check, immediately prepare a hardening generation that replaces or
+locks the root password, disables root password SSH, and enrolls durable disk
+unlock. Generation deletion, initial snapshots, and backup enrollment are
+follow-up work and are not automated by this release candidate.
+
+## Build the ISO from source
+
+This is the advanced path for Keystone contributors and custom fleets.
 
 ## Build the ISO
 
