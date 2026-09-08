@@ -29,6 +29,18 @@ PASSTHROUGH_ARGS=()
 log_info() { printf '\033[0;34m%s\033[0m\n' "$*"; }
 log_error() { printf '\033[0;31m%s\033[0m\n' "$*" >&2; }
 
+show_help() {
+    sed -n '2,/^set -euo pipefail$/p' "$0" | sed 's/^# \{0,1\}//; /^set -euo pipefail$/d'
+}
+
+# Help must be side-effect free: do not generate or refresh the cached fixture.
+for arg in "$@"; do
+    if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+        show_help
+        exit 0
+    fi
+done
+
 # Separate --clean from passthrough args
 for arg in "$@"; do
     if [[ "$arg" == "--clean" ]]; then
