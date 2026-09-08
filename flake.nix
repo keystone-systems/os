@@ -85,6 +85,8 @@
       ...
     }:
     let
+      releaseVersion = "v1.0.0-rc.5";
+
       # Create inputs attrset for keystone modules (named keystoneInputs to avoid
       # shadowing when consumed by other flakes that pass their own `inputs`)
       keystoneInputs = {
@@ -113,6 +115,7 @@
           boot.kernelPackages = nixpkgs.lib.mkForce nixpkgs.legacyPackages.${system}.linuxPackages_6_12;
           # Apply keystone overlay so crane-built packages resolve inside the installer
           nixpkgs.overlays = [ self.overlays.default ];
+          keystone.installer.version = releaseVersion;
         }
       ];
 
@@ -648,7 +651,7 @@
           };
           keystone-installer-image = pkgs.dockerTools.buildLayeredImage {
             name = "ghcr.io/ncrmro/keystone-installer";
-            tag = "v1.0.0-rc.5";
+            tag = releaseVersion;
             contents = [
               pkgs.bashInteractive
               pkgs.cacert
@@ -683,7 +686,7 @@
               ];
               Labels = {
                 "org.opencontainers.image.source" = "https://github.com/ncrmro/keystone";
-                "org.opencontainers.image.version" = "v1.0.0-rc.5";
+                "org.opencontainers.image.version" = releaseVersion;
               };
             };
           };
