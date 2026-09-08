@@ -188,6 +188,19 @@ let
       touch $out
     '';
 
+  assertDiskBootstrapPassword =
+    let
+      actual = lib.removeSuffix "\n" (builtins.readFile ../../modules/os/scripts/credstore-password);
+    in
+    pkgs.runCommand "disk-bootstrap-password" { } ''
+      if [ ${lib.escapeShellArg actual} != changeme ]; then
+        echo 'FAIL: root-disk bootstrap password is not changeme' >&2
+        exit 1
+      fi
+      echo 'OK: root-disk bootstrap password is changeme'
+      touch $out
+    '';
+
   assertPowerPolicy =
     name: hostKind: expectPolicy:
     let
@@ -1200,6 +1213,7 @@ pkgs.runCommand "test-os-evaluation"
   {
     nativeBuildInputs = (lib.attrValues tests) ++ [
       assertLvmHibernateLayout
+      assertDiskBootstrapPassword
       assertKernelPolicy
       assertNixChannelPolicy
       assertPassphraseRecovery
