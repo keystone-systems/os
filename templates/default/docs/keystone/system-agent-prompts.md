@@ -79,6 +79,28 @@ placeholders, paste into your agent, and iterate from there.
 
 ## Build + install
 
+**Adopt Keystone OS on a new machine with the public release:**
+
+> Help me install Keystone OS on a new machine. Do not erase anything yet.
+> Open `docs/keystone/os-installer.md` and use the matching v1 release ISO and
+> `ghcr.io/ncrmro/keystone-installer` image; do not require Nix on my current
+> computer. First ask which controller OS I use and which target host role I
+> want. Tell me how to download and checksum the ISO, flash it safely, select
+> the USB device in UEFI, and connect the target to a trusted wired network.
+> Ask me for the IP shown on the target console. If it is absent, walk me
+> through logging in as `root` with `changeme`, running `ip -br address`, and
+> identifying the LAN address. Inspect my starter flake and ask only for the
+> missing host role, stable disk identifiers, storage choice, and username.
+> Run the controller preflight with `root`/`changeme`, show me the SSH
+> fingerprint, hardware inventory, exact disks, and data-loss boundary, and
+> stop for my exact interactive erase confirmation. After NixOS Anywhere
+> finishes, tell me to enter `changeme` at the root-disk unlock prompt. Wait
+> for the controller's revision, root-storage, and failed-unit health check.
+> Clearly state that root SSH and disk encryption still use the public
+> `changeme` bootstrap credential and that the host is not hardened. Do not
+> claim that password removal, generation deletion, snapshots, or backups
+> happened unless you verify a later generation that implements them.
+
 **Build and verify the installer ISO:**
 
 > Run `nix build .#iso` and confirm the result exists in `result/iso/`.
@@ -87,11 +109,12 @@ placeholders, paste into your agent, and iterate from there.
 
 **Walk me through a fresh install on the new host:**
 
-> The installer USB is booted on the target. Walk me through `ks install`
-> with the temporary credentials (`admin/keystone` login, LUKS password
-> `keystone`), then guide me through Steps 6–8 of `onboarding.md` to
-> replace the temporary credentials with per-host SSH key, TPM unlock,
-> and sops secrets.
+> The installer USB is booted on the target. Use the container flow in
+> `os-installer.md` with the temporary `root`/`changeme` SSH login and
+> `changeme` LUKS password. Stop for the controller's exact erase
+> confirmation, verify its post-install health report, then guide me through
+> replacing the temporary credentials with per-host SSH access, durable disk
+> unlock, and sops secrets.
 
 ---
 
