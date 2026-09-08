@@ -596,7 +596,43 @@ let
       touch $out
     '';
 
+  assertReleaseBootstrap =
+    name: enable:
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.os.releaseBootstrap.enable = enable;
+          }
+        ];
+      };
+      root = result.config.users.users.root;
+      ssh = result.config.services.openssh.settings;
+      passwordIsBootstrap = (root.initialPassword or null) == "changeme";
+      passwordSshEnabled = ssh.PermitRootLogin == "yes" && ssh.PasswordAuthentication;
+      ok =
+        if enable then
+          passwordIsBootstrap && passwordSshEnabled
+        else
+          !passwordIsBootstrap && !passwordSshEnabled;
+    in
+    pkgs.runCommand "release-bootstrap-${name}" { } ''
+      ${lib.optionalString (!ok) ''
+        echo "FAIL: release bootstrap ${name} has the wrong root SSH policy" >&2
+        exit 1
+      ''}
+      echo "OK: release bootstrap ${name}"
+      touch $out
+    '';
+
   tests = {
+    release-bootstrap-enabled = assertReleaseBootstrap "enabled" true;
+    release-bootstrap-disabled = assertReleaseBootstrap "disabled" false;
     systemd-boot-console-mode-default = assertConsoleMode "default" "max" [ adminBase ];
     systemd-boot-console-mode-override = assertConsoleMode "override" "keep" [
       adminBase
