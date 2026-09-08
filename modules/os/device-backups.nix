@@ -9,6 +9,7 @@ let
   inherit (lib)
     attrNames
     attrValues
+    concatMap
     concatMapStringsSep
     filter
     findFirst
@@ -24,6 +25,7 @@ let
   cfg = config.keystone.os.storage;
   backups = cfg.deviceBackups;
   backupList = attrValues backups;
+  allowedNetworks = unique (concatMap (backup: backup.allowedNetworks) backupList);
   users = unique (map (backup: backup.auth.user) backupList);
   userServices = map (user: "keystone-samba-user-${user}.service") users;
   namespace = backup: if backup.kind == "time-machine" then "timemachine" else "images";
@@ -177,7 +179,8 @@ in
           "server string" = "Keystone backup server";
           "netbios name" = config.networking.hostName;
           security = "user";
-          "hosts deny" = "0.0.0.0/0";
+          "hosts allow" = lib.concatStringsSep " " allowedNetworks;
+          "hosts deny" = "ALL";
           "map to guest" = "bad user";
           "server smb encrypt" = "required";
           "server min protocol" = "SMB3_00";

@@ -58,9 +58,30 @@ let
   share = configured.config.services.samba.settings."timemachine-macbook";
   phoneShare = configured.config.services.samba.settings."timemachine-phone";
   sambaGlobal = configured.config.services.samba.settings.global;
+  sambaConfig = configured.config.environment.etc."samba/smb.conf".source;
   mountGuard = configured.config.systemd.services.keystone-device-backup-mounts;
 in
 pkgs.runCommand "device-backups-evaluation" { } ''
+  mac_acl="$(${pkgs.samba}/bin/testparm --suppress-prompt ${sambaConfig} mac 100.64.0.40 2>&1 || true)"
+  ${pkgs.gnugrep}/bin/grep -Fq "Allow connection from mac (100.64.0.40) to timemachine-macbook" <<<"$mac_acl"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from mac (100.64.0.40) to timemachine-phone" <<<"$mac_acl"
+
+  lan_acl="$(${pkgs.samba}/bin/testparm --suppress-prompt ${sambaConfig} phone 192.168.1.20 2>&1 || true)"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from phone (192.168.1.20) to timemachine-macbook" <<<"$lan_acl"
+  ${pkgs.gnugrep}/bin/grep -Fq "Allow connection from phone (192.168.1.20) to timemachine-phone" <<<"$lan_acl"
+
+  outside_acl="$(${pkgs.samba}/bin/testparm --suppress-prompt ${sambaConfig} outside 203.0.113.10 2>&1 || true)"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from outside (203.0.113.10) to timemachine-macbook" <<<"$outside_acl"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from outside (203.0.113.10) to timemachine-phone" <<<"$outside_acl"
+
+  mac_ipv6_acl="$(${pkgs.samba}/bin/testparm --suppress-prompt ${sambaConfig} mac-ipv6 fd7a:115c:a1e0::28 2>&1 || true)"
+  ${pkgs.gnugrep}/bin/grep -Fq "Allow connection from mac-ipv6 (fd7a:115c:a1e0::28) to timemachine-macbook" <<<"$mac_ipv6_acl"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from mac-ipv6 (fd7a:115c:a1e0::28) to timemachine-phone" <<<"$mac_ipv6_acl"
+
+  outside_ipv6_acl="$(${pkgs.samba}/bin/testparm --suppress-prompt ${sambaConfig} outside-ipv6 2001:db8::1 2>&1 || true)"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from outside-ipv6 (2001:db8::1) to timemachine-macbook" <<<"$outside_ipv6_acl"
+  ${pkgs.gnugrep}/bin/grep -Fq "Deny connection from outside-ipv6 (2001:db8::1) to timemachine-phone" <<<"$outside_ipv6_acl"
+
   ${lib.optionalString
     (
       timeMachineDataset.role != "device-backup"
@@ -116,10 +137,11 @@ pkgs.runCommand "device-backups-evaluation" { } ''
     (
       share."hosts allow" != "100.64.0.0/10 fd7a:115c:a1e0::/48"
       || phoneShare."hosts allow" != "192.168.1.0/24"
-      || sambaGlobal ? "hosts allow"
+      || sambaGlobal."hosts allow" != "100.64.0.0/10 fd7a:115c:a1e0::/48 192.168.1.0/24"
+      || sambaGlobal."hosts deny" != "ALL"
     )
     ''
-      echo "device backup network ACLs are not isolated per share" >&2
+      echo "device backup network ACLs do not combine global admission with per-share isolation" >&2
       exit 1
     ''
   }
