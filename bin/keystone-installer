@@ -97,7 +97,7 @@ chmod 700 "$state"
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-${host}"
 log="$state/${run_id}.log"
 summary="$state/${run_id}.json"
-known_hosts="$state/known_hosts"
+known_hosts="$state/${run_id}.known_hosts"
 touch "$known_hosts"
 chmod 600 "$known_hosts"
 exec > >(tee -a "$log") 2>&1
@@ -167,12 +167,12 @@ nixos-anywhere \
   --env-password \
   --flake "$flake" \
   --target-host "root@$target" \
+  --ssh-port "$ssh_port" \
+  --post-kexec-ssh-port "$ssh_port" \
   --ssh-option StrictHostKeyChecking=no \
   --ssh-option UserKnownHostsFile=/dev/null \
-  --ssh-option "Port=$ssh_port" \
   --ssh-option Compression=no \
-  --no-substitute-on-destination \
-  --ssh-store-setting compress false
+  --no-substitute-on-destination
 
 phase="first-boot"
 printf '\nAt the target console, enter %s to unlock the root disk.\n' "$DEFAULT_PASSWORD"
