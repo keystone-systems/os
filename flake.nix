@@ -633,10 +633,68 @@
                                '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy --no-check-sigs \'
             '';
           });
+          keystone-installer = pkgs.writeShellApplication {
+            name = "keystone-installer";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.git
+              pkgs.jq
+              pkgs.nix
+              pkgs.openssh
+              pkgs.sshpass
+              nixos-anywhere-fast
+            ];
+            text = builtins.readFile ./bin/keystone-installer;
+          };
+          keystone-installer-image = pkgs.dockerTools.buildLayeredImage {
+            name = "ghcr.io/ncrmro/keystone-installer";
+            tag = "v1.0.0-rc.5";
+            contents = [
+              pkgs.bashInteractive
+              pkgs.cacert
+              pkgs.coreutils
+              pkgs.git
+              pkgs.gnugrep
+              pkgs.gnused
+              pkgs.jq
+              pkgs.nix
+              pkgs.openssh
+              pkgs.sshpass
+              keystone-installer
+              nixos-anywhere-fast
+            ];
+            extraCommands = ''
+              mkdir -p etc/nix root state tmp workspace
+              chmod 1777 tmp
+              cat > etc/nix/nix.conf <<'EOF'
+              experimental-features = nix-command flakes
+              sandbox = false
+              extra-substituters = https://ks-systems.cachix.org
+              extra-trusted-public-keys = ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo=
+              EOF
+            '';
+            config = {
+              Entrypoint = [ "${keystone-installer}/bin/keystone-installer" ];
+              WorkingDir = "/workspace";
+              Env = [
+                "HOME=/root"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              ];
+              Labels = {
+                "org.opencontainers.image.source" = "https://github.com/ncrmro/keystone";
+                "org.opencontainers.image.version" = "v1.0.0-rc.5";
+              };
+            };
+          };
         in
         (
           {
-            inherit nixos-anywhere-fast;
+            inherit
+              keystone-installer
+              keystone-installer-image
+              nixos-anywhere-fast
+              ;
             iso = self.lib.mkInstallerIso { inherit nixpkgs; };
             inherit (pkgs.keystone)
               agents-e2e
