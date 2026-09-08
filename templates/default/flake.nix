@@ -71,6 +71,12 @@
           (
             { pkgs, ... }:
             {
+              # The v1 RC keeps root password SSH available through the first
+              # installed generation so the controller can run its health
+              # check. Replace this with a hardened generation immediately
+              # after adoption.
+              keystone.os.releaseBootstrap.enable = true;
+
               environment.systemPackages = with pkgs; [
                 # btop
               ];

@@ -291,7 +291,7 @@ in
           datasets = {
             # Credstore: LUKS-encrypted volume for ZFS key storage
             #
-            # Default password "keystone" enables automated deployments.
+            # Public RC password "changeme" enables automated deployments.
             # TPM2 handles unlock after enrollment. Password fallback available.
             credstore = {
               type = "zfs_volume";

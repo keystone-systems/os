@@ -792,12 +792,12 @@ run_direct_image() {
     # getty login attempts until the feeder is killed at cleanup.
     #
     # Precedence: --luks-passphrase flag > DIRECT_LUKS_PASSPHRASE env >
-    # built-in "keystone" default (the installer's credstore-password).
+    # built-in "changeme" default (the public RC bootstrap credential).
     local luks_passphrase
     if [[ -n "${DIRECT_LUKS_PASS:-}" ]]; then
         luks_passphrase="$DIRECT_LUKS_PASS"
     else
-        luks_passphrase="${DIRECT_LUKS_PASSPHRASE:-keystone}"
+        luks_passphrase="${DIRECT_LUKS_PASSPHRASE:-changeme}"
     fi
     feed_luks_passphrase() {
         local vm_name="$1" pass="$2" pty=""

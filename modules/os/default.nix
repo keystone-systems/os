@@ -277,6 +277,22 @@ in
   options.keystone.os = {
     enable = mkEnableOption "Keystone OS - secure storage, boot, and user management";
 
+    releaseBootstrap = {
+      enable = mkEnableOption ''
+        the intentionally insecure v1 release-candidate bootstrap generation
+      '';
+
+      password = mkOption {
+        type = types.str;
+        default = "changeme";
+        description = ''
+          Temporary plaintext password for the root account during the v1
+          release-candidate bootstrap. This value is copied into the Nix
+          store and must be replaced by a later hardening generation.
+        '';
+      };
+    };
+
     kernelPackages = mkOption {
       type = types.raw;
       default = linux71ZfsKernelPackages;
