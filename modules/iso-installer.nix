@@ -85,7 +85,7 @@ in
       enable = true;
       settings = {
         PermitRootLogin = lib.mkForce "yes";
-        PasswordAuthentication = true;
+        PasswordAuthentication = lib.mkForce true;
         PubkeyAuthentication = true;
         KbdInteractiveAuthentication = false;
       };
@@ -96,6 +96,7 @@ in
 
     # Configure root user with SSH keys
     users.users.root = {
+      initialHashedPassword = lib.mkForce null;
       initialPassword = installerCfg.bootstrapPassword;
       openssh.authorizedKeys.keys = installerCfg.sshKeys;
     };
