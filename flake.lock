@@ -1637,15 +1637,16 @@
       "locked": {
         "lastModified": 1788904297,
         "narHash": "sha256-PQnLOV7wUKLRweaIYlnUsZ6p1f+uERtW9naA3SXh7a0=",
-        "ref": "refs/heads/fix/theme-catalog-closure",
+        "owner": "keystone-systems",
+        "repo": "terminal",
         "rev": "d49e0e4d8f00ef8e2dce967ff2802b4b3e2e1207",
-        "revCount": 11,
-        "type": "git",
-        "url": "https://git.ncrmro.com/ks.systems/terminal.git"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "https://git.ncrmro.com/ks.systems/terminal.git"
+        "owner": "keystone-systems",
+        "repo": "terminal",
+        "rev": "d49e0e4d8f00ef8e2dce967ff2802b4b3e2e1207",
+        "type": "github"
       }
     },
     "treefmt-nix": {

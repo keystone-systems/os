@@ -12,7 +12,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     terminal = {
-      url = "git+https://git.ncrmro.com/ks.systems/terminal.git";
+      # The installer is a public bootstrap path, so every transitive source
+      # must be anonymously fetchable. Pin the exact Terminal revision that
+      # was validated for this release candidate.
+      url = "github:keystone-systems/terminal/d49e0e4d8f00ef8e2dce967ff2802b4b3e2e1207";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
