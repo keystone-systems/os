@@ -22,7 +22,7 @@
     };
     # Desktop environments (Hyprland session wiring, scripts, menus, theming,
     # dotfile templates). The desktop flake is the single owner of the
-    # compositor pin — deliberately no hyprland follows here.
+    # compositor source and package — deliberately no Hyprland input here.
     desktop = {
       url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -146,6 +146,8 @@
         test-desktop-isolation = import ./module/desktop-isolation.nix {
           inherit pkgs lib;
           self = keystone;
+          desktop = keystone.inputs.desktop;
+          inherit home-manager;
         };
 
         test-server-isolation = import ./module/server-isolation.nix {
