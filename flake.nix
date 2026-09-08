@@ -624,16 +624,26 @@
           # "cannot add path ... lacks a signature by a trusted key". The
           # legacy path writes directly and never checks.
           #
+          # Disko leaves the credstore zvol open after mounting the installed
+          # system. Upstream suppresses ZFS export failures during reboot, so
+          # the next boot sees the pool as active on another host. Close that
+          # mapping and require the export to succeed before rebooting.
+          #
           # --replace-fail so a nixos-anywhere bump that moves these lines
           # breaks this build loudly, rather than silently reverting to the
           # slow path.
           nixos-anywhere-fast = pkgs.nixos-anywhere.overrideAttrs (old: {
             postPatch = (old.postPatch or "") + ''
-              substituteInPlace src/nixos-anywhere.sh \
-                --replace-fail 'nixCopy --to "ssh://$sshConnection?remote-store=' \
-                               'nixCopy --to "ssh-ng://$sshConnection?remote-store=' \
-                --replace-fail '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy \' \
-                               '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy --no-check-sigs \'
+                        substituteInPlace src/nixos-anywhere.sh \
+                          --replace-fail 'nixCopy --to "ssh://$sshConnection?remote-store=' \
+                                         'nixCopy --to "ssh-ng://$sshConnection?remote-store=' \
+                          --replace-fail '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy \' \
+                                         '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy --no-check-sigs \' \
+                          --replace-fail '    zpool export -a || true' \
+                                         '    if cryptsetup status credstore >/dev/null 2>&1; then
+                cryptsetup close credstore
+              fi
+              zpool export -a'
             '';
           });
           keystone-installer = pkgs.writeShellApplication {
