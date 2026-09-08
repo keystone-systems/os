@@ -163,6 +163,7 @@ IFS= read -r entered </dev/tty || die "interactive confirmation requires a TTY"
 
 phase="install"
 printf 'Starting NixOS Anywhere. This now destroys the configured target disks.\n'
+set +e
 nixos-anywhere \
   --env-password \
   --flake "$flake" \
@@ -173,6 +174,14 @@ nixos-anywhere \
   --ssh-option UserKnownHostsFile=/dev/null \
   --ssh-option Compression=no \
   --no-substitute-on-destination
+install_status=$?
+set -e
+if ((install_status != 0 && install_status != 255)); then
+  exit "$install_status"
+fi
+if ((install_status == 255)); then
+  printf 'The reboot SSH session closed while the target restarted; continuing with first-boot detection.\n'
+fi
 
 phase="first-boot"
 printf '\nAt the target console, enter %s to unlock the root disk.\n' "$DEFAULT_PASSWORD"
