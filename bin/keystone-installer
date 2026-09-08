@@ -16,6 +16,7 @@ required:
   --flake PATH#HOST      mounted starter flake and target host selector
 
 options:
+  --ssh-port PORT        target SSH port (default: 22; useful for local twins)
   --state PATH           logs and known-hosts directory (default: /state)
   --timeout SECONDS      first-boot SSH timeout (default: 900)
   --password PASSWORD    bootstrap password (default: changeme)
@@ -42,6 +43,7 @@ target=""
 flake=""
 state="/state"
 timeout=900
+ssh_port=22
 password="${KEYSTONE_BOOTSTRAP_PASSWORD:-$DEFAULT_PASSWORD}"
 
 while (($#)); do
@@ -56,6 +58,10 @@ while (($#)); do
     ;;
   --state)
     state="${2:-}"
+    shift 2
+    ;;
+  --ssh-port)
+    ssh_port="${2:-}"
     shift 2
     ;;
   --timeout)
@@ -77,6 +83,9 @@ done
 [[ -n "$target" ]] || die "--target is required"
 [[ "$flake" == *#* ]] || die "--flake must include a host selector, for example /workspace#laptop"
 [[ "$timeout" =~ ^[1-9][0-9]*$ ]] || die "--timeout must be a positive integer"
+if [[ ! "$ssh_port" =~ ^[1-9][0-9]*$ ]] || ((ssh_port > 65535)); then
+  die "--ssh-port must be between 1 and 65535"
+fi
 
 host="${flake##*#}"
 flake_root="${flake%#*}"
@@ -100,9 +109,10 @@ finish() {
     --arg release "$RELEASE_VERSION" \
     --arg host "$host" \
     --arg target "$target" \
+    --argjson sshPort "$ssh_port" \
     --arg phase "$phase" \
     --argjson exitCode "$status" \
-    '{release:$release,host:$host,target:$target,phase:$phase,exitCode:$exitCode}' >"$summary"
+    '{release:$release,host:$host,target:$target,sshPort:$sshPort,phase:$phase,exitCode:$exitCode}' >"$summary"
 }
 trap finish EXIT
 
@@ -114,8 +124,14 @@ ssh_base=(
   -o "UserKnownHostsFile=$known_hosts"
   -o PreferredAuthentications=password
   -o PubkeyAuthentication=no
+  -p "$ssh_port"
   "root@$target"
 )
+
+known_hosts_target="$target"
+if [[ "$ssh_port" != 22 ]]; then
+  known_hosts_target="[$target]:$ssh_port"
+fi
 
 printf 'Keystone OS %s installer\n' "$RELEASE_VERSION"
 printf 'WARNING: root and disk encryption temporarily use the public password %s.\n' "$DEFAULT_PASSWORD"
@@ -123,8 +139,8 @@ printf 'Use this only on a trusted local network.\n\n'
 
 "${ssh_base[@]}" true || die "cannot authenticate to root@$target with the bootstrap password"
 
-fingerprint="$(ssh-keyscan -T 10 "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
-printf 'Target: %s\n' "$target"
+fingerprint="$(ssh-keyscan -T 10 -p "$ssh_port" "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
+printf 'Target: %s (SSH port %s)\n' "$target" "$ssh_port"
 printf 'SSH identity: %s\n' "${fingerprint:-unavailable}"
 printf 'Hardware reported by the live ISO:\n'
 "${ssh_base[@]}" 'lsblk -d -o NAME,PATH,SIZE,MODEL,SERIAL,TRAN,TYPE'
@@ -153,6 +169,7 @@ nixos-anywhere \
   --target-host "root@$target" \
   --ssh-option StrictHostKeyChecking=no \
   --ssh-option UserKnownHostsFile=/dev/null \
+  --ssh-option "Port=$ssh_port" \
   --ssh-option Compression=no \
   --no-substitute-on-destination \
   --ssh-store-setting compress false
@@ -163,13 +180,13 @@ printf 'Waiting up to %s seconds for installed root SSH...\n' "$timeout"
 # The live ISO and installed system deliberately have different SSH host keys.
 # Forget only this exact endpoint after NixOS Anywhere has completed, then pin
 # the installed key on the first successful health-check connection.
-ssh-keygen -R "$target" -f "$known_hosts" >/dev/null 2>&1 || true
+ssh-keygen -R "$known_hosts_target" -f "$known_hosts" >/dev/null 2>&1 || true
 deadline=$((SECONDS + timeout))
 until "${ssh_base[@]}" true >/dev/null 2>&1; do
   ((SECONDS < deadline)) || die "installed host did not return over SSH before timeout"
   sleep 5
 done
-installed_fingerprint="$(ssh-keyscan -T 10 "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
+installed_fingerprint="$(ssh-keyscan -T 10 -p "$ssh_port" "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
 printf 'Installed SSH identity: %s\n' "${installed_fingerprint:-unavailable}"
 
 phase="health-check"

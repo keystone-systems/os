@@ -669,6 +669,14 @@
             extraCommands = ''
               mkdir -p etc/nix root state tmp workspace
               chmod 1777 tmp
+              cat > etc/passwd <<'EOF'
+              root:x:0:0:root:/root:${pkgs.bashInteractive}/bin/bash
+              nobody:x:65534:65534:nobody:/var/empty:/run/current-system/sw/bin/nologin
+              EOF
+              cat > etc/group <<'EOF'
+              root:x:0:
+              nogroup:x:65534:
+              EOF
               cat > etc/nix/nix.conf <<'EOF'
               experimental-features = nix-command flakes
               sandbox = false

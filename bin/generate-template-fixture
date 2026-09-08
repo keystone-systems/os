@@ -102,17 +102,23 @@ if [[ -f "$OUTPUT_DIR/bin/test-iso" ]]; then
     chmod +x "$OUTPUT_DIR/bin/test-iso"
 fi
 
-log_info "Locking generated fixture to Keystone source ${KEYSTONE_SOURCE}"
-(
-    cd "$OUTPUT_DIR"
-    nix flake lock --override-input keystone "$KEYSTONE_SOURCE" >/dev/null
-)
-
 log_info "Initializing fixture git repo"
 git -C "$OUTPUT_DIR" init -b main >/dev/null
 git -C "$OUTPUT_DIR" config user.name "$GIT_NAME"
 git -C "$OUTPUT_DIR" config user.email "$GIT_EMAIL"
 git -C "$OUTPUT_DIR" add -A
 git -C "$OUTPUT_DIR" commit -m "chore: initialize keystone template fixture" >/dev/null
+
+# Nix discovers a flake's source type before evaluating it. A scaffold under
+# /tmp that has not been initialized yet can be misclassified as the
+# non-existent parent repository git+file:///tmp. Commit the scaffold first so
+# the lock operation has an unambiguous repository root and a tracked flake.
+log_info "Locking generated fixture to Keystone source ${KEYSTONE_SOURCE}"
+(
+    cd "$OUTPUT_DIR"
+    nix flake lock --override-input keystone "$KEYSTONE_SOURCE" >/dev/null
+)
+git -C "$OUTPUT_DIR" add flake.lock
+git -C "$OUTPUT_DIR" commit --amend --no-edit >/dev/null
 
 printf '%s\n' "$OUTPUT_DIR"
