@@ -301,7 +301,10 @@ in
         uid = userCfg.uid;
         description = userCfg.fullName;
         home = "/home/${username}";
-        createHome = !useZfs; # Let ZFS dataset provide home when using ZFS
+        # User ZFS dataset management is intentionally not active yet. Always
+        # create the home directory so first-boot Home Manager has a valid
+        # working directory on both ZFS and non-ZFS roots.
+        createHome = true;
         extraGroups = unique (
           userCfg.extraGroups
           ++ optionals userCfg.admin [ "wheel" ]
@@ -316,15 +319,17 @@ in
         shell = mkIf userCfg.terminal.enable pkgs.zsh;
       }) cfg;
 
-      # Home directory ownership for ext4 (ZFS handles this in its service)
-      systemd.services.create-user-homes = mkIf (!useZfs) {
+      # Ensure homes exist before user sessions and Home Manager. This remains
+      # necessary on ZFS roots until per-user dataset management is re-enabled.
+      systemd.services.create-user-homes = {
         description = "Create and configure user home directories";
 
         wantedBy = [ "multi-user.target" ];
         before = [
           "display-manager.service"
           "systemd-user-sessions.service"
-        ];
+        ]
+        ++ map (username: "home-manager-${username}.service") (attrNames cfg);
 
         serviceConfig = {
           Type = "oneshot";

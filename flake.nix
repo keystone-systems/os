@@ -12,7 +12,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     terminal = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git";
+      url = "git+https://git.ncrmro.com/ks.systems/terminal.git";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
@@ -24,7 +24,7 @@
     # dotfile templates). The desktop flake is the single owner of the
     # compositor source and package — deliberately no Hyprland input here.
     desktop = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git";
+      url = "git+https://git.ncrmro.com/ks.systems/desktop.git";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.terminal.follows = "terminal";
     };
@@ -680,6 +680,7 @@
               cat > etc/nix/nix.conf <<'EOF'
               experimental-features = nix-command flakes
               sandbox = false
+              build-users-group =
               extra-substituters = https://ks-systems.cachix.org
               extra-trusted-public-keys = ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo=
               EOF

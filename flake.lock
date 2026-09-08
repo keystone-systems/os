@@ -220,11 +220,11 @@
         "rev": "c6c47a800ce9526fa19fa86136033fb62e5856bc",
         "revCount": 65,
         "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
+        "url": "https://git.ncrmro.com/ks.systems/desktop.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
+        "url": "https://git.ncrmro.com/ks.systems/desktop.git"
       }
     },
     "disko": {
@@ -1635,17 +1635,17 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1788150120,
-        "narHash": "sha256-nA411RgUEo8L23LRduL4ghA6oJVL1SCs1WNst7P1fpY=",
-        "ref": "refs/heads/main",
-        "rev": "0c00ceb67331f2d96b4a75979dc4bb3524a078e3",
-        "revCount": 9,
+        "lastModified": 1788904297,
+        "narHash": "sha256-PQnLOV7wUKLRweaIYlnUsZ6p1f+uERtW9naA3SXh7a0=",
+        "ref": "refs/heads/fix/theme-catalog-closure",
+        "rev": "d49e0e4d8f00ef8e2dce967ff2802b4b3e2e1207",
+        "revCount": 11,
         "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
+        "url": "https://git.ncrmro.com/ks.systems/terminal.git"
       },
       "original": {
         "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
+        "url": "https://git.ncrmro.com/ks.systems/terminal.git"
       }
     },
     "treefmt-nix": {

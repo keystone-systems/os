@@ -604,6 +604,36 @@ let
       touch $out
     '';
 
+  assertZfsUserHomeBootstrap =
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.os.users.alice = {
+              fullName = "Alice";
+              initialPassword = "pw";
+            };
+          }
+        ];
+      };
+      createHome = result.config.users.users.alice.createHome;
+      before = result.config.systemd.services.create-user-homes.before;
+      beforeHomeManager = builtins.elem "home-manager-alice.service" before;
+    in
+    pkgs.runCommand "zfs-user-home-bootstrap" { } ''
+      ${lib.optionalString (!createHome || !beforeHomeManager) ''
+        echo 'FAIL: ZFS user home is not created before Home Manager' >&2
+        exit 1
+      ''}
+      echo 'OK: ZFS user home is created before Home Manager'
+      touch $out
+    '';
+
   tests = {
     release-bootstrap-enabled = assertReleaseBootstrap "enabled" true;
     release-bootstrap-disabled = assertReleaseBootstrap "disabled" false;
@@ -1217,6 +1247,7 @@ pkgs.runCommand "test-os-evaluation"
       assertKernelPolicy
       assertNixChannelPolicy
       assertPassphraseRecovery
+      assertZfsUserHomeBootstrap
     ];
   }
   ''
@@ -1234,6 +1265,7 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - kernel-policy: Linux 7.1 with a buildable OpenZFS 2.4 module"
     echo "  - nix-channel-policy: Legacy Nix channels and their search path are disabled"
     echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
+    echo "  - zfs-user-home-bootstrap: User homes exist before Home Manager"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"
     echo "  - journal-remote-client: Journal upload client (HTTPS via nginx)"
