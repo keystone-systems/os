@@ -20,8 +20,8 @@ keystone.os.storage = {
 };
 ```
 
-By default, Keystone limits the ZFS ARC to 25% of physical RAM or 16 GiB,
-whichever is smaller. Set `zfs.arcMax` only when a host needs an explicit cap.
+By default, Keystone leaves the ARC limit unset so OpenZFS uses its native
+automatic sizing. Set `zfs.arcMax` only when a host needs an explicit cap.
 
 **Boot sequence** (ZFS): Import pool → Unlock credstore (TPM or password) → Load ZFS key → Mount encrypted datasets.
 

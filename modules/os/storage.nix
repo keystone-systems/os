@@ -62,34 +62,12 @@ let
 in
 {
   config = mkMerge [
-    # An explicit limit is fixed at boot. The default is computed from actual
-    # RAM below, so hosts do not need duplicated memory metadata in Nix.
+    # Leave zfs_arc_max unset by default so OpenZFS uses its native automatic
+    # sizing. An explicit limit remains available for exceptional hosts.
     (mkIf (osCfg.enable && cfg.type == "zfs" && cfg.zfs.arcMax != null) {
       boot.kernelParams = [
         "zfs.zfs_arc_max=${toString arcMaxBytes}"
       ];
-    })
-
-    # Keep enough memory available for applications and kernel metadata on
-    # small systems while allowing useful caching on workstations. This also
-    # covers hosts whose ZFS/Disko layout is defined outside this module.
-    (mkIf (osCfg.enable && cfg.type == "zfs" && cfg.zfs.arcMax == null) {
-      systemd.services.keystone-zfs-arc-limit = {
-        description = "Apply the Keystone ZFS ARC memory limit";
-        wantedBy = [ "multi-user.target" ];
-        after = [ "systemd-modules-load.service" ];
-        unitConfig.ConditionPathExists = "/sys/module/zfs/parameters/zfs_arc_max";
-        serviceConfig.Type = "oneshot";
-        script = ''
-          memory_kib="$(${pkgs.gawk}/bin/awk '/^MemTotal:/ { printf "%.0f", $2 }' /proc/meminfo)"
-          arc_max="$((memory_kib * 1024 / 4))"
-          ceiling=17179869184
-          if (( arc_max > ceiling )); then
-            arc_max="$ceiling"
-          fi
-          printf '%s\n' "$arc_max" > /sys/module/zfs/parameters/zfs_arc_max
-        '';
-      };
     })
 
     # Keep a permanent boot path that uses the existing LUKS passphrase. A

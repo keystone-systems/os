@@ -392,21 +392,19 @@ let
         };
       automatic = (evaluate null).config;
       explicit = (evaluate "8G").config;
-      automaticService = automatic.systemd.services.keystone-zfs-arc-limit;
       hasArcParameter = cfg: builtins.any (lib.hasPrefix "zfs.zfs_arc_max=") cfg.boot.kernelParams;
       valid =
-        lib.hasInfix "memory_kib * 1024 / 4" automaticService.script
-        && lib.hasInfix "ceiling=17179869184" automaticService.script
-        && !hasArcParameter automatic
+        !hasArcParameter automatic
+        && !(builtins.hasAttr "keystone-zfs-arc-limit" automatic.systemd.services)
         && !(builtins.hasAttr "keystone-zfs-arc-limit" explicit.systemd.services)
         && builtins.elem "zfs.zfs_arc_max=8589934592" explicit.boot.kernelParams;
     in
     pkgs.runCommand "zfs-arc-policy" { } ''
       ${lib.optionalString (!valid) ''
-        echo 'FAIL: automatic and explicit ZFS ARC policies do not match the Keystone defaults' >&2
+        echo 'FAIL: automatic and explicit ZFS ARC policies do not match the option contract' >&2
         exit 1
       ''}
-      echo 'OK: automatic ARC is 25% capped at 16 GiB; explicit limits use a kernel parameter'
+      echo 'OK: null leaves ARC sizing to OpenZFS; explicit limits use a kernel parameter'
       touch $out
     '';
 
@@ -1227,7 +1225,7 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - kernel-policy: Linux 7.1 with a buildable OpenZFS 2.4 module"
     echo "  - nix-channel-policy: Legacy Nix channels and their search path are disabled"
     echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
-    echo "  - zfs-arc-policy: 25%-of-RAM default capped at 16 GiB, with explicit override"
+    echo "  - zfs-arc-policy: native OpenZFS default with an explicit override"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"
     echo "  - journal-remote-client: Journal upload client (HTTPS via nginx)"
