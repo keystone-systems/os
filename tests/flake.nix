@@ -146,6 +146,8 @@
         test-desktop-isolation = import ./module/desktop-isolation.nix {
           inherit pkgs lib;
           self = keystone;
+          desktop = keystone.inputs.desktop;
+          inherit home-manager;
         };
 
         test-server-isolation = import ./module/server-isolation.nix {
@@ -161,6 +163,21 @@
 
         # Evaluation Tests
         test-os-evaluation = import ./module/os-evaluation.nix {
+          inherit pkgs lib;
+          self = keystone;
+        };
+
+        test-power-event-debug = import ./module/power-event-debug.nix {
+          inherit pkgs lib;
+          self = keystone;
+        };
+
+        test-power-wake-fallback = import ./module/power-wake-fallback.nix {
+          inherit pkgs lib;
+          self = keystone;
+        };
+
+        test-esp-permissions-evaluation = import ./module/esp-permissions-evaluation.nix {
           inherit pkgs lib;
           self = keystone;
         };

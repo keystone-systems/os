@@ -239,6 +239,32 @@ let
 
     # THIS TEST VALIDATES A HARD REQUIREMENT (KSC-001.4)
     # YOU MUST NOT MODIFY THIS TEST UNLESS THE REQUIREMENT CHANGES
+    testEnabledUdevRulesHaveCompatibilityGroups = {
+      expr = {
+        libfido2RulesInstalled = lib.elem pkgs.libfido2 complete.services.udev.packages;
+        plugdevExists = complete.users.groups ? plugdev;
+      };
+      expected = {
+        libfido2RulesInstalled = true;
+        plugdevExists = true;
+      };
+    };
+
+    # THIS TEST VALIDATES A HARD REQUIREMENT (KSC-001.4)
+    # YOU MUST NOT MODIFY THIS TEST UNLESS THE REQUIREMENT CHANGES
+    testDisabledOmitsHardwareKeyUdevIntegration = {
+      expr = {
+        libfido2RulesInstalled = lib.elem pkgs.libfido2 empty.services.udev.packages;
+        plugdevExists = empty.users.groups ? plugdev;
+      };
+      expected = {
+        libfido2RulesInstalled = false;
+        plugdevExists = false;
+      };
+    };
+
+    # THIS TEST VALIDATES A HARD REQUIREMENT (KSC-001.4)
+    # YOU MUST NOT MODIFY THIS TEST UNLESS THE REQUIREMENT CHANGES
     testMissingRegistrationsAndEnrollmentWarn = {
       expr = codes gaps;
       expected = [

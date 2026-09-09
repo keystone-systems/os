@@ -11,6 +11,8 @@
   pkgs,
   lib,
   self,
+  desktop,
+  home-manager,
 }:
 pkgs.testers.nixosTest {
   name = "desktop-isolation";
@@ -22,34 +24,18 @@ pkgs.testers.nixosTest {
       ...
     }:
     {
-      # Hyprland compositor
-      programs.hyprland = {
+      imports = [
+        home-manager.nixosModules.home-manager
+        desktop.nixosModules.default
+      ];
+
+      # Exercise the canonical desktop module instead of constructing a
+      # second, independently sourced Hyprland stack in this OS test.
+      keystone.desktop = {
         enable = true;
-        withUWSM = true;
+        user = "testuser";
+        environment = "hyprland";
       };
-
-      # Login manager
-      services.greetd = {
-        enable = true;
-        settings.default_session = {
-          command = "uwsm start -S -F Hyprland";
-          user = "testuser";
-        };
-      };
-
-      # Audio stack
-      security.rtkit.enable = true;
-      services.pipewire = {
-        enable = true;
-        alsa.enable = true;
-        pulse.enable = true;
-      };
-
-      # Bluetooth (common desktop requirement)
-      hardware.bluetooth.enable = true;
-
-      # NetworkManager for desktop networking
-      networking.networkmanager.enable = true;
 
       # Test user
       users.users.testuser = {
@@ -62,20 +48,16 @@ pkgs.testers.nixosTest {
           "audio"
         ];
       };
+      home-manager.users.testuser.home.stateVersion = "25.05";
 
-      # Basic fonts
-      fonts.packages = with pkgs; [
-        noto-fonts
+      assertions = [
+        {
+          assertion =
+            config.programs.hyprland.package
+            == desktop.inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
+          message = "OS desktop isolation must use Desktop's canonical Hyprland package";
+        }
       ];
-
-      # XDG portals
-      xdg.portal = {
-        enable = true;
-        extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-      };
-
-      # Polkit for privilege escalation
-      security.polkit.enable = true;
 
       # VM settings with graphics
       virtualisation = {

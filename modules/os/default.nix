@@ -31,6 +31,22 @@ let
   cfg = config.keystone.os;
   suspendThenHibernateActive = cfg.power.suspendThenHibernate.enable && cfg.hostKind == "laptop";
 
+  # Linux 7.1 is newer than OpenZFS 2.4's declared support ceiling. The
+  # libvirt digital twin validates this exact pair through a real ZFS-root
+  # reboot and scrub before it becomes the fleet default. Keep the override
+  # here so every Keystone host consumes one kernel package set and ZFS hosts
+  # receive the matching experimental module build.
+  linux71ZfsKernelPackages = pkgs.linuxPackages_7_1.extend (
+    _final: previous: {
+      zfs_2_4 = previous.zfs_2_4.overrideAttrs (old: {
+        configureFlags = old.configureFlags ++ [ "--enable-linux-experimental" ];
+        meta = old.meta // {
+          broken = false;
+        };
+      });
+    }
+  );
+
   # Look up the current host in the registry to access per-host metadata (e.g. baremetal).
   currentHost = findFirst (h: h.hostname == config.networking.hostName) null (
     attrValues config.keystone.hosts
@@ -229,9 +245,12 @@ in
     ./notifications.nix
     ./storage.nix
     ./zfs-datasets.nix
+    ./device-backups.nix
     ./secure-boot.nix
     ./tpm.nix
     ./zram.nix
+    ./power-wake-fallback.nix
+    ./power-debug.nix
     ./github-token-nix.nix
     ./hardware-key.nix
     ./privileged-approval.nix
@@ -259,6 +278,27 @@ in
 
   options.keystone.os = {
     enable = mkEnableOption "Keystone OS - secure storage, boot, and user management";
+
+    kernelPackages = mkOption {
+      type = types.raw;
+      default = linux71ZfsKernelPackages;
+      defaultText = literalExpression "pkgs.linuxPackages_7_1 with OpenZFS experimental-kernel support";
+      description = ''
+        Fleet-wide Linux kernel package set. Keystone defaults every host to
+        Linux 7.1 and builds OpenZFS 2.4 with its experimental-kernel support
+        enabled. Override this only when a host has a demonstrated hardware or
+        kernel compatibility requirement.
+      '';
+    };
+
+    networks.headscale = mkOption {
+      type = types.listOf types.str;
+      default = [
+        "100.64.0.0/10"
+        "fd7a:115c:a1e0::/48"
+      ];
+      description = "IP networks assigned to the current Headscale tailnet.";
+    };
 
     hostKind = mkOption {
       type = types.enum [
@@ -385,7 +425,10 @@ in
         arcMax = mkOption {
           type = types.nullOr types.str;
           default = null;
-          description = "Maximum ARC cache size (e.g., '4G'). Null for automatic.";
+          description = ''
+            Explicit maximum ARC cache size (e.g. "4G"). Null leaves the
+            limit unset so OpenZFS uses its native automatic sizing.
+          '';
           example = "4G";
         };
 
@@ -404,7 +447,7 @@ in
           description = ''
             Kernel package selection for ZFS hosts:
             - "default": NixOS default kernel (linuxPackages)
-            - "latest": Latest stable kernel (linuxPackages_latest)
+            - "latest": Keystone's fleet-wide kernel package set
             - Or a kernel packages set (e.g., pkgs.linuxPackages_6_12)
           '';
         };
@@ -685,6 +728,8 @@ in
   config = mkIf cfg.enable {
     keystone.security.privilegedApproval.enable = mkDefault true;
 
+    boot.kernelPackages = mkDefault cfg.kernelPackages;
+
     # Ask systemd-boot to select the highest-resolution firmware console mode
     # before handing the display to the kernel. Consumers can retain the
     # firmware-selected mode with an explicit `consoleMode = "keep"` override.
@@ -843,10 +888,23 @@ in
     # Firewall configuration
     networking.firewall.enable = cfg.services.firewall.enable;
 
-    # DNS resolution
-    services.resolved.enable = cfg.services.resolved.enable;
+    # Keep systemd-resolved as the DNS integration point without letting it
+    # compete with Avahi for multicast DNS.  Avahi is Keystone's sole mDNS
+    # responder.
+    services.resolved = {
+      enable = cfg.services.resolved.enable;
+      settings.Resolve.MulticastDNS = false;
+    };
+
+    # NetworkManager must not opt individual connections back into mDNS when
+    # Avahi owns discovery for the host.
+    networking.networkmanager.connectionConfig."connection.mdns" =
+      mkIf config.networking.networkmanager.enable 0;
 
     # Nix configuration
+    # Keystone systems are flake-managed. Disable the legacy channel machinery
+    # so Nix does not retain a nonexistent root channel in NIX_PATH.
+    nix.channel.enable = mkDefault false;
     nix.settings.experimental-features = mkIf cfg.nix.flakes [
       "nix-command"
       "flakes"

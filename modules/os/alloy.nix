@@ -200,7 +200,10 @@ in
 
         // zrepl exposes its native Prometheus collector on loopback only.
         prometheus.scrape "zrepl" {
-          targets = [{ __address__ = "127.0.0.1:9811" }]
+          targets = [
+            { __address__ = "127.0.0.1:9811" },
+            { __address__ = "127.0.0.1:9812" },
+          ]
           scrape_interval = "15s"
           job_name = "zrepl"
           forward_to = [prometheus.relabel.instance.receiver]
