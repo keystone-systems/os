@@ -170,7 +170,8 @@ installer reports the installed revision, healthy root storage, and no
 unexpected failed systemd units.
 
 The installed admin account and disk may still use release bootstrap
-credentials. Follow the [onboarding walkthrough](keystone/onboarding.md)
+credentials. Resume the
+[onboarding walkthrough at Step 6](keystone/onboarding.md#step-6--first-boot-housekeeping-per-host-ssh-key--password)
 immediately to configure permanent SSH access, replace temporary passwords,
 configure durable disk unlocking, and enable snapshots and backups.
 
