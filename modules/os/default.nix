@@ -249,6 +249,8 @@ in
     ./secure-boot.nix
     ./tpm.nix
     ./zram.nix
+    ./power-wake-fallback.nix
+    ./power-debug.nix
     ./github-token-nix.nix
     ./hardware-key.nix
     ./privileged-approval.nix

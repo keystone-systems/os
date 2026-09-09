@@ -366,6 +366,14 @@
             inherit pkgs lib;
             self = self;
           };
+          powerEventDebug = import ./tests/module/power-event-debug.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          powerWakeFallback = import ./tests/module/power-wake-fallback.nix {
+            inherit pkgs lib;
+            self = self;
+          };
           espPermissionsEvaluation = import ./tests/module/esp-permissions-evaluation.nix {
             inherit pkgs lib;
             self = self;
@@ -502,6 +510,8 @@
         {
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
           os-evaluation = osEvaluation;
+          power-event-debug = powerEventDebug;
+          power-wake-fallback = powerWakeFallback;
           esp-permissions-evaluation = espPermissionsEvaluation;
           zfs-dataset-registry = zfsDatasetRegistry;
           zvol-storage-evaluation = zvolStorageEvaluation;
@@ -576,6 +586,8 @@
             ln -s ${keystoneFingerprintMenu} "$out/keystone-fingerprint-menu"
             ln -s ${keystoneUpdateApproveFlow} "$out/keystone-update-approve-flow"
             ln -s ${virtualMachineUnit} "$out/virtual-machine-unit"
+            ln -s ${powerEventDebug} "$out/power-event-debug"
+            ln -s ${powerWakeFallback} "$out/power-wake-fallback"
           '';
 
           # Agent runtime and miscellaneous module tests
