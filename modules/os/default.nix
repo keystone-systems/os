@@ -425,7 +425,10 @@ in
         arcMax = mkOption {
           type = types.nullOr types.str;
           default = null;
-          description = "Maximum ARC cache size (e.g., '4G'). Null for automatic.";
+          description = ''
+            Explicit maximum ARC cache size (e.g. "4G"). Null uses the
+            Keystone default: 25% of physical RAM, capped at 16 GiB.
+          '';
           example = "4G";
         };
 

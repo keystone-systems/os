@@ -15,10 +15,13 @@ keystone.os.storage = {
   esp.size = "1G";
   swap.size = "8G";
   credstore.size = "100M";  # LUKS volume for ZFS encryption keys
-  zfs = { compression = "zstd"; atime = "off"; arcMax = "4G";
+  zfs = { compression = "zstd"; atime = "off";
           autoSnapshot = true; autoScrub = true; };
 };
 ```
+
+By default, Keystone limits the ZFS ARC to 25% of physical RAM or 16 GiB,
+whichever is smaller. Set `zfs.arcMax` only when a host needs an explicit cap.
 
 **Boot sequence** (ZFS): Import pool → Unlock credstore (TPM or password) → Load ZFS key → Mount encrypted datasets.
 

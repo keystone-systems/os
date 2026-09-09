@@ -369,6 +369,47 @@ let
     };
   };
 
+  assertZfsArcPolicy =
+    let
+      evaluate =
+        arcMax:
+        nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            self.nixosModules.operating-system
+            {
+              system.stateVersion = "25.05";
+              keystone.os = {
+                enable = true;
+                storage = {
+                  enable = false;
+                  type = "zfs";
+                  zfs.arcMax = arcMax;
+                };
+              };
+            }
+          ];
+        };
+      automatic = (evaluate null).config;
+      explicit = (evaluate "8G").config;
+      automaticService = automatic.systemd.services.keystone-zfs-arc-limit;
+      hasArcParameter = cfg: builtins.any (lib.hasPrefix "zfs.zfs_arc_max=") cfg.boot.kernelParams;
+      valid =
+        lib.hasInfix "memory_kib * 1024 / 4" automaticService.script
+        && lib.hasInfix "ceiling=17179869184" automaticService.script
+        && !hasArcParameter automatic
+        && !(builtins.hasAttr "keystone-zfs-arc-limit" explicit.systemd.services)
+        && builtins.elem "zfs.zfs_arc_max=8589934592" explicit.boot.kernelParams;
+    in
+    pkgs.runCommand "zfs-arc-policy" { } ''
+      ${lib.optionalString (!valid) ''
+        echo 'FAIL: automatic and explicit ZFS ARC policies do not match the Keystone defaults' >&2
+        exit 1
+      ''}
+      echo 'OK: automatic ARC is 25% capped at 16 GiB; explicit limits use a kernel parameter'
+      touch $out
+    '';
+
   # Evaluate a module set and assert the named user's group membership.
   # The assertion is scoped to the `includes`/`excludes` lists — the user
   # MUST have every group in `includes` and MUST NOT have any group in
@@ -680,6 +721,8 @@ let
         };
       }
     ];
+
+    zfs-arc-policy = assertZfsArcPolicy;
 
     lvm-simple = eval "lvm-simple" [
       {
@@ -1184,6 +1227,7 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - kernel-policy: Linux 7.1 with a buildable OpenZFS 2.4 module"
     echo "  - nix-channel-policy: Legacy Nix channels and their search path are disabled"
     echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
+    echo "  - zfs-arc-policy: 25%-of-RAM default capped at 16 GiB, with explicit override"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"
     echo "  - journal-remote-client: Journal upload client (HTTPS via nginx)"

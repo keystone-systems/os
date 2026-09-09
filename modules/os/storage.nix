@@ -30,7 +30,7 @@ let
   # Compute device directory for ZFS import (matches devNodes)
   importDir = builtins.dirOf firstDevice;
 
-  # Convert arcMax to bytes for kernel param
+  # Convert an explicit arcMax to bytes for the kernel parameter.
   arcMaxBytes =
     let
       # Parse size string like "4G" or "8G"
@@ -43,7 +43,7 @@ let
         else
           toInt s;
     in
-    if cfg.zfs.arcMax != null then parseSize cfg.zfs.arcMax else 4 * 1024 * 1024 * 1024; # Default 4GB
+    parseSize cfg.zfs.arcMax;
 
   # Build ZFS vdev type based on mode and device count
   zfsVdevType =
@@ -62,6 +62,36 @@ let
 in
 {
   config = mkMerge [
+    # An explicit limit is fixed at boot. The default is computed from actual
+    # RAM below, so hosts do not need duplicated memory metadata in Nix.
+    (mkIf (osCfg.enable && cfg.type == "zfs" && cfg.zfs.arcMax != null) {
+      boot.kernelParams = [
+        "zfs.zfs_arc_max=${toString arcMaxBytes}"
+      ];
+    })
+
+    # Keep enough memory available for applications and kernel metadata on
+    # small systems while allowing useful caching on workstations. This also
+    # covers hosts whose ZFS/Disko layout is defined outside this module.
+    (mkIf (osCfg.enable && cfg.type == "zfs" && cfg.zfs.arcMax == null) {
+      systemd.services.keystone-zfs-arc-limit = {
+        description = "Apply the Keystone ZFS ARC memory limit";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "systemd-modules-load.service" ];
+        unitConfig.ConditionPathExists = "/sys/module/zfs/parameters/zfs_arc_max";
+        serviceConfig.Type = "oneshot";
+        script = ''
+          memory_kib="$(${pkgs.gawk}/bin/awk '/^MemTotal:/ { printf "%.0f", $2 }' /proc/meminfo)"
+          arc_max="$((memory_kib * 1024 / 4))"
+          ceiling=17179869184
+          if (( arc_max > ceiling )); then
+            arc_max="$ceiling"
+          fi
+          printf '%s\n' "$arc_max" > /sys/module/zfs/parameters/zfs_arc_max
+        '';
+      };
+    })
+
     # Keep a permanent boot path that uses the existing LUKS passphrase. A
     # missing FIDO2 key does not reliably make systemd fall back to a
     # passphrase, so the recovery entry must omit all automatic unlock hints.
@@ -355,11 +385,6 @@ in
         unsafeAllowHibernation = false;
         devNodes = importDir;
       };
-
-      # Kernel parameters for ZFS
-      boot.kernelParams = [
-        "zfs.zfs_arc_max=${toString arcMaxBytes}"
-      ];
 
       # Enable ZFS services
       services.zfs = {
