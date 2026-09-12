@@ -54,6 +54,114 @@ import subprocess
 import shutil
 import glob
 import re
+import json
+import pwd
+
+NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
+BACKEND_CONFIG = "/etc/keystone/virtual-machine-backend.json"
+
+def validate_name(value, kind="name"):
+    if not NAME_RE.fullmatch(value):
+        raise ValueError(f"invalid {kind} {value!r}: use 1-63 ASCII letters, digits, '.', '_' or '-'")
+    return value
+
+def load_backend_config(path=BACKEND_CONFIG):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        return {"backend": "qcow2"}
+
+def vm_state_dir(vm_name, disk_path=None):
+    validate_name(vm_name, "VM name")
+    if disk_path is not None:
+        return os.path.dirname(os.path.abspath(disk_path))
+    return os.path.abspath(os.path.join("vms", vm_name))
+
+def zvol_dataset(config, vm_name):
+    validate_name(vm_name, "VM name")
+    username = pwd.getpwuid(os.getuid()).pw_name
+    return f"{config['dataset']}/users/{username}/{vm_name}"
+
+def zvol_parent(volume):
+    return volume.rsplit("/", 1)[0]
+
+def run_zfs(*args, check=True, capture_output=False):
+    return subprocess.run(["zfs", *args], check=check, text=True, capture_output=capture_output)
+
+def rollback_zfs_checkpoint(dataset, snap_name):
+    validate_name(snap_name, "snapshot name")
+    result = run_zfs("list", "-H", "-r", "-t", "filesystem,volume", "-o", "name",
+                     dataset, capture_output=True)
+    # Children first. Plain rollback deliberately refuses when a newer
+    # snapshot exists; unlike `-r`, it never removes other checkpoints.
+    for child in reversed(result.stdout.splitlines()):
+        completed = run_zfs("rollback", f"{child}@{snap_name}", check=False)
+        if completed.returncode != 0:
+            return completed.returncode
+    return 0
+
+def create_zvol(config, vm_name, disk_size_gb):
+    dataset = zvol_dataset(config, vm_name)
+    volume = f"{dataset}/disk0"
+    if run_zfs("list", "-H", "-o", "name", volume, check=False, capture_output=True).returncode != 0:
+        if run_zfs("list", "-H", "-o", "name", dataset, check=False, capture_output=True).returncode != 0:
+            run_zfs("create", "-o", "mountpoint=none", "-o", "canmount=off", "-o", "com.sun:auto-snapshot=false", dataset)
+        run_zfs("create", "-s", "-V", f"{disk_size_gb}G", "-b", config["volblocksize"],
+                "-o", "compression=zstd", "-o", "snapdev=hidden", "-o", "volmode=dev", volume)
+    return f"/dev/zvol/{volume}"
+
+def disk_source(xml):
+    root = ET.fromstring(xml)
+    disk = root.find('.//disk[@device="disk"]')
+    source = disk.find("source") if disk is not None else None
+    if source is None:
+        return None, None
+    if source.get("dev"):
+        device = source.get("dev")
+        if device.startswith("/dev/zvol/"):
+            return "zvol", device.removeprefix("/dev/zvol/")
+        return "block", device
+    return "qcow2", source.get("file")
+
+def render_disk_xml(disk_path, zvol=False):
+    if zvol:
+        return f"""<disk type='block' device='disk'>
+      <driver name='qemu' type='raw' cache='none' io='native' discard='unmap'/>
+      <source dev='{disk_path}'/>
+      <target dev='vda' bus='virtio'/>
+      <serial>keystone-test-disk</serial>
+    </disk>"""
+    return f"""<disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='{disk_path}'/>
+      <target dev='vda' bus='virtio'/>
+      <serial>keystone-test-disk</serial>
+    </disk>"""
+
+def stopped_domain(conn, vm_name, operation):
+    validate_name(vm_name, "VM name")
+    dom = conn.lookupByName(vm_name)
+    if dom.isActive():
+        raise RuntimeError(f"VM '{vm_name}' must be stopped for {operation}")
+    return dom
+
+def checkpoint_create(backend, disk_path, snap_name):
+    validate_name(snap_name, "snapshot name")
+    if backend == "zvol":
+        return run_zfs("snapshot", "-r", f"{zvol_parent(disk_path)}@{snap_name}", check=False).returncode
+    return subprocess.run(["qemu-img", "snapshot", "-c", snap_name, disk_path]).returncode
+
+def checkpoint_restore(backend, disk_path, snap_name):
+    validate_name(snap_name, "snapshot name")
+    if backend == "zvol":
+        return rollback_zfs_checkpoint(zvol_parent(disk_path), snap_name)
+    return subprocess.run(["qemu-img", "snapshot", "-a", snap_name, disk_path]).returncode
+
+def checkpoint_list(backend, disk_path):
+    if backend == "zvol":
+        return run_zfs("list", "-H", "-t", "snapshot", "-o", "name", "-r", zvol_parent(disk_path), check=False).returncode
+    return subprocess.run(["qemu-img", "snapshot", "-l", disk_path], check=False).returncode
 
 def validate_nvram_setup_mode(nvram_path):
     """
@@ -173,6 +281,7 @@ def create_uefi_secureboot_vm(
     ssh_port=None,
     headless=False,
     monitor_socket=None,
+    zvol=False,
 ):
     """
     Create a VM with UEFI Secure Boot enabled in Setup Mode
@@ -200,20 +309,18 @@ def create_uefi_secureboot_vm(
         - Running `bootctl status` in VM shows "Secure Boot: disabled (setup)"
     """
 
-    # Set default disk path to vms/ directory
+    validate_name(vm_name, "VM name")
+    # State remains file-backed even when the disk is a zvol.
     if disk_path is None:
-        vm_dir = f"vms/{vm_name}"
-        disk_path = f"{vm_dir}/disk.qcow2"
-
-    # Convert to absolute path
-    disk_path = os.path.abspath(disk_path)
+        disk_path = os.path.join(vm_state_dir(vm_name), "disk.qcow2")
+    disk_path = os.path.abspath(disk_path) if not zvol else disk_path
+    vm_dir = vm_state_dir(vm_name) if zvol else vm_state_dir(vm_name, disk_path)
 
     # Ensure VM directory exists
-    vm_dir = os.path.dirname(disk_path)
     os.makedirs(vm_dir, exist_ok=True)
 
     # Create disk image if it doesn't exist
-    if not os.path.exists(disk_path):
+    if not zvol and not os.path.exists(disk_path):
         print(f"Creating disk image: {disk_path}")
         ret = os.system(f"qemu-img create -f qcow2 {disk_path} {disk_size_gb}G")
         if ret != 0:
@@ -221,7 +328,6 @@ def create_uefi_secureboot_vm(
             sys.exit(1)
 
     # NVRAM path in vms/ directory
-    vm_dir = os.path.dirname(disk_path)
     nvram_path = os.path.join(vm_dir, "OVMF_VARS.fd")
 
     # Find OVMF firmware files
@@ -347,6 +453,7 @@ def create_uefi_secureboot_vm(
         qemu_commandline_xml = ""
 
     # Build XML configuration
+    disk_xml = render_disk_xml(disk_path, zvol)
     xml_config = f"""
 <domain type='kvm'>
   <name>{vm_name}</name>
@@ -385,12 +492,7 @@ def create_uefi_secureboot_vm(
     <emulator>/run/current-system/sw/bin/qemu-system-x86_64</emulator>
     
     <!-- Main disk -->
-    <disk type='file' device='disk'>
-      <driver name='qemu' type='qcow2'/>
-      <source file='{disk_path}'/>
-      <target dev='vda' bus='virtio'/>
-      <serial>keystone-test-disk</serial>
-    </disk>
+    {disk_xml}
     
     <!-- Installation ISO (if provided) -->
     {"" if not iso_path else f"""
@@ -466,28 +568,19 @@ def post_install_reboot(conn, vm_name, headless=False, monitor_socket=None):
         monitor_socket: Add a QEMU monitor socket for screendump/sendkey
     """
     try:
-        dom = conn.lookupByName(vm_name)
-
-        # Check if VM is shut down
-        if dom.isActive():
-            print(f"ERROR: VM '{vm_name}' is still running!")
-            print("Please shut down the VM first:")
-            print(f"  virsh shutdown {vm_name}")
-            print("Wait for it to power off, then run this command again.")
-            sys.exit(1)
+        dom = stopped_domain(conn, vm_name, "post-install")
 
         print(f"✓ VM '{vm_name}' is shut down")
 
         xml = dom.XMLDesc(0)
 
         # Get disk path for snapshot (libvirt XML uses single quotes)
-        disk_match = re.search(r"<source file=['\"]([^'\"]+)['\"]", xml)
-        disk_path = disk_match.group(1) if disk_match else None
+        backend, disk_path = disk_source(xml)
 
         # Create snapshot of disk
         if disk_path:
             print(f"Creating disk snapshot: post-install")
-            ret = os.system(f"qemu-img snapshot -c post-install {disk_path}")
+            ret = checkpoint_create(backend, disk_path, "post-install")
             if ret != 0:
                 print(f"WARNING: Snapshot creation failed")
             else:
@@ -615,7 +708,8 @@ def reset_vm(conn, vm_name):
     Completely delete VM and all associated files (no confirmation)
     """
     try:
-        dom = conn.lookupByName(vm_name)
+        validate_name(vm_name, "VM name")
+        dom = stopped_domain(conn, vm_name, "reset")
         
         # Get all file paths before deletion
         xml = dom.XMLDesc(0)
@@ -625,18 +719,27 @@ def reset_vm(conn, vm_name):
         for disk in root.findall('.//disk[@device="disk"]'):
             source = disk.find('source')
             if source is not None:
-                disk_paths.append(source.get('file'))
+                disk_paths.append(source.get('dev') or source.get('file'))
         
         nvram_path = None
         nvram = root.find('.//os/nvram')
         if nvram is not None:
             nvram_path = nvram.text
         
-        # Force destroy if running
-        if dom.isActive():
-            print(f"⚠ Destroying running VM '{vm_name}'...")
-            dom.destroy()
-            print(f"✓ VM destroyed")
+        zvol_disks = [path for path in disk_paths if path and path.startswith("/dev/zvol/")]
+        if zvol_disks:
+            backend_config = load_backend_config()
+            expected = f"{zvol_dataset(backend_config, vm_name)}/disk0"
+            for disk_path in zvol_disks:
+                actual = disk_path.removeprefix("/dev/zvol/")
+                snapshots = run_zfs(
+                    "list", "-H", "-t", "snapshot", "-o", "name", "-r",
+                    zvol_parent(actual), check=False, capture_output=True,
+                ).stdout.strip()
+                if actual != expected or snapshots:
+                    raise RuntimeError(
+                        "refusing zvol reset outside this user's VM tree or while checkpoints exist"
+                    )
         
         print(f"Deleting VM '{vm_name}' and all associated files...")
         
@@ -650,7 +753,12 @@ def reset_vm(conn, vm_name):
         
         # Delete disk files
         for disk_path in disk_paths:
-            if os.path.exists(disk_path):
+            if disk_path and disk_path.startswith("/dev/zvol/"):
+                actual = disk_path.removeprefix("/dev/zvol/")
+                run_zfs("destroy", actual)
+                run_zfs("destroy", zvol_parent(actual))
+                print(f"✓ Deleted zvol: {actual}")
+            elif disk_path and os.path.exists(disk_path):
                 os.remove(disk_path)
                 print(f"✓ Deleted: {disk_path}")
         
@@ -660,17 +768,14 @@ def reset_vm(conn, vm_name):
             print(f"✓ Deleted: {nvram_path}")
 
         # Kill swtpm and clean up state directory
-        for disk_path in disk_paths:
-            swtpm_dir = os.path.join(os.path.dirname(disk_path), "swtpm")
-            swtpm_sock = os.path.join(swtpm_dir, "swtpm.sock")
-            if os.path.exists(swtpm_sock):
-                # Find and kill the swtpm process using this socket
-                subprocess.run(["pkill", "-f", f"swtpm.*{swtpm_sock}"],
-                               capture_output=True)
-                print(f"✓ Stopped swtpm")
-            if os.path.isdir(swtpm_dir):
-                shutil.rmtree(swtpm_dir)
-                print(f"✓ Deleted: {swtpm_dir}")
+        swtpm_dir = os.path.join(vm_state_dir(vm_name), "swtpm")
+        swtpm_sock = os.path.join(swtpm_dir, "swtpm.sock")
+        if os.path.exists(swtpm_sock):
+            subprocess.run(["pkill", "-f", f"swtpm.*{swtpm_sock}"], capture_output=True)
+            print("✓ Stopped swtpm")
+        if os.path.isdir(swtpm_dir):
+            shutil.rmtree(swtpm_dir)
+            print(f"✓ Deleted: {swtpm_dir}")
 
         print(f"\n✓ VM '{vm_name}' completely removed!")
         
@@ -813,35 +918,24 @@ def print_connection_commands(vm_name, ssh_port):
     print("="*70 + "\n")
 
 
-def get_disk_path_for_vm(conn, vm_name):
-    """Get the primary disk path from a VM's XML definition."""
-    try:
-        dom = conn.lookupByName(vm_name)
-        xml = dom.XMLDesc(0)
-        match = re.search(r"<disk[^>]*device=['\"]disk['\"][^>]*>.*?<source file=['\"]([^'\"]+)['\"]", xml, re.DOTALL)
-        return match.group(1) if match else None
-    except libvirt.libvirtError:
-        return None
+def get_disk_for_vm(conn, vm_name):
+    validate_name(vm_name, "VM name")
+    backend, path = disk_source(conn.lookupByName(vm_name).XMLDesc(0))
+    if backend not in ("zvol", "qcow2"):
+        raise RuntimeError(f"unsupported VM disk backend: {backend}")
+    return backend, path
 
 
 def snapshot_create(conn, vm_name, snap_name):
-    """Create a qcow2 internal snapshot. VM must be stopped."""
-    try:
-        dom = conn.lookupByName(vm_name)
-        if dom.isActive():
-            print(f"ERROR: VM '{vm_name}' must be stopped for snapshots")
-            print(f"  virsh destroy {vm_name}")
-            sys.exit(1)
-    except libvirt.libvirtError as e:
-        print(f"ERROR: {e}")
-        sys.exit(1)
-
-    disk_path = get_disk_path_for_vm(conn, vm_name)
+    """Create a disk checkpoint. VM must be stopped."""
+    stopped_domain(conn, vm_name, "snapshots")
+    validate_name(snap_name, "snapshot name")
+    backend, disk_path = get_disk_for_vm(conn, vm_name)
     if not disk_path:
         print(f"ERROR: Could not find disk for VM '{vm_name}'")
         sys.exit(1)
 
-    ret = os.system(f"qemu-img snapshot -c {snap_name} {disk_path}")
+    ret = checkpoint_create(backend, disk_path, snap_name)
     if ret != 0:
         print(f"ERROR: Failed to create snapshot '{snap_name}'")
         sys.exit(1)
@@ -849,23 +943,15 @@ def snapshot_create(conn, vm_name, snap_name):
 
 
 def snapshot_restore(conn, vm_name, snap_name):
-    """Restore a qcow2 internal snapshot. VM must be stopped."""
-    try:
-        dom = conn.lookupByName(vm_name)
-        if dom.isActive():
-            print(f"ERROR: VM '{vm_name}' must be stopped for restore")
-            print(f"  virsh destroy {vm_name}")
-            sys.exit(1)
-    except libvirt.libvirtError as e:
-        print(f"ERROR: {e}")
-        sys.exit(1)
-
-    disk_path = get_disk_path_for_vm(conn, vm_name)
+    """Restore a disk checkpoint. VM must be stopped."""
+    stopped_domain(conn, vm_name, "restore")
+    validate_name(snap_name, "snapshot name")
+    backend, disk_path = get_disk_for_vm(conn, vm_name)
     if not disk_path:
         print(f"ERROR: Could not find disk for VM '{vm_name}'")
         sys.exit(1)
 
-    ret = os.system(f"qemu-img snapshot -a {snap_name} {disk_path}")
+    ret = checkpoint_restore(backend, disk_path, snap_name)
     if ret != 0:
         print(f"ERROR: Failed to restore snapshot '{snap_name}'")
         sys.exit(1)
@@ -873,13 +959,35 @@ def snapshot_restore(conn, vm_name, snap_name):
 
 
 def snapshot_list(conn, vm_name):
-    """List qcow2 internal snapshots for a VM."""
-    disk_path = get_disk_path_for_vm(conn, vm_name)
+    """List disk checkpoints for a VM."""
+    backend, disk_path = get_disk_for_vm(conn, vm_name)
     if not disk_path:
         print(f"ERROR: Could not find disk for VM '{vm_name}'")
         sys.exit(1)
 
-    os.system(f"qemu-img snapshot -l {disk_path}")
+    checkpoint_list(backend, disk_path)
+
+def cleanup_qcow2(conn, vm_name, apply=False):
+    """Safely remove a stopped domain's legacy qcow2 disk; dry-run by default."""
+    validate_name(vm_name, "VM name")
+    dom = conn.lookupByName(vm_name)
+    if dom.isActive():
+        raise RuntimeError(f"VM '{vm_name}' must be stopped before qcow2 cleanup")
+    backend, disk_path = disk_source(dom.XMLDesc(0))
+    if backend != "qcow2" or not disk_path:
+        raise RuntimeError(f"VM '{vm_name}' does not use a qcow2 disk")
+    disk = os.path.realpath(disk_path)
+    recognized = [
+        os.path.realpath(os.path.join(os.getcwd(), "vms")),
+        os.path.realpath(os.path.expanduser("~/.local/share/keystone/vms")),
+    ]
+    if not any(os.path.commonpath([disk, root]) == root for root in recognized):
+        raise RuntimeError(f"refusing cleanup outside recognized VM directories: {disk}")
+    if not apply:
+        print(f"DRY RUN: would remove {disk}; pass --apply to proceed")
+        return
+    os.remove(disk)
+    print(f"✓ Removed legacy qcow2 disk: {disk}")
 
 
 def main():
@@ -910,6 +1018,9 @@ def main():
                         help='Restore a qcow2 snapshot (VM must be stopped)')
     parser.add_argument('--list-snapshots', metavar='VM_NAME',
                         help='List qcow2 snapshots for a VM')
+    parser.add_argument('--cleanup-qcow2', metavar='VM_NAME',
+                        help='Guarded cleanup of a stopped legacy qcow2 disk (dry-run by default)')
+    parser.add_argument('--apply', action='store_true', help='Apply --cleanup-qcow2 deletion')
 
     args = parser.parse_args()
 
@@ -940,6 +1051,15 @@ def main():
     if args.list_snapshots:
         snapshot_list(conn, args.list_snapshots)
         conn.close()
+        return
+    if args.cleanup_qcow2:
+        try:
+            cleanup_qcow2(conn, args.cleanup_qcow2, args.apply)
+        except (libvirt.libvirtError, RuntimeError, OSError) as error:
+            print(f"ERROR: {error}")
+            sys.exit(1)
+        finally:
+            conn.close()
         return
 
     # Handle force stop
@@ -993,8 +1113,17 @@ def main():
         # Convert to absolute path if provided
         iso_path = os.path.abspath(iso_path)
 
-    # VM configuration
-    disk_path = args.disk_path or f"vms/{args.name}/disk.qcow2"
+    validate_name(args.name, "VM name")
+    backend_config = load_backend_config()
+    if args.disk_path:
+        disk_path = args.disk_path
+        uses_zvol = False
+    elif backend_config.get("backend") == "zvol":
+        disk_path = create_zvol(backend_config, args.name, args.disk_size)
+        uses_zvol = True
+    else:
+        disk_path = f"vms/{args.name}/disk.qcow2"
+        uses_zvol = False
 
     # Create the VM
     dom = create_uefi_secureboot_vm(
@@ -1008,6 +1137,7 @@ def main():
         ssh_port=args.ssh_port,
         headless=args.headless,
         monitor_socket=args.monitor_socket,
+        zvol=uses_zvol,
     )
 
     # Start VM if requested

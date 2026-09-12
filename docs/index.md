@@ -41,6 +41,7 @@ Start here:
 - [Installer cache warming](os/installer-cache.md)
 - [Keystone OS install](os/installation.md)
 - [OS module reference](os/server.md)
+- [Power management diagnostics](os/power-management.md)
 
 ### Keystone terminal module
 
@@ -119,6 +120,7 @@ Keep development workflows separate from initial setup:
 - [Testing procedures](os/testing-procedure.md)
 - [VM testing](os/testing-vm.md)
 - [ISO and OS VM testing](testing/iso-os-virtual-machine.md)
+- [Newer-kernel/OpenZFS validation](os/zfs-kernel-compatibility.md#primary-validation-workflow)
 
 ## Quick Links
 

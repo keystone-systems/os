@@ -12,7 +12,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     terminal = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git";
+      url = "github:keystone-systems/terminal/v0.13.0-rc.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
@@ -22,9 +22,9 @@
     };
     # Desktop environments (Hyprland session wiring, scripts, menus, theming,
     # dotfile templates). The desktop flake is the single owner of the
-    # compositor pin — deliberately no hyprland follows here.
+    # compositor source and package — deliberately no Hyprland input here.
     desktop = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git";
+      url = "github:keystone-systems/desktop/v0.13.0-rc.1";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.terminal.follows = "terminal";
     };
@@ -366,11 +366,40 @@
             inherit pkgs lib;
             self = self;
           };
+          powerEventDebug = import ./tests/module/power-event-debug.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          powerWakeFallback = import ./tests/module/power-wake-fallback.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          espPermissionsEvaluation = import ./tests/module/esp-permissions-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
           zfsDatasetRegistry = import ./tests/module/zfs-dataset-registry.nix {
             inherit pkgs lib;
             self = self;
           };
+          zvolStorageEvaluation = import ./tests/module/zvol-storage-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          virtualMachineUnit = import ./tests/unit/virtual-machine.nix { inherit pkgs; };
+          ollamaZfsDataset = import ./tests/module/ollama-zfs-dataset.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          zfsDatasetMigration = import ./tests/integration/zfs-dataset-migration.nix {
+            inherit pkgs;
+            self = self;
+          };
           zreplBackupEvaluation = import ./tests/module/zrepl-backup-evaluation.nix {
+            inherit pkgs lib;
+            self = self;
+          };
+          deviceBackupsEvaluation = import ./tests/module/device-backups-evaluation.nix {
             inherit pkgs lib;
             self = self;
           };
@@ -481,8 +510,16 @@
         {
           # Individual checks — for local debugging (nix build .#checks.x86_64-linux.<name>)
           os-evaluation = osEvaluation;
+          power-event-debug = powerEventDebug;
+          power-wake-fallback = powerWakeFallback;
+          esp-permissions-evaluation = espPermissionsEvaluation;
           zfs-dataset-registry = zfsDatasetRegistry;
+          zvol-storage-evaluation = zvolStorageEvaluation;
+          virtual-machine-unit = virtualMachineUnit;
+          ollama-zfs-dataset = ollamaZfsDataset;
+          zfs-dataset-migration = zfsDatasetMigration;
           zrepl-backup-evaluation = zreplBackupEvaluation;
+          device-backups-evaluation = deviceBackupsEvaluation;
           cached-user-share-evaluation = cachedUserShareEvaluation;
           agent-evaluation = agentEvaluation;
           template-evaluation = templateEvaluation;
@@ -514,6 +551,11 @@
           check-eval = pkgs.runCommand "check-eval" { } ''
             mkdir -p "$out"
             ln -s ${osEvaluation} "$out/os-evaluation"
+            ln -s ${espPermissionsEvaluation} "$out/esp-permissions-evaluation"
+            ln -s ${zvolStorageEvaluation} "$out/zvol-storage-evaluation"
+            ln -s ${zfsDatasetRegistry} "$out/zfs-dataset-registry"
+            ln -s ${deviceBackupsEvaluation} "$out/device-backups-evaluation"
+            ln -s ${ollamaZfsDataset} "$out/ollama-zfs-dataset"
             ln -s ${cachedUserShareEvaluation} "$out/cached-user-share-evaluation"
             ln -s ${agentEvaluation} "$out/agent-evaluation"
             ln -s ${templateEvaluation} "$out/template-evaluation"
@@ -543,6 +585,9 @@
             ln -s ${keystoneSecretsMenu} "$out/keystone-secrets-menu"
             ln -s ${keystoneFingerprintMenu} "$out/keystone-fingerprint-menu"
             ln -s ${keystoneUpdateApproveFlow} "$out/keystone-update-approve-flow"
+            ln -s ${virtualMachineUnit} "$out/virtual-machine-unit"
+            ln -s ${powerEventDebug} "$out/power-event-debug"
+            ln -s ${powerWakeFallback} "$out/power-wake-fallback"
           '';
 
           # Agent runtime and miscellaneous module tests

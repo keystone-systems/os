@@ -126,6 +126,68 @@ let
       touch $out
     '';
 
+  assertKernelPolicy =
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+          }
+        ];
+      };
+      kernelPackages = result.config.boot.kernelPackages;
+      zfsPackage = result.config.boot.zfs.package;
+      zfsModule = kernelPackages.${zfsPackage.kernelModuleAttribute};
+      valid =
+        lib.versions.majorMinor kernelPackages.kernel.version == "7.1"
+        && lib.versions.majorMinor zfsPackage.version == "2.4"
+        && !(zfsModule.meta.broken or false);
+    in
+    pkgs.runCommand "linux-7-1-zfs-kernel-policy" { } ''
+      ${lib.optionalString (!valid) ''
+        echo 'FAIL: expected Linux 7.1 with a buildable OpenZFS 2.4 module' >&2
+        echo 'kernel=${kernelPackages.kernel.version}' >&2
+        echo 'zfs=${zfsPackage.version}' >&2
+        echo 'module=${zfsModule.name}' >&2
+        exit 1
+      ''}
+      echo 'OK: kernel=${kernelPackages.kernel.version} zfs=${zfsPackage.version} module=${zfsModule.name}'
+      touch $out
+    '';
+
+  assertNixChannelPolicy =
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+          }
+        ];
+      };
+      channelEnabled = result.config.nix.channel.enable;
+      hasLegacyChannelPath = builtins.elem "/nix/var/nix/profiles/per-user/root/channels" result.config.nix.nixPath;
+    in
+    pkgs.runCommand "nix-channel-policy" { } ''
+      ${lib.optionalString channelEnabled ''
+        echo 'FAIL: legacy Nix channels are enabled' >&2
+        exit 1
+      ''}
+      ${lib.optionalString hasLegacyChannelPath ''
+        echo 'FAIL: NIX_PATH contains the legacy root channel path' >&2
+        exit 1
+      ''}
+      echo 'OK: legacy Nix channels and their search path are disabled'
+      touch $out
+    '';
+
   assertPowerPolicy =
     name: hostKind: expectPolicy:
     let
@@ -307,6 +369,45 @@ let
     };
   };
 
+  assertZfsArcPolicy =
+    let
+      evaluate =
+        arcMax:
+        nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            self.nixosModules.operating-system
+            {
+              system.stateVersion = "25.05";
+              keystone.os = {
+                enable = true;
+                storage = {
+                  enable = false;
+                  type = "zfs";
+                  zfs.arcMax = arcMax;
+                };
+              };
+            }
+          ];
+        };
+      automatic = (evaluate null).config;
+      explicit = (evaluate "8G").config;
+      hasArcParameter = cfg: builtins.any (lib.hasPrefix "zfs.zfs_arc_max=") cfg.boot.kernelParams;
+      valid =
+        !hasArcParameter automatic
+        && !(builtins.hasAttr "keystone-zfs-arc-limit" automatic.systemd.services)
+        && !(builtins.hasAttr "keystone-zfs-arc-limit" explicit.systemd.services)
+        && builtins.elem "zfs.zfs_arc_max=8589934592" explicit.boot.kernelParams;
+    in
+    pkgs.runCommand "zfs-arc-policy" { } ''
+      ${lib.optionalString (!valid) ''
+        echo 'FAIL: automatic and explicit ZFS ARC policies do not match the option contract' >&2
+        exit 1
+      ''}
+      echo 'OK: null leaves ARC sizing to OpenZFS; explicit limits use a kernel parameter'
+      touch $out
+    '';
+
   # Evaluate a module set and assert the named user's group membership.
   # The assertion is scoped to the `includes`/`excludes` lists — the user
   # MUST have every group in `includes` and MUST NOT have any group in
@@ -427,6 +528,74 @@ let
       touch $out
     '';
 
+  assertMdnsOwnership =
+    name:
+    {
+      avahiEnable,
+      resolvedEnable,
+      networkManagerEnable,
+    }:
+    let
+      result = nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          self.nixosModules.operating-system
+          adminBase
+          {
+            system.stateVersion = "25.05";
+            boot.loader.systemd-boot.enable = true;
+            keystone.os.services = {
+              avahi.enable = avahiEnable;
+              resolved.enable = resolvedEnable;
+            };
+            networking.networkmanager.enable = networkManagerEnable;
+          }
+        ];
+      };
+      actualAvahi = result.config.services.avahi.enable;
+      actualResolved = result.config.services.resolved.enable;
+      actualResolvedMdns = result.config.services.resolved.settings.Resolve.MulticastDNS;
+      actualNetworkManagerDns = result.config.networking.networkmanager.dns;
+      expectedNetworkManagerDns = if resolvedEnable then "systemd-resolved" else "default";
+      hasNetworkManagerConfig = builtins.hasAttr "NetworkManager/NetworkManager.conf" result.config.environment.etc;
+      networkManagerConfig =
+        if hasNetworkManagerConfig then
+          result.config.environment.etc."NetworkManager/NetworkManager.conf".source
+        else
+          null;
+      ok =
+        actualAvahi == avahiEnable
+        && actualResolved == resolvedEnable
+        && actualResolvedMdns == false
+        && actualNetworkManagerDns == expectedNetworkManagerDns
+        && hasNetworkManagerConfig == networkManagerEnable;
+    in
+    pkgs.runCommand "mdns-ownership-${name}" { } ''
+      ${lib.optionalString (!ok) ''
+        echo "FAIL: mDNS ownership ${name} did not match its expected state" >&2
+        echo 'avahi=${builtins.toJSON actualAvahi}' >&2
+        echo 'resolved=${builtins.toJSON actualResolved}' >&2
+        echo 'resolvedMdns=${builtins.toJSON actualResolvedMdns}' >&2
+        echo 'networkManagerDns=${builtins.toJSON actualNetworkManagerDns}' >&2
+        echo 'hasNetworkManagerConfig=${builtins.toJSON hasNetworkManagerConfig}' >&2
+        exit 1
+      ''}
+      ${lib.optionalString networkManagerEnable ''
+        if ! grep -Fqx 'connection.mdns=0' ${networkManagerConfig}; then
+          echo 'FAIL: rendered NetworkManager [connection] policy lacks connection.mdns=0' >&2
+          cat ${networkManagerConfig} >&2
+          exit 1
+        fi
+        if grep -Fqx 'mdns=0' ${networkManagerConfig}; then
+          echo 'FAIL: rendered NetworkManager policy contains the ineffective unqualified mdns key' >&2
+          cat ${networkManagerConfig} >&2
+          exit 1
+        fi
+      ''}
+      echo "OK: mDNS ownership ${name}"
+      touch $out
+    '';
+
   tests = {
     systemd-boot-console-mode-default = assertConsoleMode "default" "max" [ adminBase ];
     systemd-boot-console-mode-override = assertConsoleMode "override" "keep" [
@@ -436,6 +605,16 @@ let
     laptop-power-policy = assertPowerPolicy "laptop" "laptop" true;
     workstation-power-policy = assertPowerPolicy "workstation" "workstation" false;
     server-power-policy = assertPowerPolicy "server" "server" false;
+    mdns-ownership-enabled = assertMdnsOwnership "enabled" {
+      avahiEnable = true;
+      resolvedEnable = true;
+      networkManagerEnable = true;
+    };
+    mdns-ownership-disabled = assertMdnsOwnership "disabled" {
+      avahiEnable = false;
+      resolvedEnable = false;
+      networkManagerEnable = false;
+    };
     zfs-power-policy-rejected =
       assertHasFailingAssertion "zfs-power-policy" "Suspend-then-hibernate requires non-ZFS LVM storage."
         [
@@ -540,6 +719,8 @@ let
         };
       }
     ];
+
+    zfs-arc-policy = assertZfsArcPolicy;
 
     lvm-simple = eval "lvm-simple" [
       {
@@ -1024,6 +1205,8 @@ pkgs.runCommand "test-os-evaluation"
   {
     nativeBuildInputs = (lib.attrValues tests) ++ [
       assertLvmHibernateLayout
+      assertKernelPolicy
+      assertNixChannelPolicy
       assertPassphraseRecovery
     ];
   }
@@ -1039,7 +1222,10 @@ pkgs.runCommand "test-os-evaluation"
     echo "  - full-zfs: Full ZFS with all options"
     echo "  - lvm-simple: LVM-backed ext4 setup"
     echo "  - lvm-hibernate: LVM-backed ext4 with hibernation enabled"
+    echo "  - kernel-policy: Linux 7.1 with a buildable OpenZFS 2.4 module"
+    echo "  - nix-channel-policy: Legacy Nix channels and their search path are disabled"
     echo "  - passphrase-recovery: Recovery boot omits FIDO2 and TPM unlock options"
+    echo "  - zfs-arc-policy: native OpenZFS default with an explicit override"
     echo "  - zram-experimental: experimental keystone.os.zram defaults"
     echo "  - journal-remote-server: Journal collection server (HTTPS via nginx)"
     echo "  - journal-remote-client: Journal upload client (HTTPS via nginx)"

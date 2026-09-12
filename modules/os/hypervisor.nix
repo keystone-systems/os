@@ -40,6 +40,58 @@ let
 
   # Desktop users who should get virt-manager home-manager config
   desktopUsers = filterAttrs (_: u: u.desktop.enable) osCfg.users;
+  zvolCfg = cfg.zvolStorage;
+  zvolUsers = builtins.attrNames osCfg.users;
+  userDataset = user: "${zvolCfg.dataset}/users/${user}";
+  zvolDatasetProperties = {
+    canmount = "off";
+    "com.sun:auto-snapshot" = "false";
+  };
+  zvolDatasets =
+    lib.genAttrs
+      (
+        [
+          zvolCfg.dataset
+          "${zvolCfg.dataset}/users"
+        ]
+        ++ map userDataset zvolUsers
+      )
+      (name: {
+        class = "ephemeral";
+        mountpoint = "none";
+        properties =
+          zvolDatasetProperties // lib.optionalAttrs (name == zvolCfg.dataset) { quota = zvolCfg.quota; };
+      });
+  delegatedPermissions = [
+    "create"
+    "mount"
+    "destroy"
+    "snapshot"
+    "rollback"
+    "volsize"
+    "volblocksize"
+    "compression"
+    "snapdev"
+    "volmode"
+    "userprop"
+  ];
+  zfs = "${config.boot.zfs.package}/bin/zfs";
+  zvolPackages = [
+    config.boot.zfs.package
+    pkgs.libvirt
+    qemuPkg
+    pkgs.swtpm
+  ];
+  backendConfig =
+    if zvolCfg.enable then
+      {
+        backend = "zvol";
+        dataset = zvolCfg.dataset;
+        quota = zvolCfg.quota;
+        volblocksize = zvolCfg.volblocksize;
+      }
+    else
+      { backend = "qcow2"; };
 in
 {
   options.keystone.os.hypervisor = {
@@ -74,9 +126,84 @@ in
       ];
       description = "Bridge devices usable by session VMs via qemu-bridge-helper. Written to /etc/qemu/bridge.conf.";
     };
+
+    zvolStorage = {
+      enable = mkOption {
+        type = types.bool;
+        default =
+          osCfg.storage.type == "zfs"
+          && hasDesktop
+          && clientCfg.enable
+          && cfg.defaultUri == "qemu:///session";
+        defaultText = literalExpression ''storage.type == "zfs" && desktop.enable && client.enable && defaultUri == "qemu:///session"'';
+        description = "Use per-user sparse ZFS volumes for local session VMs";
+      };
+      dataset = mkOption {
+        type = types.str;
+        default = "rpool/crypt/vms";
+        description = "Encrypted parent dataset for per-user VM datasets";
+      };
+      quota = mkOption {
+        type = types.str;
+        default = "500G";
+        description = "Quota applied to the VM storage parent dataset";
+      };
+      volblocksize = mkOption {
+        type = types.str;
+        default = "16K";
+        description = "ZFS volume block size used for newly created VM disks";
+      };
+    };
   };
 
   config = mkMerge [
+    (mkIf (osCfg.enable && zvolCfg.enable) {
+      assertions = [
+        {
+          assertion = osCfg.storage.type == "zfs";
+          message = "keystone.os.hypervisor.zvolStorage requires ZFS storage.";
+        }
+        {
+          assertion = lib.hasPrefix "rpool/crypt/" zvolCfg.dataset;
+          message = "keystone.os.hypervisor.zvolStorage.dataset MUST be a native-encrypted child of rpool/crypt.";
+        }
+        {
+          assertion = cfg.defaultUri == "qemu:///session";
+          message = "keystone.os.hypervisor.zvolStorage requires the local qemu:///session URI.";
+        }
+        {
+          assertion = clientCfg.enable;
+          message = "keystone.os.hypervisor.zvolStorage requires the local hypervisor client.";
+        }
+      ];
+
+      keystone.os.storage.zfs.datasets = zvolDatasets;
+
+      systemd.services.keystone-zvol-delegation = {
+        description = "Reconcile rootless VM zvol delegation";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "keystone-zfs-datasets.service" ];
+        requires = [ "keystone-zfs-datasets.service" ];
+        serviceConfig.Type = "oneshot";
+        script = concatMapStringsSep "\n" (user: ''
+          ${zfs} unallow -u ${escapeShellArg user} ${escapeShellArg (userDataset user)} 2>/dev/null || true
+          ${zfs} allow -u ${escapeShellArg user} ${escapeShellArg (concatStringsSep "," delegatedPermissions)} ${escapeShellArg (userDataset user)}
+        '') zvolUsers;
+      };
+
+      services.udev.extraRules = concatMapStringsSep "\n" (user: ''
+        KERNEL=="zd*", SUBSYSTEM=="block", ACTION=="add|change", PROGRAM=="${config.boot.zfs.package}/lib/udev/zvol_id $devnode", RESULT=="${zvolCfg.dataset}/users/${user}/*", OWNER="${user}", MODE="0600"
+      '') zvolUsers;
+
+      # qemu:///session starts per-user virtqemud/QEMU processes; it does not
+      # require the root libvirtd service, but the client and emulator must be
+      # present in the system profile.
+      environment.systemPackages = zvolPackages;
+    })
+
+    (mkIf osCfg.enable {
+      environment.etc."keystone/virtual-machine-backend.json".text = builtins.toJSON backendConfig;
+    })
     (mkIf (osCfg.enable && cfg.enable) {
       virtualisation.libvirtd = {
         enable = true;

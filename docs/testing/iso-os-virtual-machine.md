@@ -501,6 +501,13 @@ VM_SCRIPT="$KEYSTONE_LOCKED_PATH/bin/virtual-machine"
 - virtio-gpu with egl-headless provides virgl 3D for guest GL/EGL
 - Screenshots captured via grim over SSH (Wayland surface), not screendump
 
+For newer Linux/OpenZFS combinations, the primary workflow is the
+consumer-host digital twin documented in
+[ZFS and Linux Kernel Version Compatibility](../os/zfs-kernel-compatibility.md#primary-validation-workflow).
+It also uses `qemu:///session`, but persistent local disks are direct ZVOLs on
+the managed, non-snapshotted per-user VM dataset. CI MAY use ephemeral qcow2
+while retaining the same guest image and oracle.
+
 ### hardware.graphics
 
 The ks.systems/desktop flake's `modules/nixos/common.nix` (imported through

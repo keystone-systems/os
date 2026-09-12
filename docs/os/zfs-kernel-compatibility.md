@@ -13,6 +13,61 @@ How do ZFS and Linux kernel versions interplay, and why must they be matched? Sp
 
 ZFS is an **out-of-tree kernel module** that must be recompiled for each kernel version. Because Linux provides **no stable kernel ABI**, ZFS developers must actively patch their code whenever kernel internals change. This creates a fundamental tension: new hardware support (like AMD RDNA4 GPUs) requires bleeding-edge kernels, but ZFS compatibility lags behind kernel releases.
 
+## Primary Validation Workflow
+
+A local libvirt digital twin on `qemu:///session` is the primary validation
+path for a Linux/OpenZFS pair that is newer than the combination already used
+on physical Keystone hosts. The twin MUST build the consumer flake's real host
+configuration and MUST limit its overrides to hardware that cannot be
+represented in the VM. A separate hand-written guest is insufficient because
+it can drift from the system that will be deployed.
+
+The local workflow MUST use direct sparse ZVOLs beneath the operator's managed
+VM dataset, normally `rpool/crypt/vms/users/<user>`. That dataset MUST be
+excluded from automatic snapshots and replication. Persistent qcow2 disks
+MUST NOT be stored elsewhere on the host. A qcow2 emitted by a Nix image build
+MAY exist as an immutable construction artifact, but the runner MUST convert
+it to a raw ZVOL before booting the persistent local twin.
+
+The VM MUST run through the unprivileged local libvirt connection,
+`qemu:///session`. This keeps the workflow usable by a normal developer and
+does not require integration with the `ks` CLI. A CI job MAY substitute
+ephemeral qcow2 disks when its runner does not provide ZFS or delegated ZVOL
+creation, but it MUST preserve the same guest image, disk topology, reboot
+boundary, and validation oracle.
+
+The guest-side oracle MUST verify all of the following before reporting a
+pass:
+
+1. `uname -r` is the exact target kernel.
+2. The ZFS module loads and its vermagic matches that kernel.
+3. The workstation-shaped `rpool` imports and remains healthy.
+4. Checksum-protected test data survives a full guest reboot.
+5. `zpool scrub -w rpool` completes successfully after reboot.
+
+The exact physical-host image can require twin-only boot plumbing: virtio PCI
+and block drivers in the initrd, device settling before pool import, a serial
+console for passphrase entry, and a forced import for a copied image whose ZFS
+host ID belongs to the image builder. Such exceptions MUST be gated to the
+twin. The physical configuration MUST retain conservative pool-import
+behavior.
+
+A passing twin is evidence that one concrete kernel, OpenZFS package, Nixpkgs
+revision, and host configuration work together. It MUST NOT be described as
+upstream support when the kernel lies outside OpenZFS's declared compatibility
+range. The initial ks-config battle test passed Linux 7.1.5 with OpenZFS 2.4.3
+twice using OpenZFS's experimental Linux support.
+
+Keystone now owns Linux 7.1 plus the OpenZFS experimental-kernel build as its
+fleet-wide default. The consumer repository retains the workstation-shaped
+validation fixture and libvirt runner:
+
+[Linux 7.1/OpenZFS twin configuration](https://git.ncrmro.com/ncrmro/ks-config/src/branch/main/modules/os/twins/kernel-zfs-7-1.nix)
+and its
+[libvirt runner](https://git.ncrmro.com/ncrmro/ks-config/src/branch/main/bin/libvirt-twin-zfs-kernel-7-1).
+The twin MUST consume Keystone's default kernel package set; it MUST NOT carry
+a second consumer-only kernel or ZFS override.
+
 ## The Core Problem
 
 ### Linux Kernel ABI Instability
