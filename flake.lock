@@ -152,17 +152,17 @@
         "pimalaya": "pimalaya_3"
       },
       "locked": {
-        "lastModified": 1770837926,
-        "narHash": "sha256-EF7eDNc4HFGZZw+f2RZ9LhPOcgKbuPq2Ckc0R+sC9pU=",
+        "lastModified": 1788000151,
+        "narHash": "sha256-ZhIQRGg8DPofi5/UwV00+Icj2uVuS4Twk830kVXINBI=",
         "owner": "pimalaya",
         "repo": "comodoro",
-        "rev": "b70b3605acc358e0d9cb57525adba9c05fc53f3d",
+        "rev": "bb4cfc0904f7a4c9db91bb98438b5ebdcdbae3e7",
         "type": "github"
       },
       "original": {
         "owner": "pimalaya",
         "repo": "comodoro",
-        "rev": "b70b3605acc358e0d9cb57525adba9c05fc53f3d",
+        "rev": "bb4cfc0904f7a4c9db91bb98438b5ebdcdbae3e7",
         "type": "github"
       }
     },
@@ -214,17 +214,18 @@
         "walker": "walker"
       },
       "locked": {
-        "lastModified": 1788886076,
-        "narHash": "sha256-nqm3FojiN9xO1YHX4gPOz1jqt50OKOG4LSUyMjJBWd8=",
-        "ref": "refs/heads/main",
-        "rev": "c6c47a800ce9526fa19fa86136033fb62e5856bc",
-        "revCount": 65,
-        "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
+        "lastModified": 1789231524,
+        "narHash": "sha256-GenWWbylofGyDKuX/MBz5zkl8JWWzbrAPPife90B9iw=",
+        "owner": "keystone-systems",
+        "repo": "desktop",
+        "rev": "5a274ab05594ab24b4c81e30724bf0487570af33",
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git"
+        "owner": "keystone-systems",
+        "ref": "v0.13.0-rc.1",
+        "repo": "desktop",
+        "type": "github"
       }
     },
     "disko": {
@@ -332,11 +333,11 @@
         "rust-analyzer-src": "rust-analyzer-src_3"
       },
       "locked": {
-        "lastModified": 1767250179,
-        "narHash": "sha256-PnQdWvPZqHp+7yaHWDFX3NYSKaOy0fjkwpR+rIQC7AY=",
+        "lastModified": 1777624102,
+        "narHash": "sha256-thSyElkje577x/kAbP72nHlfiFc1a+tCudskLPHXe9s=",
         "owner": "nix-community",
         "repo": "fenix",
-        "rev": "a3eaf682db8800962943a77ab77c0aae966f9825",
+        "rev": "4d81601e0b73f20d81d066754ad0e7d1e7f75a06",
         "type": "github"
       },
       "original": {
@@ -1253,11 +1254,11 @@
     "pimalaya": {
       "flake": false,
       "locked": {
-        "lastModified": 1786309071,
-        "narHash": "sha256-d6Ugp10zord82oiUHGn9FlWuVv3CDBSUH1Pqj9DO6kQ=",
+        "lastModified": 1787655793,
+        "narHash": "sha256-SI2JDg/tPha5Xu33GchS1dj+3E/gFOW9kszjDcmUG1M=",
         "owner": "pimalaya",
         "repo": "nix",
-        "rev": "6c1b10383afe04b19bb46f93680d0cb6e6960870",
+        "rev": "cc4f9e1797955a2511a0e7dd6b1b1c997a25d0ee",
         "type": "github"
       },
       "original": {
@@ -1269,11 +1270,11 @@
     "pimalaya_2": {
       "flake": false,
       "locked": {
-        "lastModified": 1780852612,
-        "narHash": "sha256-X4zHs6OztjwTZVg7PlIVemtRXDga6Dxa9cWG/crxdTY=",
+        "lastModified": 1787655793,
+        "narHash": "sha256-SI2JDg/tPha5Xu33GchS1dj+3E/gFOW9kszjDcmUG1M=",
         "owner": "pimalaya",
         "repo": "nix",
-        "rev": "1fd82b4e07b90886eba31047dffc21cd31c83682",
+        "rev": "cc4f9e1797955a2511a0e7dd6b1b1c997a25d0ee",
         "type": "github"
       },
       "original": {
@@ -1285,11 +1286,11 @@
     "pimalaya_3": {
       "flake": false,
       "locked": {
-        "lastModified": 1770836277,
-        "narHash": "sha256-a7zP583k2A3pNDsdtCsTQOCielt/Mr7nYrfJZp3hiNI=",
+        "lastModified": 1787655793,
+        "narHash": "sha256-SI2JDg/tPha5Xu33GchS1dj+3E/gFOW9kszjDcmUG1M=",
         "owner": "pimalaya",
         "repo": "nix",
-        "rev": "7c636b1e1db3b92433fee770f8e43b006f5ebd3c",
+        "rev": "cc4f9e1797955a2511a0e7dd6b1b1c997a25d0ee",
         "type": "github"
       },
       "original": {
@@ -1301,11 +1302,11 @@
     "pimalaya_4": {
       "flake": false,
       "locked": {
-        "lastModified": 1786309071,
-        "narHash": "sha256-d6Ugp10zord82oiUHGn9FlWuVv3CDBSUH1Pqj9DO6kQ=",
+        "lastModified": 1787655793,
+        "narHash": "sha256-SI2JDg/tPha5Xu33GchS1dj+3E/gFOW9kszjDcmUG1M=",
         "owner": "pimalaya",
         "repo": "nix",
-        "rev": "6c1b10383afe04b19bb46f93680d0cb6e6960870",
+        "rev": "cc4f9e1797955a2511a0e7dd6b1b1c997a25d0ee",
         "type": "github"
       },
       "original": {
@@ -1435,11 +1436,11 @@
     "rust-analyzer-src_3": {
       "flake": false,
       "locked": {
-        "lastModified": 1767191410,
-        "narHash": "sha256-cCZGjubgDWmstvFkS6eAw2qk2ihgWkycw55u2dtLd70=",
+        "lastModified": 1777583169,
+        "narHash": "sha256-dVJ4+wrRKc8oIgp3rLOFSq1obt/sCKlXy3h47qof/w0=",
         "owner": "rust-lang",
         "repo": "rust-analyzer",
-        "rev": "a9026e6d5068172bf5a0d52a260bb290961d1cb4",
+        "rev": "aa64e4828a2bbba44463c1229a81c748d3cce583",
         "type": "github"
       },
       "original": {
@@ -1635,17 +1636,18 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1788150120,
-        "narHash": "sha256-nA411RgUEo8L23LRduL4ghA6oJVL1SCs1WNst7P1fpY=",
-        "ref": "refs/heads/main",
-        "rev": "0c00ceb67331f2d96b4a75979dc4bb3524a078e3",
-        "revCount": 9,
-        "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
+        "lastModified": 1789231285,
+        "narHash": "sha256-lGAzZyfNbR3iAvAX2VVRGiOQ2VTD2yfJoF0L1fX1Lrg=",
+        "owner": "keystone-systems",
+        "repo": "terminal",
+        "rev": "1a3602557610231ae5e13baa227c6c22121b0e25",
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
+        "owner": "keystone-systems",
+        "ref": "v0.13.0-rc.1",
+        "repo": "terminal",
+        "type": "github"
       }
     },
     "treefmt-nix": {

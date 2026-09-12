@@ -12,7 +12,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     terminal = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git";
+      url = "github:keystone-systems/terminal/v0.13.0-rc.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     lanzaboote = {
@@ -24,7 +24,7 @@
     # dotfile templates). The desktop flake is the single owner of the
     # compositor source and package — deliberately no Hyprland input here.
     desktop = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git";
+      url = "github:keystone-systems/desktop/v0.13.0-rc.1";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.terminal.follows = "terminal";
     };
