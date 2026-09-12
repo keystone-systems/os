@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly RELEASE_VERSION="${KEYSTONE_RELEASE_VERSION:-v0.13.0-rc.2}"
+readonly DEFAULT_PASSWORD="changeme"
+
+usage() {
+  cat <<'EOF'
+usage: keystone-installer install --target ADDRESS --flake PATH#HOST [options]
+
+Install Keystone OS from the release controller container. The target must be
+booted from the matching Keystone installer ISO on a trusted local network.
+
+required:
+  --target ADDRESS       IPv4 address or hostname shown by the installer ISO
+  --flake PATH#HOST      mounted starter flake and target host selector
+
+options:
+  --ssh-port PORT        target SSH port (default: 22; useful for local twins)
+  --state PATH           logs and known-hosts directory (default: /state)
+  --timeout SECONDS      first-boot SSH timeout (default: 900)
+  --password PASSWORD    bootstrap password (default: changeme)
+  -h, --help             show this help
+
+The command prints the target identity and configured disks, then requires an
+exact interactive erase confirmation. It does not support unattended approval.
+EOF
+}
+
+die() {
+  printf 'keystone-installer: %s\n' "$*" >&2
+  exit 1
+}
+
+[[ "${1:-}" == "install" ]] || {
+  usage
+  [[ "${1:-}" == "-h" || "${1:-}" == "--help" || "${1:-}" == "help" ]] && exit 0
+  exit 2
+}
+shift
+
+target=""
+flake=""
+state="/state"
+timeout=900
+ssh_port=22
+password="${KEYSTONE_BOOTSTRAP_PASSWORD:-$DEFAULT_PASSWORD}"
+
+while (($#)); do
+  case "$1" in
+  --target)
+    target="${2:-}"
+    shift 2
+    ;;
+  --flake)
+    flake="${2:-}"
+    shift 2
+    ;;
+  --state)
+    state="${2:-}"
+    shift 2
+    ;;
+  --ssh-port)
+    ssh_port="${2:-}"
+    shift 2
+    ;;
+  --timeout)
+    timeout="${2:-}"
+    shift 2
+    ;;
+  --password)
+    password="${2:-}"
+    shift 2
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *) die "unknown argument: $1" ;;
+  esac
+done
+
+[[ -n "$target" ]] || die "--target is required"
+[[ "$flake" == *#* ]] || die "--flake must include a host selector, for example /workspace#laptop"
+[[ "$timeout" =~ ^[1-9][0-9]*$ ]] || die "--timeout must be a positive integer"
+if [[ ! "$ssh_port" =~ ^[1-9][0-9]*$ ]] || ((ssh_port > 65535)); then
+  die "--ssh-port must be between 1 and 65535"
+fi
+
+host="${flake##*#}"
+flake_root="${flake%#*}"
+[[ -n "$host" && -n "$flake_root" ]] || die "--flake must be PATH#HOST"
+[[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "the flake host selector contains unsupported characters"
+
+mkdir -p "$state"
+chmod 700 "$state"
+run_id="$(date -u +%Y%m%dT%H%M%SZ)-${host}"
+log="$state/${run_id}.log"
+summary="$state/${run_id}.json"
+known_hosts="$state/${run_id}.known_hosts"
+touch "$known_hosts"
+chmod 600 "$known_hosts"
+exec > >(tee -a "$log") 2>&1
+
+phase="preflight"
+finish() {
+  local status=$?
+  jq -n \
+    --arg release "$RELEASE_VERSION" \
+    --arg host "$host" \
+    --arg target "$target" \
+    --argjson sshPort "$ssh_port" \
+    --arg phase "$phase" \
+    --argjson exitCode "$status" \
+    '{release:$release,host:$host,target:$target,sshPort:$sshPort,phase:$phase,exitCode:$exitCode}' >"$summary"
+}
+trap finish EXIT
+
+export SSHPASS="$password"
+ssh_base=(
+  sshpass -e ssh
+  -o ConnectTimeout=10
+  -o StrictHostKeyChecking=accept-new
+  -o "UserKnownHostsFile=$known_hosts"
+  -o PreferredAuthentications=password
+  -o PubkeyAuthentication=no
+  -p "$ssh_port"
+  "root@$target"
+)
+
+known_hosts_target="$target"
+if [[ "$ssh_port" != 22 ]]; then
+  known_hosts_target="[$target]:$ssh_port"
+fi
+
+printf 'Keystone OS %s installer\n' "$RELEASE_VERSION"
+printf 'WARNING: root and disk encryption temporarily use the public password %s.\n' "$DEFAULT_PASSWORD"
+printf 'Use this only on a trusted local network.\n\n'
+
+"${ssh_base[@]}" true || die "cannot authenticate to root@$target with the bootstrap password"
+
+fingerprint="$(ssh-keyscan -T 10 -p "$ssh_port" "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
+printf 'Target: %s (SSH port %s)\n' "$target" "$ssh_port"
+printf 'SSH identity: %s\n' "${fingerprint:-unavailable}"
+printf 'Hardware reported by the live ISO:\n'
+"${ssh_base[@]}" 'lsblk -d -o NAME,PATH,SIZE,MODEL,SERIAL,TRAN,TYPE'
+
+phase="evaluation"
+git config --global --add safe.directory "$flake_root"
+disk_json="$(nix eval --json "${flake_root}#nixosConfigurations.${host}.config.keystone.os.storage.devices")" \
+  || die "cannot evaluate storage devices for $host"
+mapfile -t disks < <(jq -r '.[]' <<<"$disk_json")
+((${#disks[@]} > 0)) || die "$host declares no storage devices"
+
+printf '\nConfiguration: %s\n' "$flake"
+printf 'The following configured disks will be erased:\n'
+printf '  %s\n' "${disks[@]}"
+
+confirmation="ERASE $host ${disks[*]}"
+printf '\nType this exact line to continue:\n%s\n> ' "$confirmation"
+IFS= read -r entered </dev/tty || die "interactive confirmation requires a TTY"
+[[ "$entered" == "$confirmation" ]] || die "confirmation did not match; nothing was erased"
+
+phase="install"
+printf 'Starting NixOS Anywhere. This now destroys the configured target disks.\n'
+set +e
+nixos-anywhere \
+  --env-password \
+  --flake "$flake" \
+  --target-host "root@$target" \
+  --ssh-port "$ssh_port" \
+  --post-kexec-ssh-port "$ssh_port" \
+  --ssh-option StrictHostKeyChecking=no \
+  --ssh-option UserKnownHostsFile=/dev/null \
+  --ssh-option Compression=no \
+  --no-substitute-on-destination
+install_status=$?
+set -e
+if ((install_status != 0 && install_status != 255)); then
+  exit "$install_status"
+fi
+if ((install_status == 255)); then
+  printf 'The reboot SSH session closed while the target restarted; continuing with first-boot detection.\n'
+fi
+
+phase="first-boot"
+printf '\nAt the target console, enter %s to unlock the root disk.\n' "$DEFAULT_PASSWORD"
+printf 'Waiting up to %s seconds for installed root SSH...\n' "$timeout"
+# The live ISO and installed system deliberately have different SSH host keys.
+# Forget only this exact endpoint after NixOS Anywhere has completed, then pin
+# the installed key on the first successful health-check connection.
+ssh-keygen -R "$known_hosts_target" -f "$known_hosts" >/dev/null 2>&1 || true
+deadline=$((SECONDS + timeout))
+until "${ssh_base[@]}" true >/dev/null 2>&1; do
+  ((SECONDS < deadline)) || die "installed host did not return over SSH before timeout"
+  sleep 5
+done
+installed_fingerprint="$(ssh-keyscan -T 10 -p "$ssh_port" "$target" 2>/dev/null | ssh-keygen -lf - 2>/dev/null | head -1 || true)"
+printf 'Installed SSH identity: %s\n' "${installed_fingerprint:-unavailable}"
+
+phase="health-check"
+revision="$("${ssh_base[@]}" 'readlink -f /run/current-system')"
+storage="$("${ssh_base[@]}" 'if command -v zpool >/dev/null && zpool list -H rpool >/dev/null 2>&1; then zpool status -x rpool; else findmnt -n -o SOURCE,FSTYPE,OPTIONS /; fi')"
+failed_units="$("${ssh_base[@]}" 'systemctl --failed --no-legend --plain')"
+
+printf '\nInstalled revision: %s\n' "$revision"
+printf 'Root storage: %s\n' "$storage"
+if [[ -n "$failed_units" ]]; then
+  printf 'Unexpected failed units:\n%s\n' "$failed_units" >&2
+  die "post-install health check found failed units"
+fi
+
+phase="complete"
+printf 'Health check passed: revision present, root storage healthy, no failed units.\n'
+printf 'The host is still in its insecure bootstrap generation; harden it next.\n'

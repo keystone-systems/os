@@ -43,6 +43,15 @@ in
       default = [ ];
       description = "SSH public keys for root access on the installer ISO";
     };
+
+    bootstrapPassword = lib.mkOption {
+      type = lib.types.str;
+      default = "changeme";
+      description = ''
+        Public temporary root password for the release-candidate installer.
+        Use the ISO only on a trusted local network.
+      '';
+    };
   };
 
   config = {
@@ -70,14 +79,15 @@ in
     zramSwap.enable = true;
 
     # Enable SSH daemon for remote access
-    # mkForce overrides keystone.os.ssh's "prohibit-password" — the installer
-    # needs key-based root login for remote installation workflows
+    # The public RC uses one obvious, temporary credential so a controller
+    # machine without pre-provisioned keys can reach the live environment.
     services.openssh = {
       enable = true;
       settings = {
         PermitRootLogin = lib.mkForce "yes";
-        PasswordAuthentication = false;
+        PasswordAuthentication = lib.mkForce true;
         PubkeyAuthentication = true;
+        KbdInteractiveAuthentication = false;
       };
       extraConfig = ''
         UseDNS no
@@ -86,8 +96,17 @@ in
 
     # Configure root user with SSH keys
     users.users.root = {
+      initialHashedPassword = lib.mkForce null;
+      initialPassword = installerCfg.bootstrapPassword;
       openssh.authorizedKeys.keys = installerCfg.sshKeys;
     };
+
+    services.getty.helpLine = ''
+      Keystone OS installer (INSECURE BOOTSTRAP)
+      SSH: root@\\4  password: ${installerCfg.bootstrapPassword}
+      If no address appears, log in and run: ip -br address
+      Use only on a trusted local network.
+    '';
 
     # Disable wpa_supplicant — NetworkManager handles wireless
     networking = {
