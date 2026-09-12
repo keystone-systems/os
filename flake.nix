@@ -85,6 +85,8 @@
       ...
     }:
     let
+      releaseVersion = "v0.13.0-rc.2";
+
       # Create inputs attrset for keystone modules (named keystoneInputs to avoid
       # shadowing when consumed by other flakes that pass their own `inputs`)
       keystoneInputs = {
@@ -113,6 +115,7 @@
           boot.kernelPackages = nixpkgs.lib.mkForce nixpkgs.legacyPackages.${system}.linuxPackages_6_12;
           # Apply keystone overlay so crane-built packages resolve inside the installer
           nixpkgs.overlays = [ self.overlays.default ];
+          keystone.installer.version = releaseVersion;
         }
       ];
 
@@ -633,22 +636,99 @@
           # "cannot add path ... lacks a signature by a trusted key". The
           # legacy path writes directly and never checks.
           #
+          # Disko leaves the credstore zvol open after mounting the installed
+          # system. Upstream suppresses ZFS export failures during reboot, so
+          # the next boot sees the pool as active on another host. Close that
+          # mapping and require the export to succeed before rebooting.
+          #
           # --replace-fail so a nixos-anywhere bump that moves these lines
           # breaks this build loudly, rather than silently reverting to the
           # slow path.
           nixos-anywhere-fast = pkgs.nixos-anywhere.overrideAttrs (old: {
             postPatch = (old.postPatch or "") + ''
-              substituteInPlace src/nixos-anywhere.sh \
-                --replace-fail 'nixCopy --to "ssh://$sshConnection?remote-store=' \
-                               'nixCopy --to "ssh-ng://$sshConnection?remote-store=' \
-                --replace-fail '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy \' \
-                               '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy --no-check-sigs \'
+                        substituteInPlace src/nixos-anywhere.sh \
+                          --replace-fail 'nixCopy --to "ssh://$sshConnection?remote-store=' \
+                                         'nixCopy --to "ssh-ng://$sshConnection?remote-store=' \
+                          --replace-fail '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy \' \
+                                         '  NIX_SSHOPTS="''${sshArgs[*]}" nix copy --no-check-sigs \' \
+                          --replace-fail '    zpool export -a || true' \
+                                         '    if cryptsetup status credstore >/dev/null 2>&1; then
+                cryptsetup close credstore
+              fi
+              zpool export -a'
             '';
           });
+          keystone-installer = pkgs.writeShellApplication {
+            name = "keystone-installer";
+            runtimeInputs = [
+              pkgs.coreutils
+              pkgs.git
+              pkgs.jq
+              pkgs.nix
+              pkgs.openssh
+              pkgs.sshpass
+              nixos-anywhere-fast
+            ];
+            text = builtins.readFile ./bin/keystone-installer;
+          };
+          keystone-installer-image = pkgs.dockerTools.buildLayeredImage {
+            name = "ghcr.io/keystone-systems/os-installer";
+            tag = releaseVersion;
+            contents = [
+              pkgs.bashInteractive
+              pkgs.cacert
+              pkgs.coreutils
+              pkgs.git
+              pkgs.gnugrep
+              pkgs.gnused
+              pkgs.jq
+              pkgs.nix
+              pkgs.openssh
+              pkgs.sshpass
+              keystone-installer
+              nixos-anywhere-fast
+            ];
+            extraCommands = ''
+              mkdir -p etc/nix root state tmp workspace
+              chmod 1777 tmp
+              cat > etc/passwd <<'EOF'
+              root:x:0:0:root:/root:${pkgs.bashInteractive}/bin/bash
+              nobody:x:65534:65534:nobody:/var/empty:/run/current-system/sw/bin/nologin
+              EOF
+              cat > etc/group <<'EOF'
+              root:x:0:
+              nogroup:x:65534:
+              EOF
+              cat > etc/nix/nix.conf <<'EOF'
+              experimental-features = nix-command flakes
+              build-users-group =
+              sandbox = false
+              extra-substituters = https://ks-systems.cachix.org
+              extra-trusted-public-keys = ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo=
+              EOF
+            '';
+            config = {
+              Entrypoint = [ "${keystone-installer}/bin/keystone-installer" ];
+              WorkingDir = "/workspace";
+              Env = [
+                "HOME=/root"
+                "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+                "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              ];
+              Labels = {
+                "org.opencontainers.image.source" = "https://github.com/keystone-systems/os";
+                "org.opencontainers.image.version" = releaseVersion;
+              };
+            };
+          };
         in
         (
           {
-            inherit nixos-anywhere-fast;
+            inherit
+              keystone-installer
+              keystone-installer-image
+              nixos-anywhere-fast
+              ;
             iso = self.lib.mkInstallerIso { inherit nixpkgs; };
             inherit (pkgs.keystone)
               agents-e2e
