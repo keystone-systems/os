@@ -18,7 +18,7 @@
     # llm-agents.url = "github:numtide/llm-agents.nix";
     # browser-previews.url = "github:nix-community/browser-previews";
     keystone = {
-      url = "github:ncrmro/keystone";
+      url = "github:keystone-systems/os/v0.13.0-rc.2";
       # inputs.nixpkgs.follows = "nixpkgs";
       # inputs.llm-agents.follows = "llm-agents";
       # inputs.browser-previews.follows = "browser-previews";

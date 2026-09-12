@@ -85,7 +85,7 @@
       ...
     }:
     let
-      releaseVersion = "v1.0.0-rc.5";
+      releaseVersion = "v0.13.0-rc.2";
 
       # Create inputs attrset for keystone modules (named keystoneInputs to avoid
       # shadowing when consumed by other flakes that pass their own `inputs`)
@@ -672,7 +672,7 @@
             text = builtins.readFile ./bin/keystone-installer;
           };
           keystone-installer-image = pkgs.dockerTools.buildLayeredImage {
-            name = "ghcr.io/ncrmro/keystone-installer";
+            name = "ghcr.io/keystone-systems/os-installer";
             tag = releaseVersion;
             contents = [
               pkgs.bashInteractive
@@ -715,7 +715,7 @@
                 "NIX_SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
               ];
               Labels = {
-                "org.opencontainers.image.source" = "https://github.com/ncrmro/keystone";
+                "org.opencontainers.image.source" = "https://github.com/keystone-systems/os";
                 "org.opencontainers.image.version" = releaseVersion;
               };
             };

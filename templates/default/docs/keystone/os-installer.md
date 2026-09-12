@@ -17,9 +17,8 @@ Podman is the only prerequisite on the controller; host Nix is not required.
 
 ## Install from the public release
 
-The `v1.0.0-rc.5` assets remain pending until the clean-room release test
-passes. Once published, download the ISO and `SHA256SUMS` from the matching
-[GitHub release](https://github.com/ncrmro/keystone/releases), then verify it:
+Download the ISO and `SHA256SUMS` from the matching
+[GitHub release](https://github.com/keystone-systems/os/releases), then verify it:
 
 ```bash
 sha256sum --check SHA256SUMS --ignore-missing
@@ -42,7 +41,7 @@ mkdir -p .keystone-install
 docker run --rm -it \
   -v "$PWD:/workspace:ro" \
   -v "$PWD/.keystone-install:/state" \
-  ghcr.io/ncrmro/keystone-installer:v1.0.0-rc.5 \
+  ghcr.io/keystone-systems/os-installer:v0.13.0-rc.2 \
   install --target 192.0.2.10 --flake /workspace#laptop
 ```
 

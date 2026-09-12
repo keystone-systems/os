@@ -72,7 +72,7 @@ placeholders, paste into your agent, and iterate from there.
 **Plan a fleet-wide upgrade:**
 
 > I'm about to run `ks update` across `<host1>,<host2>,...`. Read the
-> recent commits on `github:ncrmro/keystone` since my current lock, flag
+> recent commits on `github:keystone-systems/os` since my current lock, flag
 > anything risky (NixOS module renames, breaking option changes, new
 > required arguments), and recommend whether to deploy all hosts at once
 > or stage by kind.
@@ -82,8 +82,8 @@ placeholders, paste into your agent, and iterate from there.
 **Adopt Keystone OS on a new machine with the public release:**
 
 > Help me install Keystone OS on a new machine. Do not erase anything yet.
-> Open `docs/keystone/os-installer.md` and use the matching v1 release ISO and
-> `ghcr.io/ncrmro/keystone-installer` image; do not require Nix on my current
+> Open `docs/keystone/os-installer.md` and use the matching release-candidate ISO and
+> `ghcr.io/keystone-systems/os-installer` image; do not require Nix on my current
 > computer. First ask which controller OS I use and which target host role I
 > want. Tell me how to download and checksum the ISO, flash it safely, select
 > the USB device in UEFI, and connect the target to a trusted wired network.

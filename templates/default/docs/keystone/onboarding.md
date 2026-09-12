@@ -251,7 +251,7 @@ mkdir -p .keystone-install
 docker run --rm -it \
   -v "$PWD:/workspace:ro" \
   -v "$PWD/.keystone-install:/state" \
-  ghcr.io/ncrmro/keystone-installer:v1.0.0-rc.5 \
+  ghcr.io/keystone-systems/os-installer:v0.13.0-rc.2 \
   install --target <installer-ip> --flake /workspace#laptop
 ```
 

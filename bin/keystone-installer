@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly RELEASE_VERSION="${KEYSTONE_RELEASE_VERSION:-v1.0.0-rc.5}"
+readonly RELEASE_VERSION="${KEYSTONE_RELEASE_VERSION:-v0.13.0-rc.2}"
 readonly DEFAULT_PASSWORD="changeme"
 
 usage() {
