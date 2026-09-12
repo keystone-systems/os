@@ -701,6 +701,7 @@
               EOF
               cat > etc/nix/nix.conf <<'EOF'
               experimental-features = nix-command flakes
+              build-users-group =
               sandbox = false
               extra-substituters = https://ks-systems.cachix.org
               extra-trusted-public-keys = ks-systems.cachix.org-1:Abbd38auzcLIfJUtX7kSD6zdGUU4v831Sb2KfajR5Mo=
