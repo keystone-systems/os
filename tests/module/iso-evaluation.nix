@@ -43,6 +43,11 @@ let
     # the install from an operator machine.
     loginShell = isoEval.config.systemd.services."getty@tty1".wantedBy or [ ] != [ ];
     sshEnabled = isoEval.config.services.openssh.enable;
+    bootstrapRootPassword = isoEval.config.users.users.root.initialPassword == "changeme";
+    bootstrapRootSsh =
+      isoEval.config.services.openssh.settings.PermitRootLogin == "yes"
+      && isoEval.config.services.openssh.settings.PasswordAuthentication;
+    bootstrapConsoleHelp = lib.hasInfix "changeme" isoEval.config.services.getty.helpLine;
     # boot.supportedFilesystems is an attrset in nixos-unstable (e.g. { zfs = true; })
     zfsSupport = isoEval.config.boot.supportedFilesystems.zfs or false;
     # `or [ ]` because this standalone eval does not import the keystone.os
