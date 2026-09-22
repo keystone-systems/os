@@ -7,6 +7,11 @@ description: Complete guide for installing NixOS using the Keystone installer IS
 
 Complete guide for installing NixOS using the Keystone installer ISO and nixos-anywhere.
 
+> **Advanced path:** this guide requires Nix and NixOS Anywhere on the
+> controller computer. For the public release flow, follow the
+> [ISO and Docker quickstart](../quickstart.md) instead. Do not combine commands
+> or credentials from these two paths.
+
 ## Prerequisites
 
 - Keystone ISO generated and burned to USB (see [ISO Generation](iso-generation.md))

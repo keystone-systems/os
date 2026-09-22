@@ -11,6 +11,12 @@ makes one focused change, and ends with a "you should now see…" check. Stop
 whenever it makes sense — you can carry on later from the same point without
 re-reading earlier steps.
 
+> Installed with the public ISO and Docker container? Follow the canonical
+> [quickstart](../../../../docs/quickstart.md) through its first-boot health
+> check, then resume this walkthrough at
+> [Step 6](#step-6--first-boot-housekeeping-per-host-ssh-key--password).
+> Steps 0–5 below are the advanced build-from-source installation path.
+
 The walkthrough assumes you have *one* current machine (call it your **driver**;
 likely your MacBook or current Linux box) and are bringing up *one* new
 **target** host (likely a fresh laptop or server). Steps 1–4 happen on the
@@ -315,8 +321,7 @@ hosts that share the same `admin.sshKeys`). If your fleet is single-host
 for now, you can skip this addition; the key still serves as a secrets
 recipient in Step 8.
 
-Commit and push the repo change (assuming you've initialized a Git remote;
-not required for v1).
+Commit and push the repo change if you have initialized a Git remote.
 
 **Verify:**
 
