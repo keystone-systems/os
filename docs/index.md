@@ -37,6 +37,10 @@ What you get:
 
 Start here:
 
+- [Quickstart: install from the ISO and Docker container](quickstart.md)
+
+Reference and advanced installation guides:
+
 - [ISO Generation](os/iso-generation.md)
 - [Installer cache warming](os/installer-cache.md)
 - [Keystone OS install](os/installation.md)
@@ -63,8 +67,8 @@ What you get:
 
 Start here:
 
-- [Install the terminal environment](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-install.md)
-- [Terminal module overview](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/terminal.md)
+- [Install the terminal environment](https://github.com/keystone-systems/terminal/blob/main/docs/terminal/tui-install.md)
+- [Terminal module overview](https://github.com/keystone-systems/terminal/blob/main/docs/terminal/terminal.md)
 - [Navigation guide](navigation.md)
 
 ## Core concept: `keystone-config`
@@ -74,7 +78,7 @@ Start here:
 Create a new config repo from the Keystone template:
 
 ```bash
-nix flake new -t github:ncrmro/keystone keystone-config
+nix flake new -t github:keystone-systems/os keystone-config
 cd keystone-config
 ```
 
@@ -104,19 +108,15 @@ Recommended first decision:
 
 ### If you want the fastest safe first deployment
 
-Use the template, keep the default single-machine structure, and work through:
-
-1. [ISO Generation](os/iso-generation.md)
-2. [Keystone OS install](os/installation.md)
-3. [Terminal module overview](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/terminal.md)
-4. [Navigation guide](navigation.md)
+Follow the [ISO and Docker quickstart](quickstart.md). After installation, use
+the [Terminal module overview](https://github.com/keystone-systems/terminal/blob/main/docs/terminal/terminal.md) and [navigation guide](navigation.md).
 
 ### If you are iterating or contributing
 
 Keep development workflows separate from initial setup:
 
-- [Developer workflow](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-developer-workflow.md)
-- [Thin client workflow](https://git.ncrmro.com/ks.systems/terminal/src/branch/main/docs/terminal/tui-developer-workflow-thin-client.md)
+- [Developer workflow](https://github.com/keystone-systems/terminal/blob/main/docs/terminal/tui-developer-workflow.md)
+- [Thin client workflow](https://github.com/keystone-systems/terminal/blob/main/docs/terminal/tui-developer-workflow-thin-client.md)
 - [Testing procedures](os/testing-procedure.md)
 - [VM testing](os/testing-vm.md)
 - [ISO and OS VM testing](testing/iso-os-virtual-machine.md)
@@ -130,7 +130,7 @@ Keep development workflows separate from initial setup:
 - **[Past releases](releases/)** — release artifacts, summaries, and changelogs per tag
 - **[Project posts](posts.md)** - Working-backwards and narrative project material
 - **[Experimental features](experimental.md)** - Stability tiers and the `keystone.experimental` flag
-- **[GitHub Repository](https://github.com/ncrmro/keystone)** - Source code and issue tracking
+- **[GitHub Repository](https://github.com/keystone-systems/os)** - Source code and issue tracking
 - **[Create `keystone-config`](#core-concept-keystone-config)** - Scaffold a new Keystone configuration repo
 
 ## Contributing
@@ -143,18 +143,18 @@ We welcome contributions! Areas where help is particularly needed:
 - Module development
 - Platform support
 
-Please see our [GitHub repository](https://github.com/ncrmro/keystone) for details on how to get involved.
+Please see our [GitHub repository](https://github.com/keystone-systems/os) for details on how to get involved.
 
 ## Community & Support
 
-- **Issues** - [GitHub Issues](https://github.com/ncrmro/keystone/issues)
-- **Discussions** - [GitHub Discussions](https://github.com/ncrmro/keystone/discussions)
+- **Issues** - [GitHub Issues](https://github.com/keystone-systems/os/issues)
+- **Discussions** - [GitHub Discussions](https://github.com/keystone-systems/os/discussions)
 - **Security** - Report security issues privately via GitHub Security Advisories
 
 ## License
 
-Keystone is open source software licensed under the [MIT License](https://github.com/ncrmro/keystone/blob/main/LICENSE).
+Keystone is open source software licensed under the [MIT License](https://github.com/keystone-systems/os/blob/main/LICENSE).
 
 ---
 
-_This documentation is continuously updated. For the latest information, please check the [GitHub repository](https://github.com/ncrmro/keystone)._
+_This documentation is continuously updated. For the latest information, please check the [GitHub repository](https://github.com/keystone-systems/os)._

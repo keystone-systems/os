@@ -7,6 +7,11 @@ description: Generate a Keystone installer ISO with SSH keys for remote installa
 
 Generate a Keystone installer ISO with SSH keys for remote installation.
 
+> **Advanced path:** this page builds an installer from source and requires a
+> Nix-capable build machine. Most users should download a published image and
+> follow the [ISO and Docker quickstart](../quickstart.md). Do not substitute a
+> locally built image into a release-matched installer bundle.
+
 ## Quick Build
 
 ```bash
